@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nailflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nailflow
+    ports:
+      - '5432:5432'
+    volumes:
+      - nailflow_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Opcional: sobe uma instância local do n8n já configurada para importar
+  # os workflows em n8n/workflows. Comente este serviço se preferir usar o
+  # n8n Cloud ou uma instância já existente.
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: nailflow-n8n
+    restart: unless-stopped
+    ports:
+      - '5678:5678'
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      # Variáveis usadas pelos workflows (ver n8n/README.md para preencher):
+      - API_URL=http://host.docker.internal:3333
+      - WHATSAPP_TOKEN=
+      - WHATSAPP_PHONE_ID=
+    volumes:
+      - nailflow_n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/workflows:ro
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  nailflow_pg_data:
+  nailflow_n8n_data:

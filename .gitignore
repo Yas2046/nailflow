@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+
+# Dados locais do n8n/postgres quando não usados via Docker
+n8n_data/
+pgdata/

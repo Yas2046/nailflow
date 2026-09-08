@@ -1,0 +1,74 @@
+{
+  "name": "NailFlow - 4. Lembrete de amanhã",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [ { "field": "cronExpression", "expression": "0 18 * * *" } ]
+        }
+      },
+      "id": "schedule-lembrete",
+      "name": "Todo dia às 18h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ -100, 0 ],
+      "notes": "Ajuste o horário conforme a rotina da profissional."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_URL}}/appointments",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "from", "value": "={{(() => { const sp = new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo'}).format(new Date(Date.now() + 86400000)); return sp + 'T03:00:00.000Z'; })()}}" },
+            { "name": "to", "value": "={{(() => { const sp = new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo'}).format(new Date(Date.now() + 86400000)); return new Date(new Date(sp + 'T03:00:00.000Z').getTime() + 86400000 - 1).toISOString(); })()}}" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "buscar-agendamentos-amanha",
+      "name": "Buscar agendamentos de amanhã (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 140, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const appts = $input.first().json;\nreturn appts\n  .filter(a => a.status === 'confirmado' || a.status === 'pendente')\n  .map(a => ({\n    json: {\n      telefoneCliente: a.clientPhone,\n      texto: `Oi, ${a.clientName.split(' ')[0]}! Passando para lembrar do seu horário amanhã às ${new Date(a.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}. 💅`\n    }\n  }));"
+      },
+      "id": "montar-lembretes",
+      "name": "Montar lembrete por cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 380, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.telefoneCliente, text: { body: $json.texto } } }}",
+        "options": {}
+      },
+      "id": "enviar-lembrete",
+      "name": "Enviar lembrete no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 620, 0 ],
+      "notes": "Este node roda uma vez por item (um agendamento = uma mensagem)."
+    }
+  ],
+  "connections": {
+    "Todo dia às 18h": { "main": [[ { "node": "Buscar agendamentos de amanhã (API)", "type": "main", "index": 0 } ]] },
+    "Buscar agendamentos de amanhã (API)": { "main": [[ { "node": "Montar lembrete por cliente", "type": "main", "index": 0 } ]] },
+    "Montar lembrete por cliente": { "main": [[ { "node": "Enviar lembrete no WhatsApp", "type": "main", "index": 0 } ]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

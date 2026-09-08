@@ -1,0 +1,298 @@
+{
+  "name": "NailFlow - 1. Novo agendamento",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nailflow/mensagem-recebida",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-whatsapp-in",
+      "name": "Webhook WhatsApp (Meta)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [ -100, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// A Meta envia um payload aninhado. Aqui extraímos só o essencial.\n// Ver: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks\nconst body = $input.first().json.body;\nconst entry = body.entry?.[0];\nconst change = entry?.changes?.[0]?.value;\nconst message = change?.messages?.[0];\n\nif (!message) {\n  return [{ json: { ignore: true } }];\n}\n\nreturn [{\n  json: {\n    from: message.from, // telefone no formato internacional, sem '+'\n    text: message.text?.body || '',\n    waMessageId: message.id,\n  }\n}];"
+      },
+      "id": "parse-whatsapp-payload",
+      "name": "Extrair mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 140, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Interpretação simples por palavras-chave.\n// TODO (evolução futura): trocar por um node de IA (ex.: OpenAI/Claude)\n// que retorne JSON estruturado { servico, data, hora } a partir do texto livre.\nconst text = ($json.text || '').toLowerCase();\n\nconst servicos = {\n  'manicure e pedicure': 'Manicure + Pedicure',\n  'manicure + pedicure': 'Manicure + Pedicure',\n  'pedicure': 'Pedicure',\n  'manicure': 'Manicure',\n  'gel': 'Esmaltação em gel',\n  'alongamento': 'Alongamento',\n};\nlet servico = null;\nfor (const [chave, nome] of Object.entries(servicos)) {\n  if (text.includes(chave)) { servico = nome; break; }\n}\n\nconst hoje = new Date();\n// Extrai a data civil em São Paulo sem depender do timezone do servidor.\nconst spDateStr = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);\nconst spHoje = spDateStr(hoje);\nlet data = null;\nif (text.includes('amanha') || text.includes('amanhã')) {\n  const [y, m, d] = spHoje.split('-').map(Number);\n  data = spDateStr(new Date(Date.UTC(y, m - 1, d + 1, 12)));\n} else if (text.includes('hoje')) {\n  data = spHoje;\n}\n\nconst horaMatch = text.match(/(\\d{1,2})h(\\d{2})?/);\nlet hora = null;\nif (horaMatch) {\n  const h = horaMatch[1].padStart(2, '0');\n  const m = (horaMatch[2] || '00').padStart(2, '0');\n  hora = `${h}:${m}`;\n}\n\nreturn [{ json: { ...$json, servico, data, hora, entendida: !!(servico && data && hora) } }];"
+      },
+      "id": "interpretar-mensagem",
+      "name": "Interpretar intenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 380, 0 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "leftValue": "={{$json.entendida}}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-mensagem-entendida",
+      "name": "Mensagem foi entendida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 620, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_URL}}/services",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "buscar-servicos",
+      "name": "Buscar serviços (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 860, -120 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const servicos = $input.first().json;\nconst nomeDesejado = $('Interpretar intenção').first().json.servico;\nconst servico = servicos.find(s => s.name === nomeDesejado && s.active);\nif (!servico) return [{ json: { erro: 'servico_nao_encontrado' } }];\nreturn [{ json: { ...$('Interpretar intenção').first().json, serviceId: servico.id, durationMinutes: servico.durationMinutes } }];"
+      },
+      "id": "resolver-servico",
+      "name": "Resolver serviço",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 1100, -120 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_URL}}/availability/slots",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "date", "value": "={{$json.data}}" },
+            { "name": "serviceId", "value": "={{$json.serviceId}}" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "consultar-disponibilidade",
+      "name": "Consultar disponibilidade (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1340, -120 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const slots = $input.first().json; // [{start, end}, ...]\nconst pedido = $('Resolver serviço').first().json;\nconst horarioPedidoISO = new Date(`${pedido.data}T${pedido.hora}:00-03:00`).toISOString();\nconst disponivel = slots.some(s => new Date(s.start).toISOString() === horarioPedidoISO);\nreturn [{ json: { ...pedido, disponivel } }];"
+      },
+      "id": "checar-horario-pedido",
+      "name": "Horário pedido está livre?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 1580, -120 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "leftValue": "={{$json.disponivel}}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-horario-livre",
+      "name": "Horário livre?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 1820, -120 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_URL}}/clients",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "buscar-cliente",
+      "name": "Buscar clientes (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2060, -220 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const clientes = $input.first().json;\nconst pedido = $('Horário pedido está livre?').first().json;\nconst existente = clientes.find(c => c.phone === pedido.from);\nreturn [{ json: { ...pedido, clientId: existente ? existente.id : null } }];"
+      },
+      "id": "resolver-cliente",
+      "name": "Resolver cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 2300, -220 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "leftValue": "={{$json.clientId}}", "rightValue": null, "operator": { "type": "string", "operation": "empty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-cliente-novo",
+      "name": "Cliente é nova?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 2540, -220 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_URL}}/clients",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: 'Cliente WhatsApp ' + $json.from, phone: $json.from } }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "criar-cliente",
+      "name": "Criar cliente (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2780, -320 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_URL}}/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clientId: $json.clientId || $json.id, serviceId: $('Resolver cliente').first().json.serviceId, startsAt: new Date(`${$('Resolver cliente').first().json.data}T${$('Resolver cliente').first().json.hora}:00-03:00`).toISOString(), status: 'pendente' } }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "criar-agendamento",
+      "name": "Criar agendamento (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 3020, -220 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $('Interpretar intenção').first().json.from, text: { body: 'Seu horário foi registrado! A profissional vai confirmar em instantes. 💅' } } }}",
+        "options": {}
+      },
+      "id": "confirmar-whatsapp",
+      "name": "Responder no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 3260, -220 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $('Interpretar intenção').first().json.from, text: { body: 'Esse horário já foi preenchido. Consulte os próximos horários disponíveis: ' + $env.API_URL.replace('3333','5173') + '/horarios' } } }}",
+        "options": {}
+      },
+      "id": "avisar-horario-ocupado",
+      "name": "Avisar horário ocupado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2060, 40 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $('Extrair mensagem').first().json.from, text: { body: 'Não consegui entender o pedido. Pode dizer o serviço, o dia e o horário? Ex.: manicure amanhã às 14h.' } } }}",
+        "options": {}
+      },
+      "id": "pedir-esclarecimento",
+      "name": "Pedir esclarecimento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 860, 160 ]
+    },
+    {
+      "parameters": { "respondWith": "noData", "options": {} },
+      "id": "responder-webhook",
+      "name": "Responder Webhook (200 OK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [ 3500, 0 ]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp (Meta)": { "main": [[ { "node": "Extrair mensagem", "type": "main", "index": 0 } ]] },
+    "Extrair mensagem": { "main": [[ { "node": "Interpretar intenção", "type": "main", "index": 0 } ]] },
+    "Interpretar intenção": { "main": [[ { "node": "Mensagem foi entendida?", "type": "main", "index": 0 } ]] },
+    "Mensagem foi entendida?": {
+      "main": [
+        [ { "node": "Buscar serviços (API)", "type": "main", "index": 0 } ],
+        [ { "node": "Pedir esclarecimento", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Buscar serviços (API)": { "main": [[ { "node": "Resolver serviço", "type": "main", "index": 0 } ]] },
+    "Resolver serviço": { "main": [[ { "node": "Consultar disponibilidade (API)", "type": "main", "index": 0 } ]] },
+    "Consultar disponibilidade (API)": { "main": [[ { "node": "Horário pedido está livre?", "type": "main", "index": 0 } ]] },
+    "Horário pedido está livre?": { "main": [[ { "node": "Horário livre?", "type": "main", "index": 0 } ]] },
+    "Horário livre?": {
+      "main": [
+        [ { "node": "Buscar clientes (API)", "type": "main", "index": 0 } ],
+        [ { "node": "Avisar horário ocupado", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Buscar clientes (API)": { "main": [[ { "node": "Resolver cliente", "type": "main", "index": 0 } ]] },
+    "Resolver cliente": { "main": [[ { "node": "Cliente é nova?", "type": "main", "index": 0 } ]] },
+    "Cliente é nova?": {
+      "main": [
+        [ { "node": "Criar cliente (API)", "type": "main", "index": 0 } ],
+        [ { "node": "Criar agendamento (API)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Criar cliente (API)": { "main": [[ { "node": "Criar agendamento (API)", "type": "main", "index": 0 } ]] },
+    "Criar agendamento (API)": { "main": [[ { "node": "Responder no WhatsApp", "type": "main", "index": 0 } ]] },
+    "Responder no WhatsApp": { "main": [[ { "node": "Responder Webhook (200 OK)", "type": "main", "index": 0 } ]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

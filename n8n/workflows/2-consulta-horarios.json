@@ -1,0 +1,81 @@
+{
+  "name": "NailFlow - 2. Consulta de horários",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "nailflow/consulta-horarios", "responseMode": "responseNode", "options": {} },
+      "id": "webhook-consulta",
+      "name": "Webhook WhatsApp (Meta)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [ -100, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [{ json: { ignore: true } }];\nreturn [{ json: { from: message.from, text: message.text?.body || '' } }];"
+      },
+      "id": "parse-mensagem",
+      "name": "Extrair mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 140, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_URL}}/public/availability",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "days", "value": "3" } ] },
+        "options": {}
+      },
+      "id": "buscar-disponibilidade-publica",
+      "name": "Consultar horários públicos (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 380, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nlet texto = 'Horários disponíveis:\\n';\nfor (const dia of resp.days) {\n  const data = new Date(dia.date + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });\n  const horas = dia.slots.map(s => new Date(s).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })).join(', ');\n  texto += `\\n${data}: ${horas}`;\n}\nif (resp.days.length === 0) texto = 'No momento não há horários livres nos próximos dias. Me chama que a gente combina! 💅';\nreturn [{ json: { texto, from: $('Extrair mensagem').first().json.from } }];"
+      },
+      "id": "montar-resposta",
+      "name": "Montar texto de resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 620, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.from, text: { body: $json.texto } } }}",
+        "options": {}
+      },
+      "id": "enviar-whatsapp",
+      "name": "Enviar resposta no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 860, 0 ]
+    },
+    {
+      "parameters": { "respondWith": "noData", "options": {} },
+      "id": "responder-webhook",
+      "name": "Responder Webhook (200 OK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [ 1100, 0 ]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp (Meta)": { "main": [[ { "node": "Extrair mensagem", "type": "main", "index": 0 } ]] },
+    "Extrair mensagem": { "main": [[ { "node": "Consultar horários públicos (API)", "type": "main", "index": 0 } ]] },
+    "Consultar horários públicos (API)": { "main": [[ { "node": "Montar texto de resposta", "type": "main", "index": 0 } ]] },
+    "Montar texto de resposta": { "main": [[ { "node": "Enviar resposta no WhatsApp", "type": "main", "index": 0 } ]] },
+    "Enviar resposta no WhatsApp": { "main": [[ { "node": "Responder Webhook (200 OK)", "type": "main", "index": 0 } ]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

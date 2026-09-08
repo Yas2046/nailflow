@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: light;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background-color: #EBD9DE;
+}
+
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid #8C4A5E;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-wine-100 px-3 py-2 bg-white text-sm focus-ring;
+  }
+}
