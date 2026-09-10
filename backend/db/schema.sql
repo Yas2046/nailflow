@@ -95,17 +95,18 @@ CREATE INDEX idx_blocked_times_professional ON blocked_times(professional_id, st
 -- EXCLUDE constraint anti-sobreposição.
 -- =========================================================
 CREATE TABLE appointments (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  professional_id  UUID NOT NULL REFERENCES professionals(id) ON DELETE CASCADE,
-  client_id        UUID NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
-  service_id       UUID NOT NULL REFERENCES services(id) ON DELETE RESTRICT,
-  starts_at        TIMESTAMPTZ NOT NULL,
-  ends_at          TIMESTAMPTZ NOT NULL,
-  status           VARCHAR(20) NOT NULL DEFAULT 'pendente'
-                     CHECK (status IN ('pendente','confirmado','cancelado','concluido','nao_compareceu')),
-  notes            TEXT,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  professional_id       UUID NOT NULL REFERENCES professionals(id) ON DELETE CASCADE,
+  client_id             UUID NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
+  service_id            UUID NOT NULL REFERENCES services(id) ON DELETE RESTRICT,
+  starts_at             TIMESTAMPTZ NOT NULL,
+  ends_at               TIMESTAMPTZ NOT NULL,
+  status                VARCHAR(20) NOT NULL DEFAULT 'pendente'
+                          CHECK (status IN ('pendente','confirmado','cancelado','concluido','nao_compareceu')),
+  notes                 TEXT,
+  price_cents_snapshot  INTEGER NOT NULL CHECK (price_cents_snapshot >= 0),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (ends_at > starts_at),
   -- Impede dois agendamentos sobrepostos para a mesma profissional,
   -- exceto os que já estão cancelados (liberam o horário).

@@ -153,7 +153,8 @@ Isso sobe o n8n em `http://localhost:5678`.
 | `FRONTEND_URL` | sim | Origem liberada no CORS |
 | `API_URL` | usada pelo n8n | URL pública desta API |
 | `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_VERIFY_TOKEN` | só para integração WhatsApp | Credenciais da Meta (placeholders — preencher ao integrar) |
-| `N8N_WEBHOOK_URL` | só para integração n8n | URL do webhook do n8n para receber eventos de confirmação/cancelamento |
+| `N8N_WEBHOOK_CONFIRMED_URL` | só para integração n8n | URL do webhook do n8n — workflow 3 (agendamento confirmado) |
+| `N8N_WEBHOOK_CANCELLED_URL` | só para integração n8n | URL do webhook do n8n — workflow 5 (agendamento cancelado) |
 
 ### `frontend/.env`
 | Variável | Obrigatória | Descrição |

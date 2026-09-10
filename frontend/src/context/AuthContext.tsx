@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { api, setAuthToken } from '../services/api';
+import { api } from '../services/api';
 
 interface Professional {
   id: string;
@@ -28,7 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const data = await api.post<{ token: string; professional: Professional }>('/auth/login', { email, password });
-      setAuthToken(data.token);
       localStorage.setItem('nailflow_professional', JSON.stringify(data.professional));
       setProfessional(data.professional);
     } finally {
@@ -38,7 +37,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     api.post('/auth/logout', {}).catch(() => {});
-    setAuthToken(null);
     localStorage.removeItem('nailflow_professional');
     setProfessional(null);
   }

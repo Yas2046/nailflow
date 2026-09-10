@@ -1,13 +1,28 @@
 /**
- * Notifica o n8n via webhook quando eventos relevantes acontecem
- * (confirmação, cancelamento). Só dispara se N8N_WEBHOOK_URL estiver
- * configurada — no MVP sem n8n, isso é um no-op silencioso.
+ * Notifica o n8n via webhook quando eventos relevantes acontecem.
+ * Cada evento tem sua própria URL de destino — isso garante que o workflow
+ * de confirmação e o de cancelamento sejam acionados independentemente.
+ *
+ * Variáveis de ambiente:
+ *   N8N_WEBHOOK_CONFIRMED_URL  → workflow 3 (appointment.confirmed)
+ *   N8N_WEBHOOK_CANCELLED_URL  → workflow 5 (appointment.cancelled)
+ *
+ * Se a URL correspondente não estiver configurada, a chamada é um no-op
+ * silencioso — o backend continua funcionando normalmente.
  *
  * Implementado como "fire and forget": nunca deve quebrar a resposta
  * da API caso o n8n esteja fora do ar.
  */
+const EVENT_URL_VARS = {
+  'appointment.confirmed': 'N8N_WEBHOOK_CONFIRMED_URL',
+  'appointment.cancelled': 'N8N_WEBHOOK_CANCELLED_URL',
+};
+
 export function notifyN8n(event, payload) {
-  const url = process.env.N8N_WEBHOOK_URL;
+  const envVar = EVENT_URL_VARS[event];
+  if (!envVar) return;
+
+  const url = process.env[envVar];
   if (!url) return;
 
   fetch(url, {

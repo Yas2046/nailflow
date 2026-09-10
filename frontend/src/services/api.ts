@@ -1,13 +1,5 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
 
-let authToken: string | null = localStorage.getItem('nailflow_token');
-
-export function setAuthToken(token: string | null) {
-  authToken = token;
-  if (token) localStorage.setItem('nailflow_token', token);
-  else localStorage.removeItem('nailflow_token');
-}
-
 /**
  * Erro de API que preserva, além da mensagem, o `reason` estruturado que o
  * backend já retorna em endpoints de disponibilidade (ex.: "lunch_break",
@@ -35,7 +27,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...(options.headers || {}),
     },
   });
@@ -44,6 +35,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401 && path !== '/auth/login') {
+      localStorage.removeItem('nailflow_professional');
+      window.location.href = '/login';
+      return new Promise(() => {}) as Promise<T>;
+    }
     throw new ApiError(data.error || `Erro ${res.status}`, res.status, data.reason, data.alternatives);
   }
   return data as T;

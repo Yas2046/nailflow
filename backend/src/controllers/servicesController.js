@@ -51,15 +51,16 @@ export async function createService(req, res, next) {
 export async function updateService(req, res, next) {
   try {
     const data = serviceSchema.partial().parse(req.body);
+    const descriptionInBody = 'description' in req.body;
     const { rows } = await pool.query(
       `UPDATE services SET
-         name = COALESCE($1, name),
-         description = COALESCE($2, description),
-         price_cents = COALESCE($3, price_cents),
-         duration_minutes = COALESCE($4, duration_minutes),
-         active = COALESCE($5, active)
-       WHERE id = $6 AND professional_id = $7 RETURNING *`,
-      [data.name, data.description, data.priceCents, data.durationMinutes, data.active, req.params.id, req.professionalId]
+         name             = COALESCE($1, name),
+         description      = CASE WHEN $2 THEN $3 ELSE description END,
+         price_cents      = COALESCE($4, price_cents),
+         duration_minutes = COALESCE($5, duration_minutes),
+         active           = COALESCE($6, active)
+       WHERE id = $7 AND professional_id = $8 RETURNING *`,
+      [data.name, descriptionInBody, data.description ?? null, data.priceCents, data.durationMinutes, data.active, req.params.id, req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Serviço não encontrado.');
     res.json(toDto(rows[0]));

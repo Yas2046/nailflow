@@ -23,6 +23,12 @@ function addDays(d: Date, n: number) {
   r.setDate(r.getDate() + n);
   return r;
 }
+function addMonths(d: Date, n: number) {
+  const r = new Date(d);
+  r.setDate(1); // normaliza para evitar overflow em meses curtos (ex: jan 31 → fev)
+  r.setMonth(r.getMonth() + n);
+  return r;
+}
 function toMinutes(t: string) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -55,9 +61,12 @@ export default function Agenda() {
     | { type: 'block'; time: string }
     | null
   >(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<WeeklyAvailabilityDay[]>('/availability').then(setWeeklyAvailability).catch(() => {});
+    api.get<WeeklyAvailabilityDay[]>('/availability')
+      .then((data) => { setWeeklyAvailability(data); setLoadError(null); })
+      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
   }, []);
 
   const rangeStart = useMemo(() => {
@@ -77,11 +86,14 @@ export default function Agenda() {
   }, [view, currentDate, rangeStart]);
 
   function reload() {
+    setLoadError(null);
     api
       .get<Appointment[]>(`/appointments?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`)
       .then(setAppointments)
-      .catch(() => {});
-    api.get<BlockedTime[]>('/availability/blocked').then(setBlocked).catch(() => {});
+      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
+    api.get<BlockedTime[]>('/availability/blocked')
+      .then(setBlocked)
+      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
     setModalState(null);
   }
 
@@ -91,6 +103,11 @@ export default function Agenda() {
 
   return (
     <div>
+      {loadError && (
+        <p className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="font-display text-3xl text-wine-700">Agenda</h1>
         <div className="flex gap-1 bg-white border border-wine-100 rounded-lg p-1">
@@ -110,7 +127,7 @@ export default function Agenda() {
 
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => setCurrentDate((d) => addDays(d, view === 'mes' ? -30 : view === 'semana' ? -7 : -1))}
+          onClick={() => setCurrentDate((d) => view === 'mes' ? addMonths(d, -1) : addDays(d, view === 'semana' ? -7 : -1))}
           className="px-3 py-1.5 rounded-lg border border-wine-100 text-sm hover:bg-white"
         >
           ← Anterior
@@ -121,7 +138,7 @@ export default function Agenda() {
           {view === 'mes' && currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
         </span>
         <button
-          onClick={() => setCurrentDate((d) => addDays(d, view === 'mes' ? 30 : view === 'semana' ? 7 : 1))}
+          onClick={() => setCurrentDate((d) => view === 'mes' ? addMonths(d, 1) : addDays(d, view === 'semana' ? 7 : 1))}
           className="px-3 py-1.5 rounded-lg border border-wine-100 text-sm hover:bg-white"
         >
           Próximo →

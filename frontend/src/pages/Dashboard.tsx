@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { DashboardSummary } from '../types';
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bom dia 👋';
+  if (hour < 18) return 'Boa tarde 👋';
+  return 'Boa noite 👋';
+}
+
 function formatMoney(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -34,7 +41,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-wine-700 mb-8">Bom dia 👋</h1>
+      <h1 className="font-display text-3xl text-wine-700 mb-8">{getGreeting()}</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         <Card label="Horários disponíveis hoje" value={String(data.horariosDisponiveisHoje)} />

@@ -15,9 +15,12 @@ export default function Servicos() {
   const [duration, setDuration] = useState('40');
   const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   function reload() {
-    api.get<Service[]>('/services').then(setServices).catch(() => {});
+    api.get<Service[]>('/services')
+      .then((data) => { setServices(data); setLoadError(null); })
+      .catch(() => setLoadError('Não foi possível carregar os serviços.'));
   }
   useEffect(reload, []);
 
@@ -63,6 +66,11 @@ export default function Servicos() {
 
   return (
     <div>
+      {loadError && (
+        <p className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </p>
+      )}
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display text-3xl text-wine-700">Serviços</h1>
         <button onClick={openNew} className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm hover:bg-wine-700">

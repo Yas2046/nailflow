@@ -15,8 +15,9 @@ credenciais e variáveis, e ativar.
 | `5-cancelamento.json` | Cancelamento de agendamento | Webhook (chamado pela própria API) | Avisa a cliente no WhatsApp quando um agendamento é cancelado |
 
 Os workflows 3 e 5 são chamados automaticamente pelo backend via
-`backend/src/utils/notifyN8n.js`, que dispara um POST para `N8N_WEBHOOK_URL`
-sempre que um agendamento é confirmado ou cancelado.
+`backend/src/utils/notifyN8n.js`, que dispara um POST para a URL configurada
+em `N8N_WEBHOOK_CONFIRMED_URL` (confirmação) ou `N8N_WEBHOOK_CANCELLED_URL`
+(cancelamento) sempre que um agendamento é confirmado ou cancelado.
 
 Os workflows 1 e 2 recebem mensagens do WhatsApp e chamam de volta a API do
 NailFlow (rotas autenticadas: `/services`, `/availability/slots`, `/clients`,

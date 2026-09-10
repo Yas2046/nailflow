@@ -26,6 +26,7 @@ function toDto(row) {
     endsAt: row.ends_at,
     status: row.status,
     notes: row.notes,
+    priceCentsSnapshot: row.price_cents_snapshot,
   };
 }
 
@@ -85,7 +86,7 @@ export async function createAppointment(req, res, next) {
     const data = createSchema.parse(req.body);
 
     const { rows: serviceRows } = await pool.query(
-      'SELECT duration_minutes FROM services WHERE id = $1 AND professional_id = $2',
+      'SELECT duration_minutes, price_cents FROM services WHERE id = $1 AND professional_id = $2',
       [data.serviceId, req.professionalId]
     );
     if (!serviceRows[0]) throw new HttpError(400, 'Serviço inválido.');
@@ -99,10 +100,10 @@ export async function createAppointment(req, res, next) {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes)
-       VALUES ($1,$2,$3,$4,$5,COALESCE($6,'pendente'),$7)
+      `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes, price_cents_snapshot)
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6,'pendente'),$7,$8)
        RETURNING *`,
-      [req.professionalId, data.clientId, data.serviceId, new Date(check.startsAt), new Date(check.endsAt), data.status, data.notes ?? null]
+      [req.professionalId, data.clientId, data.serviceId, new Date(check.startsAt), new Date(check.endsAt), data.status, data.notes ?? null, serviceRows[0].price_cents]
     );
 
     const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
@@ -119,6 +120,7 @@ export async function updateAppointment(req, res, next) {
 
     let newStartsAt;
     let newEndsAt;
+    let newSnapshot;
 
     if (data.startsAt || data.serviceId) {
       // Precisamos recalcular ends_at se a data/serviço mudou.
@@ -130,13 +132,18 @@ export async function updateAppointment(req, res, next) {
 
       const serviceId = data.serviceId || current[0].service_id;
       const { rows: serviceRows } = await pool.query(
-        'SELECT duration_minutes FROM services WHERE id = $1 AND professional_id = $2',
+        'SELECT duration_minutes, price_cents FROM services WHERE id = $1 AND professional_id = $2',
         [serviceId, req.professionalId]
       );
       if (!serviceRows[0]) throw new HttpError(400, 'Serviço inválido.');
 
       newStartsAt = new Date(data.startsAt || current[0].starts_at);
       newEndsAt = new Date(newStartsAt.getTime() + serviceRows[0].duration_minutes * 60000);
+
+      // Atualiza snapshot somente quando o serviço muda de fato.
+      if (data.serviceId) {
+        newSnapshot = serviceRows[0].price_cents;
+      }
 
       const check = await checkSlotAvailability(req.professionalId, serviceId, newStartsAt, req.params.id);
       if (!check.available) {
@@ -154,10 +161,11 @@ export async function updateAppointment(req, res, next) {
          starts_at = COALESCE($3, starts_at),
          ends_at = COALESCE($4, ends_at),
          status = COALESCE($5, status),
-         notes = COALESCE($6, notes)
+         notes = COALESCE($6, notes),
+         price_cents_snapshot = COALESCE($9, price_cents_snapshot)
        WHERE id = $7 AND professional_id = $8
        RETURNING *`,
-      [data.clientId, data.serviceId, newStartsAt, newEndsAt, data.status, data.notes, req.params.id, req.professionalId]
+      [data.clientId, data.serviceId, newStartsAt, newEndsAt, data.status, data.notes, req.params.id, req.professionalId, newSnapshot ?? null]
     );
     if (!rows[0]) throw new HttpError(404, 'Agendamento não encontrado.');
 

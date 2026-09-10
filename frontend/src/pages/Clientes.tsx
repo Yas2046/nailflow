@@ -14,28 +14,47 @@ export default function Clientes() {
   const [selected, setSelected] = useState<Client | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showNew, setShowNew] = useState(false);
+  const [editing, setEditing] = useState<Client | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   function reload() {
-    api.get<Client[]>('/clients').then(setClients).catch(() => {});
+    api.get<Client[]>('/clients')
+      .then((data) => { setClients(data); setLoadError(null); })
+      .catch(() => setLoadError('Não foi possível carregar os clientes.'));
   }
   useEffect(reload, []);
 
   function openHistory(client: Client) {
     setSelected(client);
-    api.get<{ history: HistoryItem[] }>(`/clients/${client.id}`).then((d) => setHistory(d.history));
+    api.get<{ history: HistoryItem[] }>(`/clients/${client.id}`)
+      .then((d) => setHistory(d.history))
+      .catch(() => setLoadError('Não foi possível carregar o histórico da cliente.'));
+  }
+
+  function openNew() {
+    setName('');
+    setPhone('');
+    setNotes('');
+    setError(null);
+    setShowNew(true);
+  }
+
+  function openEdit(client: Client) {
+    setName(client.name);
+    setPhone(client.phone);
+    setNotes(client.notes ?? '');
+    setError(null);
+    setEditing(client);
   }
 
   async function handleCreate() {
     setError(null);
     try {
       await api.post('/clients', { name, phone, notes: notes || null });
-      setName('');
-      setPhone('');
-      setNotes('');
       setShowNew(false);
       reload();
     } catch (err) {
@@ -43,27 +62,56 @@ export default function Clientes() {
     }
   }
 
+  async function handleUpdate() {
+    if (!editing) return;
+    setError(null);
+    try {
+      await api.put(`/clients/${editing.id}`, {
+        name,
+        phone,
+        notes: notes.trim() === '' ? null : notes,
+      });
+      setEditing(null);
+      reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar cliente.');
+    }
+  }
+
   return (
     <div>
+      {loadError && (
+        <p className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </p>
+      )}
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display text-3xl text-wine-700">Clientes</h1>
-        <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm hover:bg-wine-700">
+        <button onClick={openNew} className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm hover:bg-wine-700">
           + Nova cliente
         </button>
       </div>
 
       <div className="bg-white border border-wine-100 rounded-xl divide-y divide-wine-50">
         {clients.map((c) => (
-          <button key={c.id} onClick={() => openHistory(c)} className="w-full text-left flex items-center justify-between px-5 py-4 hover:bg-wine-50/50">
-            <div>
+          <div key={c.id} className="flex items-center justify-between px-5 py-4 hover:bg-wine-50/50">
+            <button className="flex-1 text-left" onClick={() => openHistory(c)}>
               <p className="font-medium">{c.name}</p>
               <p className="text-sm text-ink/60">{c.phone}</p>
+            </button>
+            <div className="flex items-center gap-4">
+              <div className="text-right text-sm text-ink/60">
+                <p>{c.totalAtendimentos ?? 0} atendimento(s)</p>
+                {c.ultimoAtendimento && <p>Último: {new Date(c.ultimoAtendimento).toLocaleDateString('pt-BR')}</p>}
+              </div>
+              <button
+                onClick={() => openEdit(c)}
+                className="text-sm px-3 py-1 rounded-md border border-wine-100 text-wine-600 hover:bg-wine-50 whitespace-nowrap"
+              >
+                Editar
+              </button>
             </div>
-            <div className="text-right text-sm text-ink/60">
-              <p>{c.totalAtendimentos ?? 0} atendimento(s)</p>
-              {c.ultimoAtendimento && <p>Último: {new Date(c.ultimoAtendimento).toLocaleDateString('pt-BR')}</p>}
-            </div>
-          </button>
+          </div>
         ))}
         {clients.length === 0 && <p className="p-5 text-ink/60 text-sm">Nenhuma cliente cadastrada ainda.</p>}
       </div>
@@ -114,6 +162,35 @@ export default function Clientes() {
               </button>
               <button onClick={handleCreate} className="px-4 py-2 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700">
                 Cadastrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+            <h3 className="font-display text-xl text-wine-700 mb-4">Editar cliente</h3>
+            <label className="block mb-3">
+              <span className="block text-sm text-ink/70 mb-1">Nome</span>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label className="block mb-3">
+              <span className="block text-sm text-ink/70 mb-1">Telefone</span>
+              <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="55DDDNÚMERO" />
+            </label>
+            <label className="block mb-4">
+              <span className="block text-sm text-ink/70 mb-1">Observações</span>
+              <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </label>
+            {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm rounded-lg border border-wine-100">
+                Cancelar
+              </button>
+              <button onClick={handleUpdate} className="px-4 py-2 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700">
+                Salvar alterações
               </button>
             </div>
           </div>

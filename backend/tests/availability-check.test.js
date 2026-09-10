@@ -67,8 +67,8 @@ async function setupFixtures() {
   // Agendamento já existente em 2026-03-10, 15:00–15:30 (America/Sao_Paulo),
   // usado no teste de conflito de horário.
   await pool.query(
-    `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status)
-     VALUES ($1, $2, $3, '2026-03-10T18:00:00Z', '2026-03-10T18:30:00Z', 'confirmado')`,
+    `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot)
+     VALUES ($1, $2, $3, '2026-03-10T18:00:00Z', '2026-03-10T18:30:00Z', 'confirmado', 3000)`,
     [TEST_PROFESSIONAL_ID, TEST_CLIENT_ID, SERVICE_30MIN_ID]
   );
 

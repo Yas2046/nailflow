@@ -10,7 +10,7 @@ export async function getDashboardSummary(req, res, next) {
     const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
 
     const { rows: todayAppts } = await pool.query(
-      `SELECT a.*, c.name AS client_name, s.name AS service_name, s.price_cents
+      `SELECT a.*, c.name AS client_name, s.name AS service_name
        FROM appointments a
        JOIN clients c ON c.id = a.client_id
        JOIN services s ON s.id = a.service_id
@@ -23,7 +23,7 @@ export async function getDashboardSummary(req, res, next) {
 
     const faturamentoEstimado = todayAppts
       .filter((a) => a.status !== 'nao_compareceu')
-      .reduce((sum, a) => sum + a.price_cents, 0);
+      .reduce((sum, a) => sum + a.price_cents_snapshot, 0);
 
     const { rows: clientCountRows } = await pool.query(
       'SELECT COUNT(*)::int AS total FROM clients WHERE professional_id = $1',

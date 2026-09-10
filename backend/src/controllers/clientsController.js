@@ -73,13 +73,14 @@ export async function createClient(req, res, next) {
 export async function updateClient(req, res, next) {
   try {
     const data = clientSchema.partial().parse(req.body);
+    const notesInBody = 'notes' in req.body;
     const { rows } = await pool.query(
       `UPDATE clients SET
-         name = COALESCE($1, name),
+         name  = COALESCE($1, name),
          phone = COALESCE($2, phone),
-         notes = COALESCE($3, notes)
-       WHERE id = $4 AND professional_id = $5 RETURNING *`,
-      [data.name, data.phone, data.notes, req.params.id, req.professionalId]
+         notes = CASE WHEN $3 THEN $4 ELSE notes END
+       WHERE id = $5 AND professional_id = $6 RETURNING *`,
+      [data.name, data.phone, notesInBody, data.notes ?? null, req.params.id, req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Cliente não encontrada.');
     res.json(rows[0]);
