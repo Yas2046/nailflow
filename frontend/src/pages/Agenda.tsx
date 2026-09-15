@@ -312,8 +312,12 @@ function DayView({
             return (
               <div key={time} className="flex items-center gap-4 px-5 py-2.5 border-l-4 border-ink/20 bg-ink/[0.03]">
                 <span className="text-xs font-medium text-ink/40 tabular-nums w-10">{time}</span>
-                <span className="text-xs text-ink/50">
-                  🔒 Bloqueado{blockedHere.reason ? ` — ${blockedHere.reason}` : ''}
+                <span className="flex items-center gap-1.5 text-xs text-ink/50">
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path strokeLinecap="round" d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  Bloqueado{blockedHere.reason ? ` — ${blockedHere.reason}` : ''}
                 </span>
               </div>
             );
@@ -339,7 +343,7 @@ function DayView({
             return (
               <div
                 key={time}
-                className={`flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] border-l-4 ${accent} ${bg}`}
+                className={`group flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] border-l-4 ${accent} ${bg}`}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <span className="text-xs font-semibold text-ink/50 tabular-nums w-10 shrink-0">{time}</span>
@@ -348,19 +352,21 @@ function DayView({
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-semibold text-ink leading-tight truncate">{apptHere.clientName}</p>
                         {apptHere.recurringGroupId && (
-                          <span className="shrink-0 text-wine-400 text-sm" title="Recorrente">↻</span>
+                          <svg className="shrink-0 w-3.5 h-3.5 text-wine-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-label="Recorrente">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
                         )}
                       </div>
                       <p className="text-xs text-ink/50 truncate">{apptHere.serviceName}</p>
                     </div>
                   ) : (
-                    <span className="text-xs text-ink/30 italic">⤷ continuação</span>
+                    <span className="text-xs text-ink/20 select-none tracking-widest">· · ·</span>
                   )}
                 </div>
                 {isStartSlot && (
                   <button
                     onClick={() => onSlotClick(time, apptHere)}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors"
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors md:opacity-0 md:group-hover:opacity-100 md:transition-opacity"
                   >
                     Editar
                   </button>
@@ -373,10 +379,10 @@ function DayView({
           return (
             <div
               key={time}
-              className="flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] hover:bg-wine-50/50 transition-colors"
+              className="group flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] hover:bg-wine-50/50 transition-colors"
             >
               <span className="text-xs font-medium text-ink/30 tabular-nums w-10 shrink-0">{time}</span>
-              <div className="flex gap-2">
+              <div className="flex gap-2 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity md:duration-150">
                 <button
                   onClick={() => onSlotClick(time, null)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors"

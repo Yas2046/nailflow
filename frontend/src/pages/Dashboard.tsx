@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Appointment, DashboardSummary } from '../types';
 import AppointmentModal from '../components/AppointmentModal';
@@ -33,11 +34,6 @@ function getCurrentMonthLabel() {
 }
 
 const PT_MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-function monthShort(mesStr: string) {
-  const [, m] = mesStr.split('-');
-  return PT_MONTHS[parseInt(m, 10) - 1] ?? mesStr;
-}
 
 /** Garante que todos os 6 meses apareçam, mesmo sem dados */
 function buildSixMonths(raw: Array<{ mes: string; totalCents: number }>) {
@@ -92,14 +88,6 @@ function IconTrend() {
     </svg>
   );
 }
-function IconScissors() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-      <path strokeLinecap="round" d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
-    </svg>
-  );
-}
 function IconSparkle() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -117,6 +105,15 @@ function IconAlert() {
 }
 
 // ─── componentes ─────────────────────────────────────────────────────────────
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <span className="w-0.5 h-5 rounded-full bg-wine-500 shrink-0" aria-hidden="true" />
+      <h2 className="font-display text-xl text-wine-700">{children}</h2>
+    </div>
+  );
+}
 
 const statusConfig: Record<string, { label: string; cls: string }> = {
   pendente:        { label: 'Pendente',       cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
@@ -155,14 +152,42 @@ interface KpiCardProps {
   sub?: React.ReactNode;
   icon: React.ReactNode;
   accent?: string;
+  onClick?: () => void;
 }
-function KpiCard({ label, value, sub, icon, accent = 'bg-wine-50 text-wine-600' }: KpiCardProps) {
+function KpiCard({ label, value, sub, icon, accent = 'bg-wine-50 text-wine-600', onClick }: KpiCardProps) {
+  const base = 'bg-white rounded-xl border border-wine-100 p-5 flex flex-col gap-3 shadow-sm text-left w-full';
+  const interactive = onClick ? 'cursor-pointer hover:shadow-md hover:border-wine-200 transition-shadow transition-colors' : '';
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`${base} ${interactive}`}>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent}`}>{icon}</div>
+        <div>
+          <p className="text-xs text-ink/50 leading-tight mb-1">{label}</p>
+          <p className="font-display text-2xl text-wine-700 leading-none tabular-nums">{value}</p>
+          {sub && <div className="mt-1.5">{sub}</div>}
+        </div>
+      </button>
+    );
+  }
   return (
-    <div className="bg-white rounded-xl border border-wine-100 p-5 flex flex-col gap-3 shadow-sm">
+    <div className={base}>
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent}`}>{icon}</div>
       <div>
         <p className="text-xs text-ink/50 leading-tight mb-1">{label}</p>
-        <p className="font-display text-2xl text-wine-700 leading-none">{value}</p>
+        <p className="font-display text-2xl text-wine-700 leading-none tabular-nums">{value}</p>
+        {sub && <div className="mt-1.5">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function HeroKpiCard({ label, value, sub, icon, accent = 'bg-wine-50 text-wine-600' }: KpiCardProps) {
+  return (
+    <div className="bg-white rounded-xl border border-wine-100 p-5 flex items-center gap-4 shadow-sm">
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${accent}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-xs text-ink/50 leading-tight mb-0.5">{label}</p>
+        <p className="font-display text-3xl text-wine-700 leading-none tabular-nums">{value}</p>
         {sub && <div className="mt-1.5">{sub}</div>}
       </div>
     </div>
@@ -261,6 +286,13 @@ function LoadingSkeleton() {
 
 // ─── página ──────────────────────────────────────────────────────────────────
 
+function monthRange() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+  return { from, to };
+}
+
 function todayRange() {
   const s = new Date();
   s.setHours(0, 0, 0, 0);
@@ -269,11 +301,33 @@ function todayRange() {
   return { from: s.toISOString(), to: e.toISOString() };
 }
 
+type DetailModal = {
+  title: string;
+  status: 'concluido' | 'cancelado';
+  appointments: Appointment[] | null;
+} | null;
+
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
+  const [detailModal, setDetailModal] = useState<DetailModal>(null);
+
+  function openDetail(status: 'concluido' | 'cancelado') {
+    const title = status === 'concluido' ? 'Concluídos' : 'Cancelados';
+    setDetailModal({ title, status, appointments: null });
+    const { from, to } = monthRange();
+    api
+      .get<Appointment[]>(`/appointments?from=${from}&to=${to}`)
+      .then((all) => {
+        setDetailModal((prev) => prev ? { ...prev, appointments: all.filter((a) => a.status === status) } : null);
+      })
+      .catch(() => {
+        setDetailModal((prev) => prev ? { ...prev, appointments: [] } : null);
+      });
+  }
 
   function fetchAll() {
     api.get<DashboardSummary>('/dashboard').then(setData).catch((e) => setError(e.message));
@@ -304,14 +358,14 @@ export default function Dashboard() {
 
         {/* ── cabeçalho ──────────────────────────────────────────────────────── */}
         <div>
-          <h1 className="font-display text-3xl text-wine-700">{getGreeting()} ✨</h1>
+          <h1 className="font-display text-3xl text-wine-700">{getGreeting()}</h1>
           <p className="text-sm text-ink/50 mt-1 capitalize">{getTodayLabel()}</p>
         </div>
 
         {/* ── próximo atendimento ────────────────────────────────────────────── */}
         {data.proximoAtendimento ? (
-          <div className="bg-wine-700 text-cream rounded-xl p-5 flex items-start gap-4 shadow-sm">
-            <div className="w-10 h-10 rounded-lg bg-wine-600 flex items-center justify-center shrink-0">
+          <div className="bg-gradient-to-r from-wine-700 to-wine-600 text-cream rounded-xl p-5 flex items-start gap-4 shadow-sm">
+            <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
               <IconSparkle />
             </div>
             <div>
@@ -331,19 +385,19 @@ export default function Dashboard() {
 
         {/* ── KPIs de hoje ──────────────────────────────────────────────────── */}
         <div>
-          <h2 className="font-display text-xl text-wine-700 mb-3">Hoje</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-            <KpiCard
+          <SectionHeading>Hoje</SectionHeading>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <HeroKpiCard
               label="Agendamentos hoje"
               value={String(data.agendamentosHoje.length)}
               icon={<IconCalendar />}
             />
-            <KpiCard
+            <HeroKpiCard
               label="Horários disponíveis"
               value={String(data.horariosDisponiveisHoje)}
               icon={<IconClock />}
             />
-            <KpiCard
+            <HeroKpiCard
               label="Faturamento estimado hoje"
               value={formatMoney(data.faturamentoEstimadoHojeCents)}
               icon={<IconMoney />}
@@ -354,7 +408,7 @@ export default function Dashboard() {
 
         {/* ── faturamento do mês ────────────────────────────────────────────── */}
         <div>
-          <h2 className="font-display text-xl text-wine-700 mb-3 capitalize">{mesLabel}</h2>
+          <SectionHeading><span className="capitalize">{mesLabel}</span></SectionHeading>
 
           {/* linha 1: financeiro */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -397,23 +451,27 @@ export default function Dashboard() {
           </div>
 
           {/* linha 2: atendimentos + clientes */}
+          <p className="text-xs font-medium text-ink/30 uppercase tracking-wider mb-3">Atendimentos e clientes</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <KpiCard
               label="Concluídos"
               value={String(data.mes.agendamentosConcluidos)}
               icon={<IconCalendar />}
               accent="bg-green-50 text-green-700"
+              onClick={() => openDetail('concluido')}
             />
             <KpiCard
               label="Cancelados"
               value={String(data.mes.agendamentosCancelados)}
               icon={<IconCalendar />}
               accent="bg-rose-50 text-rose-500"
+              onClick={() => openDetail('cancelado')}
             />
             <KpiCard
               label="Total de clientes"
               value={String(data.totalClientes)}
               icon={<IconUsers />}
+              onClick={() => navigate('/clientes')}
             />
             <KpiCard
               label="Novos clientes"
@@ -421,13 +479,14 @@ export default function Dashboard() {
               icon={<IconUsers />}
               accent="bg-blue-50 text-blue-600"
               sub={<span className="text-xs text-ink/40">no mês</span>}
+              onClick={() => navigate('/clientes')}
             />
           </div>
         </div>
 
         {/* ── gráfico 6 meses ───────────────────────────────────────────────── */}
         <div>
-          <h2 className="font-display text-xl text-wine-700 mb-3">Faturamento — últimos 6 meses</h2>
+          <SectionHeading>Faturamento — últimos 6 meses</SectionHeading>
           <div className="bg-white rounded-xl border border-wine-100 p-5 shadow-sm">
             {sixMonths.every((m) => m.totalCents === 0) ? (
               <div className="flex flex-col items-center gap-2 py-8 text-ink/30 text-sm">
@@ -443,19 +502,16 @@ export default function Dashboard() {
         {/* ── top serviços ──────────────────────────────────────────────────── */}
         {data.topServicos.length > 0 && (
           <div>
-            <h2 className="font-display text-xl text-wine-700 mb-3">Serviços mais realizados</h2>
+            <SectionHeading>Serviços mais realizados</SectionHeading>
             <div className="bg-white rounded-xl border border-wine-100 overflow-hidden shadow-sm">
               <ul className="divide-y divide-wine-50">
                 {data.topServicos.map((s, i) => (
                   <li key={s.serviceName} className="flex items-center justify-between px-5 py-4 gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-wine-50 text-wine-600 text-xs font-bold flex items-center justify-center">
                         {i + 1}
                       </span>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <IconScissors />
-                        <p className="font-medium text-ink truncate">{s.serviceName}</p>
-                      </div>
+                      <p className="font-medium text-ink truncate">{s.serviceName}</p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 text-right">
                       <span className="text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 font-semibold whitespace-nowrap">
@@ -474,7 +530,7 @@ export default function Dashboard() {
 
         {/* ── agenda do dia ─────────────────────────────────────────────────── */}
         <div>
-          <h2 className="font-display text-xl text-wine-700 mb-3">Agenda de hoje</h2>
+          <SectionHeading>Agenda de hoje</SectionHeading>
           <div className="bg-white rounded-xl border border-wine-100 overflow-hidden shadow-sm">
             {data.agendamentosHoje.length === 0 ? (
               <div className="p-8 flex flex-col items-center gap-2 text-ink/40">
@@ -521,6 +577,58 @@ export default function Dashboard() {
           onClose={() => setSelectedAppt(null)}
           onSaved={() => { fetchAll(); setSelectedAppt(null); }}
         />
+      )}
+
+      {detailModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setDetailModal(null)}
+        >
+          <div className="absolute inset-0 bg-black/30" />
+          <div
+            className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* cabeçalho */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-wine-100 shrink-0">
+              <div>
+                <h3 className="font-display text-xl text-wine-700">{detailModal.title}</h3>
+                <p className="text-xs text-ink/40 capitalize mt-0.5">{getCurrentMonthLabel()}</p>
+              </div>
+              <button
+                onClick={() => setDetailModal(null)}
+                className="text-ink/40 hover:text-ink/70 transition-colors p-1 rounded-lg hover:bg-wine-50"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* conteúdo */}
+            <div className="overflow-y-auto flex-1">
+              {detailModal.appointments === null ? (
+                <div className="p-10 text-center text-ink/40 text-sm">Carregando…</div>
+              ) : detailModal.appointments.length === 0 ? (
+                <div className="p-10 text-center text-ink/40 text-sm">Nenhum agendamento encontrado.</div>
+              ) : (
+                <ul className="divide-y divide-wine-50">
+                  {detailModal.appointments.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between px-6 py-3.5 gap-4">
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink truncate">{a.clientName}</p>
+                        <p className="text-xs text-ink/50 truncate">
+                          {a.serviceName} · {formatTime(a.startsAt)}
+                        </p>
+                      </div>
+                      <StatusBadge status={a.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

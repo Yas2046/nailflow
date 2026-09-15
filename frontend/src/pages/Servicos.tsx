@@ -105,8 +105,11 @@ function ServiceCard({ service, onClick }: { service: Service; onClick: () => vo
         <span className="text-xs px-3 py-1.5 rounded-full bg-wine-50 text-wine-700 font-semibold">
           {formatMoney(service.priceCents)}
         </span>
-        <span className="text-xs px-3 py-1.5 rounded-full bg-ink/5 text-ink/60 font-medium">
-          ⏱ {formatDuration(service.durationMinutes)}
+        <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-ink/5 text-ink/60 font-medium">
+          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7v5l3 3" />
+          </svg>
+          {formatDuration(service.durationMinutes)}
         </span>
       </div>
     </button>
