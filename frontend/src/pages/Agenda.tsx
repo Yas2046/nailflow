@@ -23,31 +23,35 @@ function addDays(d: Date, n: number) {
   r.setDate(r.getDate() + n);
   return r;
 }
-function addMonths(d: Date, n: number) {
-  const r = new Date(d);
-  r.setDate(1); // normaliza para evitar overflow em meses curtos (ex: jan 31 → fev)
-  r.setMonth(r.getMonth() + n);
-  return r;
-}
 function toMinutes(t: string) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 function minutesToLabel(min: number) {
-  const h = Math.floor(min / 60)
-    .toString()
-    .padStart(2, '0');
-  const m = (min % 60).toString().padStart(2, '0');
-  return `${h}:${m}`;
+  return `${Math.floor(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}`;
+}
+function isToday(d: Date) {
+  return startOfDay(d).getTime() === startOfDay(new Date()).getTime();
 }
 
-const statusColors: Record<string, string> = {
-  disponivel: 'bg-sage-500/10 border-sage-500/40 text-sage-500',
-  agendado: 'bg-wine-500/10 border-wine-500/40 text-wine-600',
-  bloqueado: 'bg-ink/10 border-ink/30 text-ink/70',
-  pendente: 'bg-gold-500/10 border-gold-500/50 text-gold-500',
-  concluido: 'bg-sage-500/20 border-sage-500/50 text-sage-500',
-};
+// ─── ícones ──────────────────────────────────────────────────────────────────
+
+function IconChevronLeft() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+}
+function IconChevronRight() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+// ─── página principal ─────────────────────────────────────────────────────────
 
 export default function Agenda() {
   const [view, setView] = useState<ViewMode>('dia');
@@ -61,12 +65,9 @@ export default function Agenda() {
     | { type: 'block'; time: string }
     | null
   >(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<WeeklyAvailabilityDay[]>('/availability')
-      .then((data) => { setWeeklyAvailability(data); setLoadError(null); })
-      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
+    api.get<WeeklyAvailabilityDay[]>('/availability').then(setWeeklyAvailability).catch(() => {});
   }, []);
 
   const rangeStart = useMemo(() => {
@@ -86,14 +87,11 @@ export default function Agenda() {
   }, [view, currentDate, rangeStart]);
 
   function reload() {
-    setLoadError(null);
     api
       .get<Appointment[]>(`/appointments?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`)
       .then(setAppointments)
-      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
-    api.get<BlockedTime[]>('/availability/blocked')
-      .then(setBlocked)
-      .catch(() => setLoadError('Não foi possível carregar a agenda.'));
+      .catch(() => {});
+    api.get<BlockedTime[]>('/availability/blocked').then(setBlocked).catch(() => {});
     setModalState(null);
   }
 
@@ -101,22 +99,32 @@ export default function Agenda() {
 
   const dayAvailability = weeklyAvailability.find((d) => d.weekday === currentDate.getDay());
 
+  function navigate(dir: -1 | 1) {
+    setCurrentDate((d) => addDays(d, dir * (view === 'mes' ? 30 : view === 'semana' ? 7 : 1)));
+  }
+
+  const dateLabel = (() => {
+    if (view === 'dia')
+      return currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    if (view === 'semana')
+      return `${rangeStart.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} — ${addDays(rangeStart, 6).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    return currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  })();
+
   return (
-    <div>
-      {loadError && (
-        <p className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
-          {loadError}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+    <div className="space-y-6">
+      {/* cabeçalho */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-display text-3xl text-wine-700">Agenda</h1>
-        <div className="flex gap-1 bg-white border border-wine-100 rounded-lg p-1">
+
+        {/* toggle de view */}
+        <div className="flex gap-1 bg-white border border-wine-100 rounded-lg p-1 shadow-sm">
           {(['dia', 'semana', 'mes'] as ViewMode[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-3 py-1.5 text-sm rounded-md capitalize ${
-                view === v ? 'bg-wine-600 text-white' : 'text-ink/70 hover:bg-wine-50'
+              className={`px-3 py-1.5 text-sm rounded-md capitalize transition-colors ${
+                view === v ? 'bg-wine-600 text-white shadow-sm' : 'text-ink/60 hover:bg-wine-50'
               }`}
             >
               {v}
@@ -125,26 +133,37 @@ export default function Agenda() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-6">
+      {/* barra de navegação de data */}
+      <div className="flex items-center gap-2 bg-white border border-wine-100 rounded-xl px-3 py-2 shadow-sm">
         <button
-          onClick={() => setCurrentDate((d) => view === 'mes' ? addMonths(d, -1) : addDays(d, view === 'semana' ? -7 : -1))}
-          className="px-3 py-1.5 rounded-lg border border-wine-100 text-sm hover:bg-white"
+          onClick={() => navigate(-1)}
+          className="shrink-0 p-1.5 rounded-md hover:bg-wine-50 text-ink/60 transition-colors"
+          aria-label="Anterior"
         >
-          ← Anterior
+          <IconChevronLeft />
         </button>
-        <span className="font-medium text-ink/80">
-          {view === 'dia' && currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-          {view === 'semana' && `Semana de ${rangeStart.toLocaleDateString('pt-BR')}`}
-          {view === 'mes' && currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-        </span>
+
         <button
-          onClick={() => setCurrentDate((d) => view === 'mes' ? addMonths(d, 1) : addDays(d, view === 'semana' ? 7 : 1))}
-          className="px-3 py-1.5 rounded-lg border border-wine-100 text-sm hover:bg-white"
+          onClick={() => setCurrentDate(startOfDay(new Date()))}
+          className="shrink-0 px-2.5 py-1 text-xs rounded-md bg-wine-50 text-wine-600 hover:bg-wine-100 transition-colors font-medium"
         >
-          Próximo →
+          Hoje
+        </button>
+
+        <span className="flex-1 min-w-0 font-medium text-ink/80 text-sm px-1 capitalize text-center truncate">
+          {dateLabel}
+        </span>
+
+        <button
+          onClick={() => navigate(1)}
+          className="shrink-0 p-1.5 rounded-md hover:bg-wine-50 text-ink/60 transition-colors"
+          aria-label="Próximo"
+        >
+          <IconChevronRight />
         </button>
       </div>
 
+      {/* views */}
       {view === 'dia' && (
         <DayView
           date={currentDate}
@@ -152,7 +171,9 @@ export default function Agenda() {
           appointments={appointments}
           blocked={blocked}
           onSlotClick={(time, existing) =>
-            existing ? setModalState({ type: 'edit', appointment: existing }) : setModalState({ type: 'create', time })
+            existing
+              ? setModalState({ type: 'edit', appointment: existing })
+              : setModalState({ type: 'create', time })
           }
           onBlockClick={(time) => setModalState({ type: 'block', time })}
         />
@@ -162,10 +183,8 @@ export default function Agenda() {
         <WeekView
           rangeStart={rangeStart}
           appointments={appointments}
-          onDayClick={(d) => {
-            setCurrentDate(d);
-            setView('dia');
-          }}
+          weeklyAvailability={weeklyAvailability}
+          onDayClick={(d) => { setCurrentDate(d); setView('dia'); }}
         />
       )}
 
@@ -173,15 +192,19 @@ export default function Agenda() {
         <MonthView
           rangeStart={rangeStart}
           appointments={appointments}
-          onDayClick={(d) => {
-            setCurrentDate(d);
-            setView('dia');
-          }}
+          onDayClick={(d) => { setCurrentDate(d); setView('dia'); }}
         />
       )}
 
+      {/* modais */}
       {modalState?.type === 'create' && (
-        <AppointmentModal date={currentDate} time={modalState.time} appointment={null} onClose={() => setModalState(null)} onSaved={reload} />
+        <AppointmentModal
+          date={currentDate}
+          time={modalState.time}
+          appointment={null}
+          onClose={() => setModalState(null)}
+          onSaved={reload}
+        />
       )}
       {modalState?.type === 'edit' && (
         <AppointmentModal
@@ -193,11 +216,18 @@ export default function Agenda() {
         />
       )}
       {modalState?.type === 'block' && (
-        <BlockTimeModal date={currentDate} time={modalState.time} onClose={() => setModalState(null)} onSaved={reload} />
+        <BlockTimeModal
+          date={currentDate}
+          time={modalState.time}
+          onClose={() => setModalState(null)}
+          onSaved={reload}
+        />
       )}
     </div>
   );
 }
+
+// ─── DayView ──────────────────────────────────────────────────────────────────
 
 function DayView({
   date,
@@ -215,7 +245,14 @@ function DayView({
   onBlockClick: (time: string) => void;
 }) {
   if (!availability || !availability.is_working) {
-    return <p className="text-ink/60 bg-white border border-wine-100 rounded-xl p-6">Dia de folga.</p>;
+    return (
+      <div className="bg-white border border-wine-100 rounded-xl p-10 flex flex-col items-center gap-2 text-ink/40">
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        <p className="text-sm">Dia de folga</p>
+      </div>
+    );
   }
 
   const dayStart = toMinutes(availability.start_time!);
@@ -229,114 +266,229 @@ function DayView({
   const dayStartDate = startOfDay(date);
 
   return (
-    <div className="bg-white border border-wine-100 rounded-xl divide-y divide-wine-50">
-      {slots.map((min) => {
-        const time = minutesToLabel(min);
-        const slotDate = new Date(dayStartDate.getTime() + min * 60000);
+    <div className="bg-white border border-wine-100 rounded-xl overflow-hidden shadow-sm">
+      {/* cabeçalho do dia */}
+      <div className="px-5 py-3 border-b border-wine-50 bg-wine-50/40 flex items-center justify-between">
+        <span className="text-sm font-medium text-ink/70 capitalize">
+          {date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+        </span>
+        {isToday(date) && (
+          <span className="text-xs px-2.5 py-1 rounded-full bg-wine-600 text-white font-medium">Hoje</span>
+        )}
+      </div>
 
-        const isBreak = breakStart !== null && breakEnd !== null && min >= breakStart && min < breakEnd;
+      <div className="divide-y divide-wine-50/60">
+        {slots.map((min) => {
+          const time = minutesToLabel(min);
+          const slotDate = new Date(dayStartDate.getTime() + min * 60000);
 
-        const blockedHere = blocked.find((b) => {
-          const s = new Date(b.starts_at).getTime();
-          const e = new Date(b.ends_at).getTime();
-          return slotDate.getTime() >= s && slotDate.getTime() < e;
-        });
+          const isBreak =
+            breakStart !== null && breakEnd !== null && min >= breakStart && min < breakEnd;
 
-        const apptHere = appointments.find((a) => {
-          const s = new Date(a.startsAt).getTime();
-          const e = new Date(a.endsAt).getTime();
-          return slotDate.getTime() >= s && slotDate.getTime() < e && a.status !== 'cancelado';
-        });
+          const blockedHere = blocked.find((b) => {
+            const s = new Date(b.starts_at).getTime();
+            const e = new Date(b.ends_at).getTime();
+            return slotDate.getTime() >= s && slotDate.getTime() < e;
+          });
 
-        let content;
-        let colorClass = statusColors.disponivel;
-        let clickable = true;
+          const apptHere = appointments.find((a) => {
+            const s = new Date(a.startsAt).getTime();
+            const e = new Date(a.endsAt).getTime();
+            return slotDate.getTime() >= s && slotDate.getTime() < e && a.status !== 'cancelado';
+          });
 
-        if (isBreak) {
-          content = <span className="text-ink/50">Intervalo</span>;
-          colorClass = 'bg-ink/5 border-ink/10 text-ink/40';
-          clickable = false;
-        } else if (apptHere) {
-          content = (
-            <span>
-              <strong>{apptHere.clientName}</strong> — {apptHere.serviceName}
-            </span>
-          );
-          colorClass = apptHere.status === 'concluido' ? statusColors.concluido : apptHere.status === 'pendente' ? statusColors.pendente : statusColors.agendado;
-        } else if (blockedHere) {
-          // Horário bloqueado nunca deve poder ser agendado — sem botão de
-          // ação aqui, igual ao intervalo de almoço.
-          content = <span>Bloqueado{blockedHere.reason ? ` — ${blockedHere.reason}` : ''}</span>;
-          colorClass = statusColors.bloqueado;
-          clickable = false;
-        } else {
-          content = <span>Disponível</span>;
-        }
+          // ── slot de intervalo ──
+          if (isBreak) {
+            return (
+              <div key={time} className="flex items-center gap-4 px-5 py-2 bg-ink/[0.03]">
+                <span className="text-xs font-medium text-ink/30 tabular-nums w-10">{time}</span>
+                <span className="text-xs text-ink/30 italic">Intervalo</span>
+              </div>
+            );
+          }
 
-        return (
-          <div key={time} className={`flex items-center justify-between px-4 py-3 ${colorClass} border-l-4`}>
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-medium w-14">{time}</span>
-              {content}
-            </div>
-            {clickable && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onSlotClick(time, apptHere || null)}
-                  className="text-xs px-3 py-1 rounded-md border border-current hover:bg-white"
-                >
-                  {apptHere ? 'Editar' : 'Agendar'}
-                </button>
-                {!apptHere && !blockedHere && (
+          // ── slot bloqueado ──
+          if (blockedHere) {
+            return (
+              <div key={time} className="flex items-center gap-4 px-5 py-2.5 border-l-4 border-ink/20 bg-ink/[0.03]">
+                <span className="text-xs font-medium text-ink/40 tabular-nums w-10">{time}</span>
+                <span className="text-xs text-ink/50">
+                  🔒 Bloqueado{blockedHere.reason ? ` — ${blockedHere.reason}` : ''}
+                </span>
+              </div>
+            );
+          }
+
+          // ── slot com agendamento ──
+          if (apptHere) {
+            const isStartSlot = new Date(apptHere.startsAt).getTime() === slotDate.getTime();
+
+            const accentMap: Record<string, string> = {
+              confirmado: 'border-wine-500',
+              pendente:   'border-gold-500',
+              concluido:  'border-sage-500',
+            };
+            const bgMap: Record<string, string> = {
+              confirmado: 'bg-wine-500/5',
+              pendente:   'bg-gold-500/5',
+              concluido:  'bg-sage-500/5',
+            };
+            const accent = accentMap[apptHere.status] ?? 'border-wine-500';
+            const bg = bgMap[apptHere.status] ?? 'bg-wine-500/5';
+
+            return (
+              <div
+                key={time}
+                className={`flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] border-l-4 ${accent} ${bg}`}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="text-xs font-semibold text-ink/50 tabular-nums w-10 shrink-0">{time}</span>
+                  {isStartSlot ? (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-ink leading-tight truncate">{apptHere.clientName}</p>
+                        {apptHere.recurringGroupId && (
+                          <span className="shrink-0 text-wine-400 text-sm" title="Recorrente">↻</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-ink/50 truncate">{apptHere.serviceName}</p>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-ink/30 italic">⤷ continuação</span>
+                  )}
+                </div>
+                {isStartSlot && (
                   <button
-                    onClick={() => onBlockClick(time)}
-                    className="text-xs px-3 py-1 rounded-md border border-current hover:bg-white"
+                    onClick={() => onSlotClick(time, apptHere)}
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors"
                   >
-                    Bloquear
+                    Editar
                   </button>
                 )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          }
+
+          // ── slot disponível ──
+          return (
+            <div
+              key={time}
+              className="flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] hover:bg-wine-50/50 transition-colors"
+            >
+              <span className="text-xs font-medium text-ink/30 tabular-nums w-10 shrink-0">{time}</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onSlotClick(time, null)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors"
+                >
+                  + Agendar
+                </button>
+                <button
+                  onClick={() => onBlockClick(time)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-wine-100 text-ink/60 hover:bg-white transition-colors"
+                >
+                  Bloquear
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
+// ─── WeekView ─────────────────────────────────────────────────────────────────
+
+const WEEKDAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
 function WeekView({
   rangeStart,
   appointments,
+  weeklyAvailability,
   onDayClick,
 }: {
   rangeStart: Date;
   appointments: Appointment[];
+  weeklyAvailability: WeeklyAvailabilityDay[];
   onDayClick: (d: Date) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(rangeStart, i));
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
       {days.map((day) => {
-        const dayAppts = appointments.filter(
-          (a) => startOfDay(new Date(a.startsAt)).getTime() === day.getTime() && a.status !== 'cancelado'
-        );
+        const today = isToday(day);
+        const avail = weeklyAvailability.find((a) => a.weekday === day.getDay());
+        const isWorking = avail?.is_working ?? true;
+
+        const dayAppts = appointments
+          .filter(
+            (a) =>
+              startOfDay(new Date(a.startsAt)).getTime() === day.getTime() &&
+              a.status !== 'cancelado'
+          )
+          .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+
         return (
           <button
             key={day.toISOString()}
             onClick={() => onDayClick(day)}
-            className="text-left bg-white border border-wine-100 rounded-xl p-4 hover:shadow-md transition-shadow"
+            className={`text-left rounded-xl border p-4 transition-all hover:shadow-md ${
+              today
+                ? 'border-wine-500 bg-wine-50 shadow-sm'
+                : 'border-wine-100 bg-white hover:border-wine-200'
+            } ${!isWorking ? 'opacity-50' : ''}`}
           >
-            <p className="text-sm text-ink/60 mb-2 capitalize">
-              {day.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
-            </p>
-            <p className="font-display text-2xl text-wine-700 mb-1">{dayAppts.length}</p>
-            <p className="text-xs text-ink/50">agendamento(s)</p>
+            {/* cabeçalho do card */}
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-xs text-ink/50 font-medium">{WEEKDAY_NAMES[day.getDay()]}</p>
+                <p
+                  className={`font-display text-2xl leading-none mt-0.5 ${
+                    today ? 'text-wine-700' : 'text-ink/70'
+                  }`}
+                >
+                  {day.getDate()}
+                </p>
+              </div>
+              {today && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-wine-600 text-white font-medium">
+                  Hoje
+                </span>
+              )}
+            </div>
+
+            {/* lista de agendamentos */}
+            {dayAppts.length === 0 ? (
+              <p className="text-xs text-ink/30 italic">
+                {isWorking ? 'Sem agendamentos' : 'Folga'}
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {dayAppts.slice(0, 3).map((a) => (
+                  <li key={a.id} className="text-xs text-ink/70 truncate leading-tight">
+                    <span className="font-semibold text-wine-700">
+                      {new Date(a.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>{' '}
+                    {a.clientName}
+                  </li>
+                ))}
+                {dayAppts.length > 3 && (
+                  <li className="text-xs text-ink/40">+{dayAppts.length - 3} mais</li>
+                )}
+              </ul>
+            )}
           </button>
         );
       })}
     </div>
   );
 }
+
+// ─── MonthView ────────────────────────────────────────────────────────────────
+
+const MONTH_HEADERS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 function MonthView({
   rangeStart,
@@ -349,31 +501,61 @@ function MonthView({
 }) {
   const firstWeekday = rangeStart.getDay();
   const daysInMonth = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + 1, 0).getDate();
-  const cells: (Date | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => new Date(rangeStart.getFullYear(), rangeStart.getMonth(), i + 1))];
+  const cells: (Date | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from(
+      { length: daysInMonth },
+      (_, i) => new Date(rangeStart.getFullYear(), rangeStart.getMonth(), i + 1)
+    ),
+  ];
 
   return (
-    <div className="grid grid-cols-7 gap-2">
-      {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
-        <div key={i} className="text-center text-xs text-ink/50 font-medium py-1">
-          {d}
-        </div>
-      ))}
-      {cells.map((day, i) => {
-        if (!day) return <div key={i} />;
-        const count = appointments.filter(
-          (a) => startOfDay(new Date(a.startsAt)).getTime() === day.getTime() && a.status !== 'cancelado'
-        ).length;
-        return (
-          <button
-            key={i}
-            onClick={() => onDayClick(day)}
-            className="aspect-square bg-white border border-wine-100 rounded-lg flex flex-col items-center justify-center hover:shadow-md"
-          >
-            <span className="text-sm">{day.getDate()}</span>
-            {count > 0 && <span className="text-[10px] mt-1 px-1.5 rounded-full bg-wine-500/10 text-wine-600">{count}</span>}
-          </button>
-        );
-      })}
+    <div className="bg-white border border-wine-100 rounded-xl overflow-hidden shadow-sm">
+      {/* cabeçalho dos dias da semana */}
+      <div className="grid grid-cols-7 border-b border-wine-50">
+        {MONTH_HEADERS.map((d) => (
+          <div key={d} className="text-center text-xs font-medium text-ink/40 py-2.5">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* células do mês */}
+      <div className="grid grid-cols-7 divide-x divide-y divide-wine-50/60">
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} className="aspect-square" />;
+
+          const today = isToday(day);
+          const count = appointments.filter(
+            (a) =>
+              startOfDay(new Date(a.startsAt)).getTime() === day.getTime() &&
+              a.status !== 'cancelado'
+          ).length;
+
+          return (
+            <button
+              key={i}
+              onClick={() => onDayClick(day)}
+              className={`aspect-square flex flex-col items-center justify-center gap-1 transition-colors hover:bg-wine-50 ${
+                today ? 'bg-wine-50' : ''
+              }`}
+            >
+              <span
+                className={`text-sm w-7 h-7 flex items-center justify-center rounded-full font-medium leading-none ${
+                  today ? 'bg-wine-600 text-white' : 'text-ink/70'
+                }`}
+              >
+                {day.getDate()}
+              </span>
+              {count > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-wine-500/10 text-wine-600 font-medium leading-none">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

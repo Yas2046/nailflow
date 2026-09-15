@@ -1,0 +1,161 @@
+{
+  "name": "WhatsApp NailFlow — Definitivo",
+  "nodes": [
+    {
+      "id": "wh1",
+      "name": "Receber Mensagem",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-nailflow",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse1",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\n\n// Ignorar eventos que não são mensagens\nif (body.event !== 'messages.upsert') return [];\n\nconst data = body.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\nconst remoteJid = key.remoteJid || '';\n\n// Ignorar grupos\nif (remoteJid.endsWith('@g.us')) return [];\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\\D/g, '');\nconst fromMe = key.fromMe === true;\nconst waMessageId = key.id || '';\nconst text = (\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  ''\n);\n\n// Ignorar mensagens sem texto (audio, sticker, etc.) quando enviadas pelo bot/professional\n// Mas para clientes, ainda podemos querer registrar outros tipos\nconst messageType = data.messageType || 'conversation';\n\n// Ignorar tipos técnicos sem conteúdo real\nconst ignoredTypes = ['protocolMessage','reactionMessage','senderKeyDistributionMessage'];\nif (ignoredTypes.includes(messageType)) return [];\n\n// Se não tem texto e não é fromMe, ignorar (não conseguimos processar áudios, imagens sem legenda)\nif (!text && !fromMe) return [];\n\nconst pushName = data.pushName || '';\nconst instance = body.instance || '';\n\nreturn [{ json: { phone, text, waMessageId, fromMe, pushName, instance, messageType } }];"
+      }
+    },
+    {
+      "id": "proc1",
+      "name": "Processar no NailFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [720, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/bot/process",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.BOT_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "phone", "value": "={{ $json.phone }}" },
+            { "name": "text", "value": "={{ $json.text }}" },
+            { "name": "waMessageId", "value": "={{ $json.waMessageId }}" },
+            { "name": "fromMe", "value": "={{ $json.fromMe }}" },
+            { "name": "pushName", "value": "={{ $json.pushName }}" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "if1",
+      "name": "Tem Resposta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [960, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.reply }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "send1",
+      "name": "Enviar via Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://nailflow-evolution.duckdns.org/message/sendText/chip2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $('Extrair Dados').item.json.phone }}" },
+            { "name": "text", "value": "={{ $('Processar no NailFlow').item.json.reply }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "rec1",
+      "name": "Registrar Mensagem Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/bot/record-sent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.BOT_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "phone", "value": "={{ $('Extrair Dados').item.json.phone }}" },
+            { "name": "waMessageId", "value": "={{ $json.key?.id || '' }}" },
+            { "name": "content", "value": "={{ $('Processar no NailFlow').item.json.reply }}" }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Receber Mensagem": {
+      "main": [[{ "node": "Extrair Dados", "type": "main", "index": 0 }]]
+    },
+    "Extrair Dados": {
+      "main": [[{ "node": "Processar no NailFlow", "type": "main", "index": 0 }]]
+    },
+    "Processar no NailFlow": {
+      "main": [[{ "node": "Tem Resposta?", "type": "main", "index": 0 }]]
+    },
+    "Tem Resposta?": {
+      "main": [
+        [{ "node": "Enviar via Evolution", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Enviar via Evolution": {
+      "main": [[{ "node": "Registrar Mensagem Bot", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

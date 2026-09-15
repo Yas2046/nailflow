@@ -10,6 +10,7 @@ import clientsRoutes from './routes/clients.routes.js';
 import servicesRoutes from './routes/services.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
+import botRoutes from './routes/bot.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/clients', clientsRoutes);
 app.use('/services', servicesRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
+app.use('/bot', cors({ origin: '*' }), botRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });

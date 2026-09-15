@@ -66,3 +66,37 @@ export async function me(req, res, next) {
     next(err);
   }
 }
+
+const updateMeSchema = z.object({
+  name:            z.string().min(1, 'Nome obrigatório').max(100),
+  business_name:   z.string().min(1, 'Nome do negócio obrigatório').max(100),
+  phone_whatsapp:  z.string().min(10, 'WhatsApp inválido (mínimo 10 dígitos)').max(20),
+  email:           z.string().email('E-mail inválido').max(200),
+});
+
+export async function updateMe(req, res, next) {
+  try {
+    const { name, business_name, phone_whatsapp, email } = updateMeSchema.parse(req.body);
+
+    // verifica conflito de e-mail com outra conta
+    const { rows: conflict } = await pool.query(
+      'SELECT id FROM professionals WHERE email = $1 AND id != $2',
+      [email, req.professionalId]
+    );
+    if (conflict.length > 0) throw new HttpError(409, 'Este e-mail já está em uso por outra conta.');
+
+    const { rows } = await pool.query(
+      `UPDATE professionals
+         SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4
+       WHERE id = $5
+       RETURNING id, name, email, business_name, phone_whatsapp`,
+      [name, business_name, phone_whatsapp, email, req.professionalId]
+    );
+    if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    res.json(rows[0]);
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return next(new HttpError(400, err.errors[0]?.message ?? 'Dados inválidos.'));
+    next(err);
+  }
+}

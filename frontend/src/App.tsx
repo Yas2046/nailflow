@@ -7,6 +7,7 @@ import Agenda from './pages/Agenda';
 import Clientes from './pages/Clientes';
 import Servicos from './pages/Servicos';
 import Disponibilidade from './pages/Disponibilidade';
+import Perfil from './pages/Perfil';
 import PaginaPublica from './pages/PaginaPublica';
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/servicos" element={<Servicos />} />
             <Route path="/disponibilidade" element={<Disponibilidade />} />
+            <Route path="/perfil" element={<Perfil />} />
           </Route>
         </Routes>
       </AuthProvider>

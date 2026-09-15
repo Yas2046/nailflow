@@ -1,5 +1,7 @@
 export type AppointmentStatus = 'pendente' | 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
 
+export type RecurringFrequency = 'weekly' | 'biweekly';
+
 export interface Appointment {
   id: string;
   clientId: string;
@@ -11,6 +13,13 @@ export interface Appointment {
   endsAt: string;
   status: AppointmentStatus;
   notes: string | null;
+  recurringGroupId: string | null;
+}
+
+export interface RecurringResult {
+  groupId: string | null;
+  created: Array<{ startsAt: string }>;
+  skipped: Array<{ startsAt: string; reason: string }>;
 }
 
 export interface Client {
@@ -60,4 +69,26 @@ export interface DashboardSummary {
   horariosDisponiveisHoje: number;
   totalClientes: number;
   faturamentoEstimadoHojeCents: number;
+
+  mes: {
+    faturamentoRealizadoCents: number;
+    faturamentoPrevistoCents: number;
+    faturamentoPerdidoCents: number;
+    agendamentosTotal: number;
+    agendamentosConcluidos: number;
+    agendamentosNaoCompareceu: number;
+    agendamentosCancelados: number;
+    novosClientes: number;
+  };
+  mesAnterior: { faturamentoRealizadoCents: number } | null;
+  variacao: number | null;
+  topServicos: Array<{
+    serviceName: string;
+    count: number;
+    totalCents: number;
+  }>;
+  faturamento6Meses: Array<{
+    mes: string;
+    totalCents: number;
+  }>;
 }
