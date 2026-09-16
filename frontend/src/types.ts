@@ -92,3 +92,10 @@ export interface DashboardSummary {
     totalCents: number;
   }>;
 }
+
+export interface WhatsAppStatus {
+  connected: boolean;
+  phone: string | null;
+  profileName: string | null;
+  instanceName: string;
+}

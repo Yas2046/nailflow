@@ -98,15 +98,16 @@ export default function PaginaPublica() {
       <div className="w-full max-w-lg">
 
         {/* ── cabeçalho ──────────────────────────────────────────────────── */}
-        <div className="text-center mb-10">
-          <div className="flex items-center justify-center gap-2 text-wine-700 mb-5">
-            <LogoMark className="w-5 h-5" />
-            <span className="font-display text-xl tracking-tight">NailFlow</span>
+        <div className="text-center mb-12">
+          {/* medallion */}
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-3 shadow-sm">
+            <LogoMark className="w-7 h-7" />
           </div>
-          <p className="font-display text-3xl text-wine-700 mb-1 leading-tight">
+          <p className="text-[11px] font-semibold text-ink/30 uppercase tracking-[0.25em] mb-5">NailFlow</p>
+          <h1 className="font-display text-4xl text-wine-700 leading-tight mb-2">
             {data?.businessName || 'Carregando…'}
-          </p>
-          <p className="text-ink/50 text-sm mt-1">Horários disponíveis para agendamento</p>
+          </h1>
+          <p className="text-ink/50 text-sm">Horários disponíveis para agendamento</p>
         </div>
 
         {/* ── erro ───────────────────────────────────────────────────────── */}
@@ -140,7 +141,7 @@ export default function PaginaPublica() {
                   >
                     {/* cabeçalho do dia */}
                     <div className="flex items-center justify-between gap-3 mb-4">
-                      <p className="font-medium text-wine-700 capitalize text-sm leading-tight">
+                      <p className="font-medium text-wine-700 capitalize text-sm leading-tight min-w-0 flex-1 pr-2">
                         {formatDayLabel(day.date)}
                       </p>
                       {isToday && (

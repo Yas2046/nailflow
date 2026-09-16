@@ -11,6 +11,7 @@ import servicesRoutes from './routes/services.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import botRoutes from './routes/bot.routes.js';
+import whatsappRoutes from './routes/whatsapp.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -25,7 +26,6 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 
-// Healthcheck simples — útil para checar se a API subiu e o banco está acessível.
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'nailflow-backend' });
 });
@@ -38,18 +38,16 @@ app.use('/services', servicesRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
 app.use('/bot', cors({ origin: '*' }), botRoutes);
+app.use('/whatsapp', whatsappRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });
 });
 
-// Middleware de erro sempre por último.
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3333;
 
-// Evita subir o servidor durante os testes (que importam este arquivo
-// indiretamente); os testes de API sobem sua própria instância.
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`NailFlow API rodando em http://localhost:${PORT}`);

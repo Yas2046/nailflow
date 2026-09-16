@@ -9,6 +9,7 @@ import Servicos from './pages/Servicos';
 import Disponibilidade from './pages/Disponibilidade';
 import Perfil from './pages/Perfil';
 import PaginaPublica from './pages/PaginaPublica';
+import Configuracoes from './pages/Configuracoes';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/servicos" element={<Servicos />} />
             <Route path="/disponibilidade" element={<Disponibilidade />} />
             <Route path="/perfil" element={<Perfil />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
         </Routes>
       </AuthProvider>

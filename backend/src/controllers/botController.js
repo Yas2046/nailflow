@@ -119,12 +119,30 @@ async function findMessageBySender(professionalId, waMessageId) {
   return rows[0] ?? null;
 }
 
+function normalizeBrPhone(phone) {
+  const digits = String(phone).replace(/\D/g, '');
+  // BR mobile: 55 + DDD(2) + 9 + 8 digits = 13 digits; normalize to 12 by removing the 9
+  if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') {
+    return digits.slice(0, 4) + digits.slice(5);
+  }
+  return digits;
+}
+
 async function findClientByPhone(professionalId, phone) {
+  const normalized = normalizeBrPhone(phone);
   const { rows } = await pool.query(
     `SELECT * FROM clients
      WHERE professional_id = $1
-       AND regexp_replace(phone, '\\D', '', 'g') = $2 LIMIT 1`,
-    [professionalId, phone]
+       AND (
+         regexp_replace(phone, '\\D', '', 'g') = $2
+         OR (
+           length(regexp_replace(phone, '\\D', '', 'g')) = 13
+           AND left(regexp_replace(phone, '\\D', '', 'g'), 4) || right(regexp_replace(phone, '\\D', '', 'g'), 8) = $2
+         )
+       )
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [professionalId, normalized]
   );
   return rows[0] ?? null;
 }
@@ -132,11 +150,12 @@ async function findClientByPhone(professionalId, phone) {
 async function findOrCreateClient(professionalId, phone, name) {
   const existing = await findClientByPhone(professionalId, phone);
   if (existing) return existing;
+  const normalized = normalizeBrPhone(phone);
   const { rows } = await pool.query(
     `INSERT INTO clients (professional_id, name, phone) VALUES ($1,$2,$3)
      ON CONFLICT (professional_id, phone) DO UPDATE SET name = EXCLUDED.name
      RETURNING *`,
-    [professionalId, name || 'Cliente WhatsApp', phone]
+    [professionalId, name || 'Cliente WhatsApp', normalized]
   );
   return rows[0];
 }
@@ -253,7 +272,8 @@ Como posso ajudar?
 
 1️⃣ Agendar outro horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
           'MENU',
           {}
         );
@@ -286,7 +306,8 @@ Como posso ajudar?
 
 1️⃣ Agendar horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
         'MENU',
         {}
       );
@@ -300,7 +321,8 @@ Como posso ajudar?
 
 1️⃣ Agendar horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
       'MENU',
       {}
     );
@@ -360,13 +382,24 @@ Como posso ajudar?
       );
     }
 
-    // saudação no meio de uma conversa
+    // saudação no meio de uma conversa: re-executa INICIO para personalizar
     if (/^(oi|ola|bom dia|boa tarde|boa noite|hello|hi)/.test(text)) {
-      return reply(
-        `Olá! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
-        'MENU',
-        {}
-      );
+      await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
+      conv.bot_state = 'INICIO';
+      conv.context = {};
+      return runStateMachine(conv, rawText, phone, professionalId, pushName);
+    }
+
+    // falar com a profissional (opção 4 do menu)
+    if (/^4$/.test(text)) {
+      await updateConversation(professionalId, phone, { mode: 'ATENDIMENTO_HUMANO' });
+      return `Ok, entendi! 😊
+
+Para falar com a profissional, é só aguardar um pouquinho. Ela pode estar atendendo outra cliente no momento, então talvez demore um pouco para responder.
+
+Mas se for para agendar ou cancelar seu horário, eu consigo te ajudar por aqui mesmo. 💅
+
+Quando quiser continuar pelo atendimento automático, é só enviar uma nova mensagem.`;
     }
 
     // Retry counter for unrecognized MENU input
@@ -376,7 +409,7 @@ Como posso ajudar?
       return `Parece que não estou conseguindo te ajudar da forma certa. 😊 Vou chamar a profissional para te atender melhor! Aguarda um momento. 🌸`;
     }
     return reply(
-      `Não entendi. 😊 Por favor escolha uma opção:\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+      `Não entendi. 😊 Por favor escolha uma opção:\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
       'MENU',
       { ...ctx, menuRetries }
     );
@@ -386,7 +419,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_SERVICO') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -443,7 +476,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_DATA') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -494,7 +527,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_HORARIO') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -537,7 +570,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -597,7 +630,7 @@ Como posso ajudar?
 
     if (/^(n|nao|nope|cancel)/.test(text)) {
       return reply(
-        `Tudo bem! 😊 O que mais posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Tudo bem! 😊 O que mais posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU',
         {}
       );
@@ -614,7 +647,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_CANCELAMENTO') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -651,7 +684,7 @@ Como posso ajudar?
   if (state === 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO') {
     if (isBackCommand(text)) {
       return reply(
-        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+        `Ok! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU', {}
       );
     }
@@ -691,7 +724,8 @@ Como posso ajudar?
 
 1️⃣ Agendar horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
         'MENU',
         {}
       );
@@ -706,7 +740,8 @@ Como posso ajudar?
 
 1️⃣ Agendar horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
           'MENU',
           {}
         );
@@ -763,7 +798,8 @@ Digite o número da data.`,
 
 1️⃣ Agendar horário
 2️⃣ Cancelar agendamento
-3️⃣ Ver meus agendamentos`,
+3️⃣ Ver meus agendamentos
+4️⃣ Falar com a profissional`,
     'MENU',
     {}
   );
@@ -834,41 +870,57 @@ export async function processMessage(req, res, next) {
       content: text,
     });
 
-    // Lê o estado ANTES de getOrCreateConversation atualizar last_message_at
+    // Lê last_message_at anterior (necessário para TTL do BOT_ATIVO)
     const { rows: _prevRows } = await pool.query(
-      'SELECT mode, last_message_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
+      'SELECT last_message_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
       [professionalId, phone]
     );
-    const _prev = _prevRows[0] ?? null;
-    const _prevLastMsgAt = _prev?.last_message_at ?? null;
+    const _prevLastMsgAt = _prevRows[0]?.last_message_at ?? null;
 
     // Get or create conversation (atualiza last_message_at = now())
     const conv = await getOrCreateConversation(professionalId, phone);
 
-    // TTL de 4h: usa o last_message_at anterior à mensagem atual
     const _TTL_MS = 4 * 60 * 60 * 1000;
-    const _msecElapsed = (_prev && _prevLastMsgAt)
-      ? Date.now() - new Date(_prevLastMsgAt).getTime()
-      : 0;
 
-    // ATENDIMENTO_HUMANO + 4h expirado → retorna ao bot e processa a mensagem
-    if (conv.mode === 'ATENDIMENTO_HUMANO' && _msecElapsed > _TTL_MS) {
-      await updateConversation(professionalId, phone, { mode: 'BOT_ATIVO', botState: 'INICIO', context: {} });
-      conv.mode = 'BOT_ATIVO';
-      conv.bot_state = 'INICIO';
-      conv.context = {};
-    }
-
-    // BOT_ATIVO + 4h expirado → reinicia do INICIO
-    if (conv.mode === 'BOT_ATIVO' && _msecElapsed > _TTL_MS) {
-      await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
-      conv.bot_state = 'INICIO';
-      conv.context = {};
-    }
-
-    // ATENDIMENTO_HUMANO dentro das 4h → silêncio
+    // ATENDIMENTO_HUMANO: TTL medido desde a última mensagem outbound da profissional.
+    // Mensagens bloqueadas da cliente não reiniciam esse prazo.
     if (conv.mode === 'ATENDIMENTO_HUMANO') {
-      return res.json({ reply: null, reason: 'human_mode' });
+      const { rows: _profRows } = await pool.query(
+        `SELECT created_at FROM message_history
+         WHERE professional_id = $1 AND phone = $2
+           AND direction = 'outbound' AND sender = 'professional'
+         ORDER BY created_at DESC LIMIT 1`,
+        [professionalId, phone]
+      );
+      const _profLastAt = _profRows[0]?.created_at ?? null;
+      // Base do TTL: o mais recente entre a última mensagem da profissional
+      // e o início do modo ATENDIMENTO_HUMANO (conv.updated_at).
+      // Isso evita expirar quando o cliente acabou de escolher "Falar com a profissional"
+      // e a última mensagem da profissional é de uma sessão anterior.
+      const _profTime = _profLastAt ? new Date(_profLastAt).getTime() : 0;
+      const _modeTime = new Date(conv.updated_at ?? conv.last_message_at).getTime();
+      const _msecSinceProfessional = Date.now() - Math.max(_profTime, _modeTime);
+
+      if (_msecSinceProfessional > _TTL_MS) {
+        // Mais de 4h desde a última mensagem da profissional → retorna ao bot
+        await updateConversation(professionalId, phone, { mode: 'BOT_ATIVO', botState: 'INICIO', context: {} });
+        conv.mode = 'BOT_ATIVO';
+        conv.bot_state = 'INICIO';
+        conv.context = {};
+      } else {
+        // Dentro das 4h → mantém silêncio
+        return res.json({ reply: null, reason: 'human_mode' });
+      }
+    }
+
+    // BOT_ATIVO + 4h sem mensagem → reinicia do INICIO
+    if (conv.mode === 'BOT_ATIVO' && _prevLastMsgAt) {
+      const _msecElapsed = Date.now() - new Date(_prevLastMsgAt).getTime();
+      if (_msecElapsed > _TTL_MS) {
+        await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
+        conv.bot_state = 'INICIO';
+        conv.context = {};
+      }
     }
 
     // Run bot state machine

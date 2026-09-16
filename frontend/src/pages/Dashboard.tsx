@@ -103,6 +103,31 @@ function IconAlert() {
     </svg>
   );
 }
+function IconCheckCircle() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-5" />
+    </svg>
+  );
+}
+function IconXCircle() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
+    </svg>
+  );
+}
+function IconUserPlus() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path strokeLinecap="round" d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" />
+      <path strokeLinecap="round" d="M20 8v6M17 11h6" />
+    </svg>
+  );
+}
 
 // ─── componentes ─────────────────────────────────────────────────────────────
 
@@ -354,7 +379,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="space-y-8">
+      <div className="space-y-10">
 
         {/* ── cabeçalho ──────────────────────────────────────────────────────── */}
         <div>
@@ -411,7 +436,7 @@ export default function Dashboard() {
           <SectionHeading><span className="capitalize">{mesLabel}</span></SectionHeading>
 
           {/* linha 1: financeiro */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <KpiCard
               label="Faturamento realizado"
               value={formatMoney(data.mes.faturamentoRealizadoCents)}
@@ -456,14 +481,14 @@ export default function Dashboard() {
             <KpiCard
               label="Concluídos"
               value={String(data.mes.agendamentosConcluidos)}
-              icon={<IconCalendar />}
+              icon={<IconCheckCircle />}
               accent="bg-green-50 text-green-700"
               onClick={() => openDetail('concluido')}
             />
             <KpiCard
               label="Cancelados"
               value={String(data.mes.agendamentosCancelados)}
-              icon={<IconCalendar />}
+              icon={<IconXCircle />}
               accent="bg-rose-50 text-rose-500"
               onClick={() => openDetail('cancelado')}
             />
@@ -476,7 +501,7 @@ export default function Dashboard() {
             <KpiCard
               label="Novos clientes"
               value={String(data.mes.novosClientes)}
-              icon={<IconUsers />}
+              icon={<IconUserPlus />}
               accent="bg-blue-50 text-blue-600"
               sub={<span className="text-xs text-ink/40">no mês</span>}
               onClick={() => navigate('/clientes')}
