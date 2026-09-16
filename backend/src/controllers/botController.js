@@ -665,7 +665,17 @@ export async function processMessage(req, res, next) {
     // Get or create conversation
     const conv = await getOrCreateConversation(professionalId, phone);
 
-    // If ATENDIMENTO_HUMANO → do not respond
+    // BOT_ATIVO + 4h sem mensagem → reinicia do INICIO
+    if (conv.mode === 'BOT_ATIVO' && conv.last_message_at) {
+      const msecSinceLastMsg = Date.now() - new Date(conv.last_message_at).getTime();
+      if (msecSinceLastMsg > 4 * 60 * 60 * 1000) {
+        await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
+        conv.bot_state = 'INICIO';
+        conv.context = {};
+      }
+    }
+
+    // If ATENDIMENTO_HUMANO → do not respond (never auto-reset)
     if (conv.mode === 'ATENDIMENTO_HUMANO') {
       return res.json({ reply: null, reason: 'human_mode' });
     }
@@ -716,6 +726,85 @@ export async function setConversation(req, res, next) {
     const { mode, botState, context } = req.body;
     await getOrCreateConversation(req.professionalId, phone);
     await updateConversation(req.professionalId, phone, { mode, botState, context });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /bot/abandoned-conversations
+// Returns conversations stuck in AGUARDANDO_* for 30+ min with abandonment_notified != true
+export async function getAbandonedConversations(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT professional_id, phone, bot_state, context, last_message_at
+       FROM conversation_states
+       WHERE professional_id = $1
+         AND bot_state LIKE 'AGUARDANDO_%'
+         AND mode = 'BOT_ATIVO'
+         AND last_message_at < now() - interval '30 minutes'
+         AND (context->>'abandonment_notified') IS DISTINCT FROM 'true'`,
+      [req.professionalId]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /bot/mark-abandonment-notified  { phone }
+export async function markAbandonmentNotified(req, res, next) {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    await pool.query(
+      `UPDATE conversation_states
+       SET context = context || '{"abandonment_notified": true}'::jsonb,
+           updated_at = now()
+       WHERE professional_id = $1 AND phone = $2`,
+      [req.professionalId, phone]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /bot/appointments-tomorrow
+// Returns tomorrow's appointments (confirmado|pendente, reminder_sent=false) for reminder cron
+// GET /bot/appointments-for-reminder
+// Returns appointments in the 23h30-24h30 window from now with reminder_sent=false
+export async function getAppointmentsTomorrow(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.id, a.starts_at, a.status, a.reminder_sent,
+              c.name AS client_name, c.phone AS client_phone,
+              s.name AS service_name
+       FROM appointments a
+       JOIN clients  c ON c.id = a.client_id
+       JOIN services s ON s.id = a.service_id
+       WHERE a.professional_id = $1
+         AND a.status IN ('confirmado', 'pendente')
+         AND a.reminder_sent = false
+         AND a.starts_at >= now() + interval '23 hours 30 minutes'
+         AND a.starts_at <  now() + interval '24 hours 30 minutes'
+       ORDER BY a.starts_at ASC`,
+      [req.professionalId]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markReminderSent(req, res, next) {
+  try {
+    const { appointmentId } = req.body;
+    if (!appointmentId) return res.status(400).json({ error: 'appointmentId obrigatório.' });
+    await pool.query(
+      `UPDATE appointments SET reminder_sent = true, updated_at = now()
+       WHERE id = $1 AND professional_id = $2`,
+      [appointmentId, req.professionalId]
+    );
     res.json({ ok: true });
   } catch (err) {
     next(err);
