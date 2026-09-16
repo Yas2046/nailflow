@@ -834,20 +834,39 @@ export async function processMessage(req, res, next) {
       content: text,
     });
 
-    // Get or create conversation
+    // Lê o estado ANTES de getOrCreateConversation atualizar last_message_at
+    const { rows: _prevRows } = await pool.query(
+      'SELECT mode, last_message_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
+      [professionalId, phone]
+    );
+    const _prev = _prevRows[0] ?? null;
+    const _prevLastMsgAt = _prev?.last_message_at ?? null;
+
+    // Get or create conversation (atualiza last_message_at = now())
     const conv = await getOrCreateConversation(professionalId, phone);
 
-    // BOT_ATIVO + 4h sem mensagem → reinicia do INICIO
-    if (conv.mode === 'BOT_ATIVO' && conv.last_message_at) {
-      const msecSinceLastMsg = Date.now() - new Date(conv.last_message_at).getTime();
-      if (msecSinceLastMsg > 4 * 60 * 60 * 1000) {
-        await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
-        conv.bot_state = 'INICIO';
-        conv.context = {};
-      }
+    // TTL de 4h: usa o last_message_at anterior à mensagem atual
+    const _TTL_MS = 4 * 60 * 60 * 1000;
+    const _msecElapsed = (_prev && _prevLastMsgAt)
+      ? Date.now() - new Date(_prevLastMsgAt).getTime()
+      : 0;
+
+    // ATENDIMENTO_HUMANO + 4h expirado → retorna ao bot e processa a mensagem
+    if (conv.mode === 'ATENDIMENTO_HUMANO' && _msecElapsed > _TTL_MS) {
+      await updateConversation(professionalId, phone, { mode: 'BOT_ATIVO', botState: 'INICIO', context: {} });
+      conv.mode = 'BOT_ATIVO';
+      conv.bot_state = 'INICIO';
+      conv.context = {};
     }
 
-    // If ATENDIMENTO_HUMANO → do not respond (never auto-reset)
+    // BOT_ATIVO + 4h expirado → reinicia do INICIO
+    if (conv.mode === 'BOT_ATIVO' && _msecElapsed > _TTL_MS) {
+      await updateConversation(professionalId, phone, { botState: 'INICIO', context: {} });
+      conv.bot_state = 'INICIO';
+      conv.context = {};
+    }
+
+    // ATENDIMENTO_HUMANO dentro das 4h → silêncio
     if (conv.mode === 'ATENDIMENTO_HUMANO') {
       return res.json({ reply: null, reason: 'human_mode' });
     }
