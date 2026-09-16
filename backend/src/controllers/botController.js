@@ -165,6 +165,23 @@ async function getUpcomingAppointments(professionalId, phone) {
   return rows;
 }
 
+async function getLastCompletedService(professionalId, phone) {
+  const client = await findClientByPhone(professionalId, phone);
+  if (!client) return null;
+  const { rows } = await pool.query(
+    `SELECT a.service_id, s.name AS service_name, s.duration_minutes, s.price_cents, a.starts_at
+     FROM appointments a
+     JOIN services s ON s.id = a.service_id
+     WHERE a.client_id = $1
+       AND a.status = 'concluido'
+       AND s.active = true
+     ORDER BY a.starts_at DESC
+     LIMIT 1`,
+    [client.id]
+  );
+  return rows[0] ?? null;
+}
+
 // Returns up to maxDays days that have slots for given service duration
 async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDays = 5) {
   const days = [];
@@ -205,8 +222,85 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
 
   // ---------- INICIO ----------
   if (state === 'INICIO') {
+    const existingClient = await findClientByPhone(professionalId, phone);
+
+    // Resolve first name: DB name > pushName > null
+    const dbName = existingClient?.name || '';
+    const isDefaultName = dbName === '' || dbName === 'Cliente WhatsApp';
+    const rawFirstName = isDefaultName
+      ? (pushName ? pushName.split(' ')[0] : null)
+      : dbName.split(' ')[0];
+    const firstName = rawFirstName || null;
+
+    const greeting = firstName ? `Oi, ${firstName}! 😊` : `Oi! 😊 Seja bem-vinda!`;
+
+    if (existingClient) {
+      const upcoming = await getUpcomingAppointments(professionalId, phone);
+      const lastService = await getLastCompletedService(professionalId, phone);
+
+      if (upcoming.length > 0) {
+        // Cliente com agendamento futuro: menciona proativamente
+        const next = upcoming[0];
+        const dateStr = formatDateBR(next.starts_at);
+        const timeStr = formatTimeBR(next.starts_at);
+        const upcomingLine = `Vi que você tem *${next.service_name}* marcada para ${dateStr} às ${timeStr}. 📅`;
+        return reply(
+          `${greeting} Que bom te ver! 🥰
+
+${upcomingLine}
+
+Como posso ajudar?
+
+1️⃣ Agendar outro horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
+          'MENU',
+          {}
+        );
+      }
+
+      if (lastService) {
+        // Cliente recorrente sem agendamento futuro: oferece repetir o último serviço
+        return reply(
+          `${greeting} Saudades! 🥰
+
+Da última vez você fez *${lastService.service_name}*. Quer marcar de novo?
+
+Responda *sim* para agendar ou *não* para ver todas as opções.`,
+          'AGUARDANDO_REPETICAO',
+          {
+            lastServiceId: lastService.service_id,
+            lastServiceName: lastService.service_name,
+            lastServiceDuration: lastService.duration_minutes,
+            lastServicePrice: lastService.price_cents,
+            abandonment_notified: false,
+          }
+        );
+      }
+
+      // Cliente conhecida mas sem histórico de serviços concluídos
+      return reply(
+        `${greeting} Que bom te ver! 😊
+
+Como posso ajudar?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
+        'MENU',
+        {}
+      );
+    }
+
+    // Cliente nova
     return reply(
-      `Oi! 😊 Seja bem-vinda!\n\nComo posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+      `${greeting} Seja bem-vinda!
+
+Como posso ajudar?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
       'MENU',
       {}
     );
@@ -589,9 +683,87 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     );
   }
 
+  // ---------- AGUARDANDO_REPETICAO ----------
+  if (state === 'AGUARDANDO_REPETICAO') {
+    if (isBackCommand(text) || /^(n|nao|nope|outr|ver|opcoes|menu)/.test(text)) {
+      return reply(
+        `Sem problema! 😊 Como posso ajudar?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
+        'MENU',
+        {}
+      );
+    }
+
+    if (/^(s|sim|yes|confirma|ok|isso|quero|pode|bora|va|vamos|claro|com certeza)/.test(text)) {
+      const { lastServiceId, lastServiceName, lastServiceDuration, lastServicePrice } = ctx;
+
+      if (!lastServiceId) {
+        return reply(
+          `Ops, perdi o contexto. 😅 Como posso ajudar?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
+          'MENU',
+          {}
+        );
+      }
+
+      const days = await getAvailableDaysWithSlots(professionalId, lastServiceDuration);
+      if (days.length === 0) {
+        return reply(
+          `No momento não há horários disponíveis para ${lastServiceName}. 😊 Posso ajudar com outra coisa?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento`,
+          'MENU',
+          {}
+        );
+      }
+
+      const daysMap = {};
+      const lines = days.map((d, i) => {
+        daysMap[String(i + 1)] = d.date.toISOString().split('T')[0];
+        return `${i + 1}. ${formatDateBR(d.date)}`;
+      });
+
+      return reply(
+        `Ótimo! ${lastServiceName} 💅
+
+Escolha a data:
+
+${lines.join('\n')}
+
+Digite o número da data.`,
+        'AGUARDANDO_DATA',
+        {
+          serviceId: lastServiceId,
+          serviceName: lastServiceName,
+          serviceDuration: lastServiceDuration,
+          servicePrice: lastServicePrice,
+          daysMap,
+          abandonment_notified: false,
+        }
+      );
+    }
+
+    return reply(
+      `Responde *sim* para marcar ${ctx.lastServiceName || 'o mesmo serviço'} ou *não* para ver outras opções. 😊`,
+      'AGUARDANDO_REPETICAO',
+      ctx
+    );
+  }
+
   // Fallback: reset to MENU
   return reply(
-    `Oi! 😊 Como posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos`,
+    `Oi! 😊 Como posso ajudar?
+
+1️⃣ Agendar horário
+2️⃣ Cancelar agendamento
+3️⃣ Ver meus agendamentos`,
     'MENU',
     {}
   );
