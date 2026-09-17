@@ -35,7 +35,7 @@ export async function login(req, res, next) {
     });
 
     res.json({
-      token, // também retornado no corpo para clientes que preferem Authorization header
+      token,
       professional: {
         id: professional.id,
         name: professional.name,
@@ -78,7 +78,6 @@ export async function updateMe(req, res, next) {
   try {
     const { name, business_name, phone_whatsapp, email } = updateMeSchema.parse(req.body);
 
-    // verifica conflito de e-mail com outra conta
     const { rows: conflict } = await pool.query(
       'SELECT id FROM professionals WHERE email = $1 AND id != $2',
       [email, req.professionalId]
@@ -97,6 +96,60 @@ export async function updateMe(req, res, next) {
   } catch (err) {
     if (err instanceof z.ZodError)
       return next(new HttpError(400, err.errors[0]?.message ?? 'Dados inválidos.'));
+    next(err);
+  }
+}
+
+const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const registerSchema = z.object({
+  email:        z.string().email('E-mail inválido.').max(200).transform((v) => v.trim().toLowerCase()),
+  password:     z.string().min(8, 'A senha deve ter no mínimo 8 caracteres.').max(100),
+  businessName: z.string().min(2, 'Nome do negócio obrigatório (mínimo 2 caracteres).').max(100).transform((v) => v.trim()),
+  slug:         z.string()
+                  .min(3, 'Slug deve ter no mínimo 3 caracteres.')
+                  .max(50, 'Slug deve ter no máximo 50 caracteres.')
+                  .transform((v) => v.trim().toLowerCase())
+                  .refine((v) => slugRegex.test(v), {
+                    message: 'Slug inválido. Use apenas letras minúsculas, números e hífens (sem início/fim com hífen).',
+                  }),
+});
+
+export async function register(req, res, next) {
+  try {
+    const { email, password, businessName, slug } = registerSchema.parse(req.body);
+
+    // Verificar unicidade de email e slug em paralelo
+    const [emailCheck, slugCheck] = await Promise.all([
+      pool.query('SELECT id FROM professionals WHERE email = $1', [email]),
+      pool.query('SELECT id FROM professionals WHERE slug = $1', [slug]),
+    ]);
+
+    if (emailCheck.rows.length > 0) throw new HttpError(409, 'Este e-mail já está cadastrado.');
+    if (slugCheck.rows.length > 0) throw new HttpError(409, 'Este slug já está em uso. Escolha outro.');
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const { rows } = await pool.query(
+      `INSERT INTO professionals (name, email, password_hash, business_name, slug, wa_instance_name)
+       VALUES ($1, $2, $3, $4, $5, NULL)
+       RETURNING id, name, email, business_name`,
+      [businessName, email, passwordHash, businessName, slug]
+    );
+
+    const professional = rows[0];
+    res.status(201).json({
+      message: 'Cadastro realizado com sucesso.',
+      professional: {
+        id: professional.id,
+        name: professional.name,
+        email: professional.email,
+        businessName: professional.business_name,
+      },
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return next(new HttpError(400, err.errors[0]?.message ?? 'Dados de cadastro inválidos.'));
     next(err);
   }
 }

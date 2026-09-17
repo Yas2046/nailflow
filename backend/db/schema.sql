@@ -13,7 +13,7 @@ CREATE TABLE professionals (
   name             VARCHAR(120) NOT NULL,
   email            VARCHAR(160) NOT NULL UNIQUE,
   password_hash    TEXT         NOT NULL,
-  phone_whatsapp   VARCHAR(20)  NOT NULL,
+  phone_whatsapp   VARCHAR(20),
   business_name    VARCHAR(120) DEFAULT 'NailFlow',
   slug             VARCHAR(80)  NOT NULL UNIQUE, -- identificador URL-safe (ex: camila-nails-studio)
   wa_instance_name VARCHAR(80),                  -- instância Evolution API (ex: chip2)

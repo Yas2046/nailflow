@@ -47,7 +47,7 @@ async function buildAvailabilityResponse(professional, days) {
 
   return {
     businessName: professional.business_name,
-    whatsappLink: `https://wa.me/${professional.phone_whatsapp}`,
+    whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
     days: result,
   };
 }
@@ -61,7 +61,7 @@ export async function getPublicInfo(req, res, next) {
     if (!professional) return res.status(404).json({ error: 'Nenhuma profissional cadastrada.' });
     res.json({
       businessName: professional.business_name,
-      whatsappLink: `https://wa.me/${professional.phone_whatsapp}`,
+      whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
     });
   } catch (err) {
     next(err);
@@ -89,7 +89,7 @@ export async function getPublicInfoBySlug(req, res, next) {
     if (!professional) return res.status(404).json({ error: 'Profissional não encontrada.' });
     res.json({
       businessName: professional.business_name,
-      whatsappLink: `https://wa.me/${professional.phone_whatsapp}`,
+      whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
     });
   } catch (err) {
     next(err);
