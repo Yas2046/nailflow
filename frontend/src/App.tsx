@@ -16,7 +16,10 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Página pública — apenas visualização de horários, sem autenticação */}
+          {/* Página pública por slug — /p/camila-nails-studio */}
+          <Route path="/p/:slug" element={<PaginaPublica />} />
+
+          {/* Rota legada sem slug — mantida para compatibilidade */}
           <Route path="/agenda-publica" element={<PaginaPublica />} />
 
           <Route path="/login" element={<Login />} />
