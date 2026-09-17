@@ -125,10 +125,30 @@ Endpoints ativos:
 - Workflow Lembretes 24h (`crVRWCDoVzCEWSgz`): ativo, cron a cada 30 min
 - Workflow Abandono de Conversa (`rQ7S8XcAiiTCgXEr`): ativo, cron a cada 15 min
 - Workflow WhatsApp Definitivo (`3yBtUtgMlKsXh3mw`): ativo, webhook MESSAGES_UPSERT
+  - Nó "Processar no NailFlow": retry configurado (5 tentativas, 3s de intervalo)
 
 ---
 
-## Backups criados em 16/09/2026
+## Aviso importante: `pm2 restart` causa janela de indisponibilidade
+
+O comando `pm2 restart 0` reinicia o backend Node.js com ~10 segundos de downtime.
+Nesse intervalo, mensagens chegadas via WhatsApp resultam em `ECONNREFUSED` no n8n.
+
+**Mitigações aplicadas:**
+- O nó "Processar no NailFlow" agora possui retry automático:
+  5 tentativas com 3 segundos de intervalo (cobre até 12s de downtime).
+- O botController (`/bot/process`) tem deduplicação por `waMessageId`:
+  se o retry reprocessar uma mensagem já gravada, retorna `{reason:'duplicate'}`
+  sem enviar resposta duplicada ao cliente.
+
+**Alternativa com menor downtime:**
+```bash
+pm2 reload 0   # graceful reload — aguarda requisições em andamento antes de reiniciar
+```
+
+---
+
+## Backups criados em 16–17/09/2026
 
 | Arquivo | Conteúdo |
 |---|---|
@@ -137,6 +157,7 @@ Endpoints ativos:
 | `/var/www/nailflow/frontend/dist.bak_20260916-pre-whatsapp/` | dist correto pré-implementação |
 | `/var/www/nailflow/frontend/dist.bak_20260915-etapa2-login/` | dist de 15/09 |
 | `/var/www/nailflow/frontend/dist.bak_20260915-pre-fix-cancel/` | dist antes do fix-cancel |
+| `/root/backup_workflow_3yBtUtgMlKsXh3mw_20260917.json` | workflow n8n antes do retry (17/09) |
 
 ---
 
