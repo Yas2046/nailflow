@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Agenda from './pages/Agenda';
 import Clientes from './pages/Clientes';
@@ -16,15 +17,10 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Página pública por slug — /p/camila-nails-studio */}
           <Route path="/p/:slug" element={<PaginaPublica />} />
-
-          {/* Rota legada sem slug — mantida para compatibilidade */}
           <Route path="/agenda-publica" element={<PaginaPublica />} />
-
           <Route path="/login" element={<Login />} />
-
-          {/* Área privada da profissional */}
+          <Route path="/register" element={<Register />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/agenda" element={<Agenda />} />
