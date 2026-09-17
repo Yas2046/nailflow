@@ -176,10 +176,11 @@ async function getUpcomingAppointments(professionalId, phone) {
     `SELECT a.id, a.starts_at, a.ends_at, a.status, s.name AS service_name
      FROM appointments a JOIN services s ON s.id = a.service_id
      WHERE a.client_id = $1
+       AND a.professional_id = $2
        AND a.status IN ('pendente','confirmado')
        AND a.starts_at > now()
      ORDER BY a.starts_at ASC`,
-    [client.id]
+    [client.id, professionalId]
   );
   return rows;
 }
@@ -192,11 +193,12 @@ async function getLastCompletedService(professionalId, phone) {
      FROM appointments a
      JOIN services s ON s.id = a.service_id
      WHERE a.client_id = $1
+       AND a.professional_id = $2
        AND a.status = 'concluido'
        AND s.active = true
      ORDER BY a.starts_at DESC
      LIMIT 1`,
-    [client.id]
+    [client.id, professionalId]
   );
   return rows[0] ?? null;
 }
@@ -600,8 +602,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
 
       // Create appointment
       const { rows: svcRows } = await pool.query(
-        'SELECT price_cents FROM services WHERE id = $1',
-        [ctx.serviceId]
+        'SELECT price_cents FROM services WHERE id = $1 AND professional_id = $2',
+        [ctx.serviceId, professionalId]
       );
       const { rows: apptRows } = await pool.query(
         `INSERT INTO appointments
@@ -666,8 +668,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     // Get appointment details for confirmation
     const { rows } = await pool.query(
       `SELECT a.starts_at, s.name AS service_name FROM appointments a
-       JOIN services s ON s.id = a.service_id WHERE a.id = $1`,
-      [apptId]
+       JOIN services s ON s.id = a.service_id WHERE a.id = $1 AND a.professional_id = $2`,
+      [apptId, professionalId]
     );
     if (!rows[0]) {
       return reply('Agendamento não encontrado. 😕', 'MENU', {});
@@ -808,6 +810,17 @@ Digite o número da data.`,
 // ---------- Route handlers ----------
 
 // POST /bot/process
+export async function getProfessionalInstances(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT wa_instance_name FROM professionals WHERE wa_instance_name IS NOT NULL ORDER BY created_at ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function processMessage(req, res, next) {
   try {
     const { phone: rawPhone, text, waMessageId, fromMe, pushName } = req.body;

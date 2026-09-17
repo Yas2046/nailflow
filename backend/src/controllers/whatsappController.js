@@ -1,12 +1,25 @@
-const INSTANCE = 'chip2';
+import { pool } from '../config/db.js';
+
+async function getInstanceName(professionalId) {
+  const { rows } = await pool.query(
+    'SELECT wa_instance_name FROM professionals WHERE id = $1',
+    [professionalId]
+  );
+  return rows[0]?.wa_instance_name ?? null;
+}
 
 export async function getWhatsAppStatus(req, res, next) {
   try {
+    const instance = await getInstanceName(req.professionalId);
+    if (!instance) {
+      return res.status(404).json({ error: 'Instância WhatsApp não configurada para esta profissional.' });
+    }
+
     const baseUrl = process.env.EVOLUTION_API_URL;
     const apiKey = process.env.EVOLUTION_API_KEY;
 
     const response = await fetch(
-      `${baseUrl}/instance/fetchInstances?instanceName=${INSTANCE}`,
+      `${baseUrl}/instance/fetchInstances?instanceName=${instance}`,
       { headers: { apikey: apiKey } }
     );
 
@@ -14,20 +27,20 @@ export async function getWhatsAppStatus(req, res, next) {
       return res.status(502).json({ error: 'Falha ao consultar Evolution API.' });
     }
 
-    const [instance] = await response.json();
+    const [inst] = await response.json();
 
-    const connected = instance?.connectionStatus === 'open';
-    const ownerJid = instance?.ownerJid ?? null;
+    const connected = inst?.connectionStatus === 'open';
+    const ownerJid = inst?.ownerJid ?? null;
     const phone = ownerJid
       ? ownerJid.replace('@s.whatsapp.net', '').replace('@c.us', '')
       : null;
-    const profileName = instance?.profileName?.trim() ?? null;
+    const profileName = inst?.profileName?.trim() ?? null;
 
     res.json({
       connected,
       phone,
       profileName,
-      instanceName: INSTANCE,
+      instanceName: instance,
     });
   } catch (err) {
     next(err);
@@ -36,14 +49,16 @@ export async function getWhatsAppStatus(req, res, next) {
 
 export async function connectWhatsApp(req, res, next) {
   try {
+    const instance = await getInstanceName(req.professionalId);
+    if (!instance) {
+      return res.status(404).json({ error: 'Instância WhatsApp não configurada para esta profissional.' });
+    }
+
     const baseUrl = process.env.EVOLUTION_API_URL;
     const apiKey = process.env.EVOLUTION_API_KEY;
 
-    // Evolution API v2: GET /instance/connect/{instance}
-    // Returns {instance:{state:"open"}} if already connected
-    // Returns {base64, code, count} when QR is available
     const response = await fetch(
-      `${baseUrl}/instance/connect/${INSTANCE}`,
+      `${baseUrl}/instance/connect/${instance}`,
       { headers: { apikey: apiKey } }
     );
 
@@ -53,22 +68,19 @@ export async function connectWhatsApp(req, res, next) {
 
     const data = await response.json();
 
-    // Already connected
     if (data?.instance?.state === 'open') {
       return res.json({ alreadyConnected: true });
     }
 
-    // QR Code returned
     if (data?.base64) {
       return res.json({
         alreadyConnected: false,
-        qrCode: data.base64,      // data:image/png;base64,...
+        qrCode: data.base64,
         qrCodeText: data.code ?? null,
         count: data.count ?? 1,
       });
     }
 
-    // Unexpected response
     return res.status(502).json({ error: 'Resposta inesperada da Evolution API.', detail: data });
   } catch (err) {
     next(err);

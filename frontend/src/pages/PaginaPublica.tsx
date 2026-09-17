@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from '../services/api';
 import LogoMark from '../components/LogoMark';
 
@@ -79,19 +80,45 @@ function EmptyState() {
   );
 }
 
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-cream flex flex-col items-center justify-center px-4 text-center">
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-4 shadow-sm">
+        <LogoMark className="w-7 h-7" />
+      </div>
+      <h1 className="font-display text-2xl text-wine-700 mb-2">Profissional não encontrada</h1>
+      <p className="text-ink/50 text-sm">O link que você acessou não corresponde a nenhuma profissional cadastrada.</p>
+    </div>
+  );
+}
+
 // ─── página ───────────────────────────────────────────────────────────────────
 
 export default function PaginaPublica() {
+  const { slug } = useParams<{ slug?: string }>();
   const [data, setData] = useState<PublicData | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = todayStr();
 
   useEffect(() => {
+    const url = slug
+      ? `/public/${slug}/availability?days=6`
+      : '/public/availability?days=6';
+
     api
-      .get<PublicData>('/public/availability?days=6')
+      .get<PublicData>(url)
       .then(setData)
-      .catch((e) => setError(e.message));
-  }, []);
+      .catch((e) => {
+        if (e.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(e.message);
+        }
+      });
+  }, [slug]);
+
+  if (notFound) return <NotFound />;
 
   return (
     <div className="min-h-screen bg-cream flex flex-col items-center px-4 py-12">
@@ -99,7 +126,6 @@ export default function PaginaPublica() {
 
         {/* ── cabeçalho ──────────────────────────────────────────────────── */}
         <div className="text-center mb-12">
-          {/* medallion */}
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-3 shadow-sm">
             <LogoMark className="w-7 h-7" />
           </div>
@@ -118,7 +144,7 @@ export default function PaginaPublica() {
         )}
 
         {/* ── skeleton de loading ─────────────────────────────────────────── */}
-        {!data && !error && (
+        {!data && !error && !notFound && (
           <div className="mb-10">
             <LoadingSkeleton />
           </div>
@@ -139,7 +165,6 @@ export default function PaginaPublica() {
                       isToday ? 'border-wine-500' : 'border-wine-100'
                     }`}
                   >
-                    {/* cabeçalho do dia */}
                     <div className="flex items-center justify-between gap-3 mb-4">
                       <p className="font-medium text-wine-700 capitalize text-sm leading-tight min-w-0 flex-1 pr-2">
                         {formatDayLabel(day.date)}
@@ -151,7 +176,6 @@ export default function PaginaPublica() {
                       )}
                     </div>
 
-                    {/* horários */}
                     {day.slots.length === 0 ? (
                       <p className="text-xs text-ink/40 italic">Sem horários neste dia.</p>
                     ) : (
