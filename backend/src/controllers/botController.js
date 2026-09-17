@@ -810,6 +810,17 @@ Digite o número da data.`,
 // ---------- Route handlers ----------
 
 // POST /bot/process
+export async function getProfessionalInstances(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT wa_instance_name FROM professionals WHERE wa_instance_name IS NOT NULL ORDER BY created_at ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function processMessage(req, res, next) {
   try {
     const { phone: rawPhone, text, waMessageId, fromMe, pushName } = req.body;

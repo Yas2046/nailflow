@@ -7,27 +7,25 @@ export async function requireBotAuth(req, res, next) {
 
   const key = process.env.BOT_API_KEY;
   if (!key || !bearer || bearer !== key) {
-    return res.status(401).json({ error: 'Bot não autorizado.' });
+    return res.status(401).json({ error: 'Bot nao autorizado.' });
   }
 
   try {
-    const instance = req.body?.instance ?? null;
+    // GET requests nao enviam body -- aceitar tambem via query string
+    const instance = req.body?.instance ?? req.query?.instance ?? null;
 
     if (instance) {
-      // Caso normal: instância informada → busca profissional pelo wa_instance_name
       const { rows } = await pool.query(
         'SELECT id FROM professionals WHERE wa_instance_name = $1',
         [instance]
       );
       if (!rows[0]) {
-        return res.status(404).json({ error: `Instância desconhecida: ${instance}` });
+        return res.status(404).json({ error: `Instancia desconhecida: ${instance}` });
       }
       req.professionalId = rows[0].id;
       return next();
     }
 
-    // Instância ausente: fallback somente se houver exatamente 1 profissional cadastrada.
-    // Com múltiplas profissionais a requisição é rejeitada para evitar atribuição arbitrária.
     const { rows } = await pool.query(
       'SELECT id FROM professionals ORDER BY created_at ASC'
     );
@@ -36,7 +34,7 @@ export async function requireBotAuth(req, res, next) {
     }
     if (rows.length > 1) {
       return res.status(400).json({
-        error: 'Campo "instance" obrigatório quando há múltiplas profissionais cadastradas.',
+        error: 'Campo "instance" obrigatorio quando ha multiplas profissionais cadastradas.',
       });
     }
     req.professionalId = rows[0].id;
