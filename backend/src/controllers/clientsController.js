@@ -47,8 +47,8 @@ export async function getClientHistory(req, res, next) {
     const { rows: history } = await pool.query(
       `SELECT a.id, a.starts_at, a.ends_at, a.status, s.name AS service_name
        FROM appointments a JOIN services s ON s.id = a.service_id
-       WHERE a.client_id = $1 ORDER BY a.starts_at DESC`,
-      [req.params.id]
+       WHERE a.client_id = $1 AND a.professional_id = $2 ORDER BY a.starts_at DESC`,
+      [req.params.id, req.professionalId]
     );
     res.json({ client: clientRows[0], history });
   } catch (err) {

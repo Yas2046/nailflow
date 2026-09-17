@@ -13,6 +13,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfessional: (p: Professional) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -41,8 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfessional(null);
   }
 
+  function updateProfessional(p: Professional) {
+    localStorage.setItem('nailflow_professional', JSON.stringify(p));
+    setProfessional(p);
+  }
+
   return (
-    <AuthContext.Provider value={{ professional, loading, login, logout }}>
+    <AuthContext.Provider value={{ professional, loading, login, logout, updateProfessional }}>
       {children}
     </AuthContext.Provider>
   );
