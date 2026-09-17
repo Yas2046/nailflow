@@ -99,3 +99,10 @@ export interface WhatsAppStatus {
   profileName: string | null;
   instanceName: string;
 }
+
+export interface WhatsAppConnect {
+  alreadyConnected: boolean;
+  qrCode?: string | null;
+  qrCodeText?: string | null;
+  count?: number;
+}
