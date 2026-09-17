@@ -7,18 +7,22 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 -- =========================================================
 -- PROFESSIONALS
--- Login único do sistema nesta v1 (uma profissional por conta).
 -- =========================================================
 CREATE TABLE professionals (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            VARCHAR(120)  NOT NULL,
-  email           VARCHAR(160)  NOT NULL UNIQUE,
-  password_hash   TEXT          NOT NULL,
-  phone_whatsapp  VARCHAR(20)   NOT NULL, -- usado no botão "Falar pelo WhatsApp"
-  business_name   VARCHAR(120)  DEFAULT 'NailFlow',
-  created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
+  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             VARCHAR(120) NOT NULL,
+  email            VARCHAR(160) NOT NULL UNIQUE,
+  password_hash    TEXT         NOT NULL,
+  phone_whatsapp   VARCHAR(20)  NOT NULL,
+  business_name    VARCHAR(120) DEFAULT 'NailFlow',
+  slug             VARCHAR(80)  NOT NULL UNIQUE, -- identificador URL-safe (ex: camila-nails-studio)
+  wa_instance_name VARCHAR(80),                  -- instância Evolution API (ex: chip2)
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_professionals_slug       ON professionals(slug);
+CREATE INDEX idx_professionals_wa_instance ON professionals(wa_instance_name);
 
 -- =========================================================
 -- CLIENTS
@@ -105,6 +109,7 @@ CREATE TABLE appointments (
                           CHECK (status IN ('pendente','confirmado','cancelado','concluido','nao_compareceu')),
   notes                 TEXT,
   price_cents_snapshot  INTEGER NOT NULL CHECK (price_cents_snapshot >= 0),
+  reminder_sent         BOOLEAN NOT NULL DEFAULT false,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (ends_at > starts_at),
