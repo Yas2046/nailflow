@@ -86,3 +86,58 @@ export async function connectWhatsApp(req, res, next) {
     next(err);
   }
 }
+
+export async function getInstanceConfig(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT wa_instance_name FROM professionals WHERE id = $1',
+      [req.professionalId]
+    );
+    const instanceName = rows[0]?.wa_instance_name ?? null;
+    res.json({ instanceName, configured: instanceName !== null });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function setInstanceConfig(req, res, next) {
+  try {
+    const { instanceName } = req.body;
+
+    if (!instanceName || typeof instanceName !== 'string') {
+      return res.status(400).json({ error: 'Nome de instância inválido.' });
+    }
+    const trimmed = instanceName.trim();
+    if (!trimmed || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(trimmed) || trimmed.length > 80) {
+      return res.status(400).json({ error: 'Nome de instância inválido. Use letras, números, hífens e underscores.' });
+    }
+
+    const { rows: conflict } = await pool.query(
+      'SELECT id FROM professionals WHERE wa_instance_name = $1 AND id != $2',
+      [trimmed, req.professionalId]
+    );
+    if (conflict.length > 0) {
+      return res.status(409).json({ error: 'Esta instância já está vinculada a outra profissional.' });
+    }
+
+    const { rows } = await pool.query(
+      'UPDATE professionals SET wa_instance_name = $1 WHERE id = $2 RETURNING wa_instance_name',
+      [trimmed, req.professionalId]
+    );
+    res.json({ instanceName: rows[0].wa_instance_name, configured: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeInstanceConfig(req, res, next) {
+  try {
+    await pool.query(
+      'UPDATE professionals SET wa_instance_name = NULL WHERE id = $1',
+      [req.professionalId]
+    );
+    res.json({ instanceName: null, configured: false });
+  } catch (err) {
+    next(err);
+  }
+}

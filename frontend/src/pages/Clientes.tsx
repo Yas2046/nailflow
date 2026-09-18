@@ -5,8 +5,25 @@ import type { Client } from '../types';
 interface HistoryItem {
   id: string;
   starts_at: string;
+  ends_at: string;
   status: string;
   service_name: string;
+  price_cents_snapshot: number;
+  appointment_notes: string | null;
+}
+
+interface ClientMetrics {
+  totalConcluidos: number;
+  totalCancelados: number;
+  totalFaltas: number;
+  valorTotalCents: number;
+  ticketMedioCents: number;
+  primeiroAtendimento: string | null;
+  ultimoAtendimento: string | null;
+  proximoAtendimento: string | null;
+  freqMediaDias: number | null;
+  inativaDias: number | null;
+  servicoFavorito: string | null;
 }
 
 // ─── utilitários ─────────────────────────────────────────────────────────────
@@ -29,6 +46,28 @@ function relativeDate(iso: string): string {
   if (days < 7)  return `há ${days} dias`;
   if (days < 30) return `há ${Math.floor(days / 7)} sem.`;
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+}
+
+function isInativa(ultimoAtendimento: string | null | undefined): boolean {
+  if (!ultimoAtendimento) return false;
+  return (Date.now() - new Date(ultimoAtendimento).getTime()) / 86_400_000 >= 60;
+}
+
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  );
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const historyStatusConfig: Record<string, { label: string; cls: string }> = {
@@ -110,8 +149,26 @@ export default function Clientes() {
   const [selected, setSelected] = useState<Client | null>(null);
   const [history, setHistory]   = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [metrics, setMetrics] = useState<ClientMetrics | null>(null);
   const [showNew, setShowNew]   = useState(false);
   const [search, setSearch]     = useState('');
+
+  // tags (ficha da cliente)
+  const [localTags, setLocalTags]   = useState<string[]>([]);
+  const [tagInput, setTagInput]     = useState('');
+  const [tagsDirty, setTagsDirty]   = useState(false);
+  const [tagsSaving, setTagsSaving] = useState(false);
+  const [tagsError, setTagsError]   = useState<string | null>(null);
+
+  // modo edição (ficha)
+  const [editing, setEditing]           = useState(false);
+  const [editName, setEditName]         = useState('');
+  const [editPhone, setEditPhone]       = useState('');
+  const [editNotes, setEditNotes]       = useState('');
+  const [editTags, setEditTags]         = useState<string[]>([]);
+  const [editTagInput, setEditTagInput] = useState('');
+  const [editSaving, setEditSaving]     = useState(false);
+  const [editError, setEditError]       = useState<string | null>(null);
 
   // form
   const [name, setName]   = useState('');
@@ -125,15 +182,141 @@ export default function Clientes() {
   }
   useEffect(reload, []);
 
+  function closeModal() {
+    setSelected(null);
+    setLocalTags([]);
+    setTagInput('');
+    setTagsDirty(false);
+    setTagsError(null);
+    setEditing(false);
+    setEditError(null);
+  }
+
   function openHistory(client: Client) {
     setSelected(client);
     setHistory([]);
+    setMetrics(null);
+    setLocalTags(client.tags ?? []);
+    setTagsDirty(false);
+    setTagsError(null);
     setHistoryLoading(true);
     api
-      .get<{ history: HistoryItem[] }>(`/clients/${client.id}`)
-      .then((d) => setHistory(d.history))
+      .get<{ client: { tags?: string[] }; history: HistoryItem[]; metrics: ClientMetrics }>(`/clients/${client.id}`)
+      .then((d) => {
+        setLocalTags(d.client.tags ?? []);
+        setHistory(d.history);
+        setMetrics(d.metrics);
+      })
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
+  }
+
+  function addTag() {
+    const tag = tagInput.trim();
+    if (!tag) return;
+    if (tag.length > 30) { setTagsError('Tag deve ter no máximo 30 caracteres.'); return; }
+    if (localTags.includes(tag)) { setTagInput(''); return; }
+    if (localTags.length >= 20) { setTagsError('Máximo de 20 tags por cliente.'); return; }
+    setLocalTags([...localTags, tag]);
+    setTagInput('');
+    setTagsDirty(true);
+    setTagsError(null);
+  }
+
+  function removeTag(tag: string) {
+    setLocalTags(localTags.filter((t) => t !== tag));
+    setTagsDirty(true);
+    setTagsError(null);
+  }
+
+  async function saveTags() {
+    if (!selected) return;
+    setTagsSaving(true);
+    setTagsError(null);
+    try {
+      await api.put(`/clients/${selected.id}`, { tags: localTags });
+      setSelected({ ...selected, tags: localTags });
+      setTagsDirty(false);
+    } catch {
+      setTagsError('Erro ao salvar tags. Tente novamente.');
+    } finally {
+      setTagsSaving(false);
+    }
+  }
+
+  function startEditing() {
+    if (!selected) return;
+    setEditName(selected.name);
+    setEditPhone(selected.phone);
+    setEditNotes(selected.notes ?? '');
+    setEditTags([...localTags]);
+    setEditTagInput('');
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setEditError(null);
+    setEditTagInput('');
+  }
+
+  function addEditTag() {
+    const tag = editTagInput.trim();
+    if (!tag) return;
+    if (tag.length > 30) { setEditError('Tag deve ter no máximo 30 caracteres.'); return; }
+    if (editTags.includes(tag)) { setEditTagInput(''); return; }
+    if (editTags.length >= 20) { setEditError('Máximo de 20 tags por cliente.'); return; }
+    setEditTags([...editTags, tag]);
+    setEditTagInput('');
+    setEditError(null);
+  }
+
+  function removeEditTag(tag: string) {
+    setEditTags(editTags.filter((t) => t !== tag));
+  }
+
+  async function saveEdits() {
+    if (!selected) return;
+    const trimmedName  = editName.trim();
+    const trimmedPhone = editPhone.trim();
+    if (!trimmedName)              { setEditError('Nome é obrigatório.');     return; }
+    if (trimmedPhone.length < 8)   { setEditError('Telefone inválido (mínimo 8 dígitos).'); return; }
+
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.put(`/clients/${selected.id}`, {
+        name:  trimmedName,
+        phone: trimmedPhone,
+        notes: editNotes.trim() || null,
+        tags:  editTags,
+      });
+
+      const updated: Client = {
+        ...selected,
+        name:  trimmedName,
+        phone: trimmedPhone,
+        notes: editNotes.trim() || null,
+        tags:  editTags,
+      };
+      setSelected(updated);
+      setLocalTags(editTags);
+      setTagsDirty(false);
+
+      // reflete nome/telefone na lista sem reload completo
+      setClients((prev) =>
+        prev
+          ? prev.map((c) => c.id === selected.id ? { ...c, name: trimmedName, phone: trimmedPhone } : c)
+          : prev
+      );
+
+      setEditing(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.');
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   function openNew() {
@@ -220,7 +403,12 @@ export default function Clientes() {
 
                   {/* estatísticas */}
                   <div className="shrink-0 text-right space-y-1">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end items-center gap-1.5">
+                      {isInativa(c.ultimoAtendimento) && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
+                          Inativa
+                        </span>
+                      )}
                       <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-wine-50 text-wine-700">
                         {c.totalAtendimentos ?? 0}{' '}
                         {(c.totalAtendimentos ?? 0) === 1 ? 'atend.' : 'atend.'}
@@ -250,11 +438,11 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* ── modal histórico ─────────────────────────────────────────────── */}
+      {/* ── ficha da cliente ────────────────────────────────────────────── */}
       {selected && (
         <div
           className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
-          onClick={() => setSelected(null)}
+          onClick={editing ? cancelEditing : closeModal}
         >
           <div
             className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[90vh]"
@@ -266,72 +454,316 @@ export default function Clientes() {
                 <Avatar name={selected.name} size="lg" />
                 <div className="min-w-0">
                   <h3 className="font-display text-xl text-wine-700 truncate">{selected.name}</h3>
-                  <p className="text-sm text-ink/50">{selected.phone}</p>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <p className="text-sm text-ink/50">{selected.phone}</p>
+                    {metrics?.inativaDias != null && metrics.inativaDias >= 60 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
+                        Inativa há {metrics.inativaDias}d
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <CloseButton onClick={() => setSelected(null)} />
+              <div className="flex items-center gap-1 shrink-0">
+                {!editing && (
+                  <button
+                    onClick={startEditing}
+                    className="p-1.5 rounded-lg hover:bg-wine-50 text-ink/40 hover:text-wine-600 transition-colors"
+                    aria-label="Editar cliente"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+                <CloseButton onClick={closeModal} />
+              </div>
             </div>
 
-            {/* observações */}
-            {selected.notes && (
-              <div className="px-6 pt-4">
-                <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-1.5">Observações</p>
-                <p className="text-sm bg-wine-50 rounded-xl p-3 text-ink/70">{selected.notes}</p>
+            {/* KPIs */}
+            {metrics && (
+              <div className="grid grid-cols-2 gap-px bg-wine-100 border-b border-wine-100">
+                <div className="bg-white px-5 py-3">
+                  <p className="text-xs text-ink/40 mb-0.5">Total gasto</p>
+                  <p className="text-base font-semibold text-ink">{formatCents(metrics.valorTotalCents)}</p>
+                </div>
+                <div className="bg-white px-5 py-3">
+                  <p className="text-xs text-ink/40 mb-0.5">Ticket médio</p>
+                  <p className="text-base font-semibold text-ink">
+                    {metrics.totalConcluidos > 0 ? formatCents(metrics.ticketMedioCents) : '—'}
+                  </p>
+                </div>
+                <div className="bg-white px-5 py-3">
+                  <p className="text-xs text-ink/40 mb-0.5">Freq. de retorno</p>
+                  <p className="text-base font-semibold text-ink">
+                    {metrics.freqMediaDias != null && metrics.totalConcluidos > 1
+                      ? `${metrics.freqMediaDias} dias`
+                      : '—'}
+                  </p>
+                </div>
+                <div className="bg-wine-50/50 px-5 py-3">
+                  <p className="text-xs text-ink/40 mb-0.5">Concluídos</p>
+                  <p className="text-base font-semibold text-wine-700">{metrics.totalConcluidos}</p>
+                </div>
               </div>
             )}
 
-            {/* histórico */}
-            <div className="px-6 pt-4 pb-2">
-              <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-3">
-                Histórico de atendimentos
-              </p>
-            </div>
+            <div className="overflow-y-auto flex-1">
+              {editing ? (
+                /* ── modo edição ── */
+                <div className="p-6 flex flex-col gap-4">
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">Nome</span>
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Nome completo"
+                      autoFocus
+                    />
+                  </label>
 
-            <div className="overflow-y-auto flex-1 px-6 pb-6">
-              {historyLoading ? (
-                <div className="space-y-2 animate-pulse">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-10 bg-wine-50 rounded-lg" />
-                  ))}
-                </div>
-              ) : history.length === 0 ? (
-                <p className="text-sm text-ink/40 py-4 text-center">Sem atendimentos registrados.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {history.map((h) => {
-                    const cfg = historyStatusConfig[h.status] ?? { label: h.status, cls: 'bg-gray-100 text-gray-500' };
-                    return (
-                      <li
-                        key={h.id}
-                        className="flex items-center justify-between gap-3 py-2.5 border-b border-wine-50 last:border-0"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink truncate">{h.service_name}</p>
-                          <p className="text-xs text-ink/40">
-                            {new Date(h.starts_at).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                          </p>
-                        </div>
-                        <span className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
-                          {cfg.label}
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">Telefone</span>
+                    <input
+                      className="input"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="55319XXXXXXXX"
+                      type="tel"
+                    />
+                    <span className="block text-xs text-ink/40 mt-1">Formato: código do país + DDD + número</span>
+                  </label>
+
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">
+                      Observações <span className="font-normal text-ink/30">(opcional)</span>
+                    </span>
+                    <textarea
+                      className="input"
+                      rows={3}
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      placeholder="Alergias, preferências, etc."
+                    />
+                  </label>
+
+                  <div>
+                    <span className="block text-sm font-medium text-ink/60 mb-2">Tags</span>
+                    <div className="flex flex-wrap gap-1.5 mb-2 min-h-[1.75rem]">
+                      {editTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 border border-wine-100"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeEditTag(tag)}
+                            className="text-wine-400 hover:text-wine-700 transition-colors leading-none"
+                            aria-label={`Remover tag ${tag}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                      ))}
+                      {editTags.length === 0 && (
+                        <span className="text-xs text-ink/30 py-1">Nenhuma tag.</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-sm py-1.5 flex-1 min-w-0"
+                        placeholder="Nova tag…"
+                        value={editTagInput}
+                        maxLength={30}
+                        onChange={(e) => setEditTagInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditTag(); } }}
+                      />
+                      <button
+                        onClick={addEditTag}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-wine-50 text-wine-700 border border-wine-100 hover:bg-wine-100 transition-colors shrink-0 font-medium"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {editError && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                      {editError}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ── modo visualização ── */
+                <>
+                  {/* informações rápidas */}
+                  {metrics && (metrics.proximoAtendimento || metrics.ultimoAtendimento || metrics.servicoFavorito) && (
+                    <div className="px-6 pt-4 pb-1 space-y-2">
+                      {metrics.proximoAtendimento && (
+                        <div className="flex items-start gap-2 text-sm">
+                          <span className="text-ink/40 w-28 shrink-0 pt-0.5">Próx. agend.</span>
+                          <span className="text-emerald-700 font-medium">{formatDateTime(metrics.proximoAtendimento)}</span>
+                        </div>
+                      )}
+                      {metrics.ultimoAtendimento && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-ink/40 w-28 shrink-0">Último atend.</span>
+                          <span className="text-ink/70">{formatDate(metrics.ultimoAtendimento)}</span>
+                        </div>
+                      )}
+                      {metrics.servicoFavorito && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-ink/40 w-28 shrink-0">Serv. favorito</span>
+                          <span className="text-ink/70">{metrics.servicoFavorito}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* observações */}
+                  {selected.notes && (
+                    <div className="px-6 pt-4">
+                      <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-1.5">Observações</p>
+                      <p className="text-sm bg-wine-50 rounded-xl p-3 text-ink/70">{selected.notes}</p>
+                    </div>
+                  )}
+
+                  {/* tags */}
+                  <div className="px-6 pt-4">
+                    <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-2">Tags</p>
+                    <div className="flex flex-wrap gap-1.5 mb-2 min-h-[1.75rem]">
+                      {localTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 border border-wine-100"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeTag(tag)}
+                            className="text-wine-400 hover:text-wine-700 transition-colors leading-none"
+                            aria-label={`Remover tag ${tag}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                      {localTags.length === 0 && (
+                        <span className="text-xs text-ink/30 py-1">Nenhuma tag adicionada.</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-sm py-1.5 flex-1 min-w-0"
+                        placeholder="Nova tag…"
+                        value={tagInput}
+                        maxLength={30}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                      />
+                      <button
+                        onClick={addTag}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-wine-50 text-wine-700 border border-wine-100 hover:bg-wine-100 transition-colors shrink-0 font-medium"
+                      >
+                        +
+                      </button>
+                    </div>
+                    {tagsDirty && (
+                      <div className="flex items-center justify-between mt-2 gap-2">
+                        {tagsError
+                          ? <p className="text-xs text-rose-600 flex-1">{tagsError}</p>
+                          : <span className="flex-1" />
+                        }
+                        <button
+                          onClick={saveTags}
+                          disabled={tagsSaving}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-wine-600 text-white font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors shrink-0"
+                        >
+                          {tagsSaving ? 'Salvando…' : 'Salvar tags'}
+                        </button>
+                      </div>
+                    )}
+                    {!tagsDirty && tagsError && (
+                      <p className="text-xs text-rose-600 mt-1">{tagsError}</p>
+                    )}
+                  </div>
+
+                  {/* histórico */}
+                  <div className="px-6 pt-4 pb-2">
+                    <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-3">
+                      Histórico de atendimentos
+                    </p>
+                  </div>
+
+                  <div className="px-6 pb-4">
+                    {historyLoading ? (
+                      <div className="space-y-2 animate-pulse">
+                        {[0, 1, 2].map((i) => (
+                          <div key={i} className="h-10 bg-wine-50 rounded-lg" />
+                        ))}
+                      </div>
+                    ) : history.length === 0 ? (
+                      <p className="text-sm text-ink/40 py-4 text-center">Sem atendimentos registrados.</p>
+                    ) : (
+                      <ul>
+                        {history.map((h) => {
+                          const cfg = historyStatusConfig[h.status] ?? { label: h.status, cls: 'bg-gray-100 text-gray-500' };
+                          return (
+                            <li
+                              key={h.id}
+                              className="flex items-center justify-between gap-3 py-2.5 border-b border-wine-50 last:border-0"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-ink truncate">{h.service_name}</p>
+                                <p className="text-xs text-ink/40">{formatDate(h.starts_at)}</p>
+                              </div>
+                              <div className="shrink-0 flex flex-col items-end gap-1">
+                                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
+                                  {cfg.label}
+                                </span>
+                                {h.price_cents_snapshot > 0 && (
+                                  <span className="text-xs text-ink/40">{formatCents(h.price_cents_snapshot)}</span>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
-            <div className="px-6 pb-6">
+            <div className="px-6 py-4 border-t border-wine-50">
+              {editing ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={cancelEditing}
+                    className="flex-1 py-2.5 rounded-xl border border-wine-100 text-sm text-ink/70 hover:bg-wine-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={saveEdits}
+                    disabled={editSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-wine-600 text-white text-sm font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors"
+                  >
+                    {editSaving ? 'Salvando…' : 'Salvar alterações'}
+                  </button>
+                </div>
+              ) : (
               <button
-                onClick={() => setSelected(null)}
+                onClick={closeModal}
                 className="w-full py-2.5 rounded-xl border border-wine-100 text-sm text-ink/70 hover:bg-wine-50 transition-colors"
               >
                 Fechar
               </button>
+              )}
             </div>
           </div>
         </div>
