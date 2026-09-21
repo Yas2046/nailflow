@@ -885,10 +885,11 @@ export async function processMessage(req, res, next) {
 
     // Lê last_message_at anterior (necessário para TTL do BOT_ATIVO)
     const { rows: _prevRows } = await pool.query(
-      'SELECT last_message_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
+      'SELECT last_message_at, updated_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
       [professionalId, phone]
     );
     const _prevLastMsgAt = _prevRows[0]?.last_message_at ?? null;
+    const _prevUpdatedAt = _prevRows[0]?.updated_at ?? null;
 
     // Get or create conversation (atualiza last_message_at = now())
     const conv = await getOrCreateConversation(professionalId, phone);
@@ -906,13 +907,12 @@ export async function processMessage(req, res, next) {
         [professionalId, phone]
       );
       const _profLastAt = _profRows[0]?.created_at ?? null;
-      // Base do TTL: o mais recente entre a última mensagem da profissional
-      // e o início do modo ATENDIMENTO_HUMANO (conv.updated_at).
-      // Isso evita expirar quando o cliente acabou de escolher "Falar com a profissional"
-      // e a última mensagem da profissional é de uma sessão anterior.
-      const _profTime = _profLastAt ? new Date(_profLastAt).getTime() : 0;
-      const _modeTime = new Date(conv.updated_at ?? conv.last_message_at).getTime();
-      const _msecSinceProfessional = Date.now() - Math.max(_profTime, _modeTime);
+      // TTL baseado na última mensagem da profissional.
+      // Se nunca houve mensagem da profissional (cliente acabou de entrar em human_mode),
+      // usa Date.now() para não expirar imediatamente.
+      // Evita depender de updated_at, que o trigger de banco contamina a cada mensagem do cliente.
+      const _modeTime = _profLastAt ? new Date(_profLastAt).getTime() : Date.now();
+      const _msecSinceProfessional = Date.now() - _modeTime;
 
       if (_msecSinceProfessional > _TTL_MS) {
         // Mais de 4h desde a última mensagem da profissional → retorna ao bot
