@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
+import QRCode from 'qrcode';
 import type { WhatsAppStatus, WhatsAppConnect } from '../types';
 
 const QR_TTL_MS = 55_000;
@@ -22,6 +23,8 @@ export default function Configurações() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrCodeText, setQrCodeText] = useState<string | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [qrCount, setQrCount] = useState(0);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
@@ -30,10 +33,21 @@ export default function Configurações() {
   const qrTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearQr = useCallback(() => {
-    setQrCode(null);
+    setQrCode(null)
+    setQrCodeText(null);
     setQrCount(0);
     if (qrTimerRef.current) clearTimeout(qrTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (qrCodeText && qrCanvasRef.current) {
+      QRCode.toCanvas(qrCanvasRef.current, qrCodeText, {
+        width: 208,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      }).catch(console.error);
+    }
+  }, [qrCodeText]);
 
   const fetchStatus = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -69,7 +83,8 @@ export default function Configurações() {
   const scheduleQrExpiry = useCallback(() => {
     if (qrTimerRef.current) clearTimeout(qrTimerRef.current);
     qrTimerRef.current = setTimeout(() => {
-      setQrCode(null);
+      setQrCode(null)
+    setQrCodeText(null);
       setConnectError('QR Code expirado. Clique em "Atualizar QR" para gerar um novo.');
       startPolling(false);
     }, QR_TTL_MS);
@@ -78,7 +93,8 @@ export default function Configurações() {
   async function handleConnect() {
     setConnectLoading(true);
     setConnectError(null);
-    setQrCode(null);
+    setQrCode(null)
+    setQrCodeText(null);
     try {
       const data = await api.post<WhatsAppConnect>('/whatsapp/connect', {});
       if (data.alreadyConnected) {
@@ -87,6 +103,7 @@ export default function Configurações() {
       }
       if (data.qrCode) {
         setQrCode(data.qrCode);
+        setQrCodeText(data.qrCodeText ?? null);
         setQrCount(data.count ?? 1);
         startPolling(true);
         scheduleQrExpiry();
@@ -181,10 +198,10 @@ export default function Configurações() {
                 </div>
               )}
 
-              {qrCode && !status.connected && (
+              {(qrCode || qrCodeText) && !status.connected && (
                 <div className="flex flex-col items-center gap-4 pt-2">
                   <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm inline-block">
-                    <img src={qrCode} alt="QR Code WhatsApp" className="w-52 h-52 object-contain" />
+                    <canvas ref={qrCanvasRef} className="rounded" style={{ width: 208, height: 208 }} />
                   </div>
                   <div className="text-center space-y-1">
                     <p className="text-sm font-medium text-ink">Escaneie pelo WhatsApp</p>

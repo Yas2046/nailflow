@@ -13,6 +13,7 @@ export interface Appointment {
   endsAt: string;
   status: AppointmentStatus;
   notes: string | null;
+  tags?: string[];
   recurringGroupId: string | null;
 }
 
@@ -27,6 +28,7 @@ export interface Client {
   name: string;
   phone: string;
   notes: string | null;
+  tags?: string[];
   totalAtendimentos?: number;
   ultimoAtendimento?: string | null;
 }
