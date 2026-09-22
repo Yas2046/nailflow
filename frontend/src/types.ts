@@ -108,3 +108,13 @@ export interface WhatsAppConnect {
   qrCodeText?: string | null;
   count?: number;
 }
+
+export interface WhatsAppInstanceConfig {
+  instanceName: string | null;
+  configured: boolean;
+}
+
+export interface WhatsAppCreateInstance {
+  instanceName: string;
+  configured: boolean;
+}
