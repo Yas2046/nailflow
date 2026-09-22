@@ -12,7 +12,7 @@ export async function requireBotAuth(req, res, next) {
 
   try {
     // GET requests nao enviam body -- aceitar tambem via query string
-    const instance = req.body?.instance ?? req.query?.instance ?? null;
+    const instance = req.body?.instance ?? req.body?.waInstance ?? req.query?.instance ?? null;
 
     if (instance) {
       const { rows } = await pool.query(
