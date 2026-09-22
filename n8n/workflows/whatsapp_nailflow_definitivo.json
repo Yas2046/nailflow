@@ -1,5 +1,4 @@
 {
-  "id": "3yBtUtgMlKsXh3mw",
   "name": "WhatsApp NailFlow — Definitivo",
   "nodes": [
     {
@@ -20,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\n\n// Ignorar eventos que não são mensagens\nif (body.event !== 'messages.upsert') return [];\n\nconst data = body.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\nconst remoteJid = key.remoteJid || '';\n\n// Ignorar grupos\nif (remoteJid.endsWith('@g.us')) return [];\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\\D/g, '');\nconst fromMe = key.fromMe === true;\nconst waMessageId = key.id || '';\nconst text = (\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  ''\n);\n\n// Ignorar mensagens sem texto (audio, sticker, etc.) quando enviadas pelo bot/professional\n// Mas para clientes, ainda podemos querer registrar outros tipos\nconst messageType = data.messageType || 'conversation';\n\n// Ignorar tipos técnicos sem conteúdo real\nconst ignoredTypes = ['protocolMessage','reactionMessage','senderKeyDistributionMessage'];\nif (ignoredTypes.includes(messageType)) return [];\n\n// Se não tem texto e não é fromMe, ignorar (não conseguimos processar áudios, imagens sem legenda)\nif (!text && !fromMe) return [];\n\nconst pushName = data.pushName || '';\nconst instance = body.instance || '';\n\nreturn [{ json: { phone, text, waMessageId, fromMe, pushName, instance, messageType } }];"
+        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\n\n// Ignorar eventos que não são mensagens\nif (body.event !== 'messages.upsert') return [];\n\nconst data = body.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\nconst remoteJid = key.remoteJid || '';\n\n// Ignorar grupos\nif (remoteJid.endsWith('@g.us')) return [];\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\\D/g, '');\nconst fromMe = key.fromMe === true;\nconst waMessageId = key.id || '';\nconst text = (\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  ''\n);\n\n// Ignorar mensagens sem texto (audio, sticker, etc.) quando enviadas pelo bot/professional\n// Mas para clientes, ainda podemos querer registrar outros tipos\nconst messageType = data.messageType || 'conversation';\n\n// Ignorar tipos técnicos sem conteúdo real\nconst ignoredTypes = ['protocolMessage','reactionMessage','senderKeyDistributionMessage'];\nif (ignoredTypes.includes(messageType)) return [];\n\n// Se não tem texto e não é fromMe, ignorar (não conseguimos processar áudios, imagens sem legenda)\nif (!text && !fromMe) return [];\n\nconst pushName = data.pushName || '';\nconst instance = body.instance || '';\n\nconst waInstance = instance;\nreturn [{ json: { phone, text, waMessageId, fromMe, pushName, instance, messageType, waInstance } }];"
       },
       "id": "fd421f29-3bb5-49d6-86b6-625697b5d6f4",
       "name": "Extrair Dados",
@@ -47,37 +46,15 @@
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "phone",
-              "value": "={{ $json.phone }}"
-            },
-            {
-              "name": "text",
-              "value": "={{ $json.text }}"
-            },
-            {
-              "name": "waMessageId",
-              "value": "={{ $json.waMessageId }}"
-            },
-            {
-              "name": "fromMe",
-              "value": "={{ $json.fromMe }}"
-            },
-            {
-              "name": "pushName",
-              "value": "={{ $json.pushName }}"
-            }
-          ]
-        },
         "options": {
           "response": {
             "response": {
               "neverError": true
             }
           }
-        }
+        },
+        "specifyBody": "json",
+        "jsonBody": "={{ { phone: $('Extrair Dados').item.json.phone, text: $('Extrair Dados').item.json.text, waMessageId: $('Extrair Dados').item.json.waMessageId, fromMe: $('Extrair Dados').item.json.fromMe, pushName: $('Extrair Dados').item.json.pushName, waInstance: $('Extrair Dados').item.json.waInstance, messageType: $('Extrair Dados').item.json.messageType } }}"
       },
       "id": "25069a90-8b40-4f16-b485-f402e5ae85ac",
       "name": "Processar no NailFlow",
@@ -89,7 +66,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "*** REDACTED ***",
+          "id": "8RJOyTTr3LmcLfZF",
           "name": "Header Auth account 2"
         }
       },
@@ -120,7 +97,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://nailflow-evolution.duckdns.org/message/sendText/chip2",
+        "url": "={{ 'https://nailflow-evolution.duckdns.org/message/sendText/' + $('Extrair Dados').item.json.waInstance }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -157,7 +134,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "*** REDACTED ***",
+          "id": "SEzSTK4yU9MsfW08",
           "name": "Header Auth account"
         }
       }
@@ -206,7 +183,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "*** REDACTED ***",
+          "id": "8RJOyTTr3LmcLfZF",
           "name": "Header Auth account 2"
         }
       }
@@ -269,11 +246,12 @@
       ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "active": 1,
-  "versionId": "ac983452-9748-43bf-a3c8-a34fe6054d4a"
+  "id": "3yBtUtgMlKsXh3mw",
+  "pinData": {}
 }
