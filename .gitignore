@@ -34,3 +34,11 @@ Thumbs.db
 # ── dados locais (docker / n8n / postgres) ────────────────────────────────────
 n8n_data/
 pgdata/
+
+# ── backups de sessões de dev (diretórios criados automaticamente) ─────────────
+backend/backup_*/
+backend/db/backup_*.sql
+frontend/dist_bak_*/
+
+# ── arquivos .bak com sufixo de data/fase (padrão usado no projeto) ───────────
+*.bak-*
