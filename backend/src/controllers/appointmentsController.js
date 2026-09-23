@@ -183,7 +183,8 @@ export async function updateAppointment(req, res, next) {
     const dto = toDto(full[0]);
 
     if (data.status === 'confirmado') {
-      notifyN8n('appointment.confirmed', dto);
+      const { rows: instRows } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+      notifyN8n('appointment.confirmed', { ...dto, waInstance: instRows[0]?.wa_instance_name ?? null });
     }
 
     res.json(dto);
@@ -203,7 +204,8 @@ export async function cancelAppointment(req, res, next) {
     if (!rows[0]) throw new HttpError(404, 'Agendamento não encontrado.');
 
     const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
-    notifyN8n('appointment.cancelled', toDto(full[0]));
+    const { rows: instRowsC } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+    notifyN8n('appointment.cancelled', { ...toDto(full[0]), waInstance: instRowsC[0]?.wa_instance_name ?? null });
 
     res.status(204).end();
   } catch (err) {
