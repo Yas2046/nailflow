@@ -1,41 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { api } from '../services/api';
-import type { Appointment, DashboardSummary } from '../types';
-import AppointmentModal from '../components/AppointmentModal';
-
-// ─── utilitários ──────────────────────────────────────────────────────────────
+import type { Client, DashboardSummary, Appointment, Expense } from '../types';
 
 function formatMoney(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Bom dia';
-  if (h < 18) return 'Boa tarde';
-  return 'Boa noite';
-}
-
-function getTodayLabel() {
-  return new Date().toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-}
-
 function getCurrentMonthLabel() {
   return new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
-
-const PT_MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-/** Garante que todos os 6 meses apareçam, mesmo sem dados */
+const PT_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 function buildSixMonths(raw: Array<{ mes: string; totalCents: number }>) {
   const now = new Date();
   return Array.from({ length: 6 }, (_, i) => {
@@ -45,240 +19,79 @@ function buildSixMonths(raw: Array<{ mes: string; totalCents: number }>) {
     return { mes: key, label: PT_MONTHS[d.getMonth()], totalCents: found?.totalCents ?? 0 };
   });
 }
-
-// ─── ícones ───────────────────────────────────────────────────────────────────
-
-function IconClock() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7v5l3 3" />
-    </svg>
-  );
+function monthRange() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const to   = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+  return { from, to };
 }
-function IconCalendar() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18" />
-    </svg>
-  );
+function monthRangeDate() {
+  const now  = new Date();
+  const y    = now.getFullYear();
+  const m    = String(now.getMonth() + 1).padStart(2, '0');
+  const last = new Date(y, now.getMonth() + 1, 0).getDate();
+  return { from: `${y}-${m}-01`, to: `${y}-${m}-${last}` };
 }
-function IconUsers() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <path strokeLinecap="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path strokeLinecap="round" d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
-function IconMoney() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <rect x="2" y="6" width="20" height="14" rx="2" />
-      <path strokeLinecap="round" d="M2 10h20M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
-      <circle cx="12" cy="14" r="2" />
-    </svg>
-  );
-}
-function IconTrend() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M22 7l-8 8-4-4-6 6M22 7h-6M22 7v6" />
-    </svg>
-  );
-}
-function IconSparkle() {
-  return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <path strokeLinecap="round" d="M12 3v2m0 14v2M3 12h2m14 0h2m-3.3-6.7-1.4 1.4M7.7 16.3l-1.4 1.4m12 0-1.4-1.4M7.7 7.7 6.3 6.3" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-function IconAlert() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-    </svg>
-  );
-}
-function IconCheckCircle() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-5" />
-    </svg>
-  );
-}
-function IconXCircle() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
-    </svg>
-  );
-}
-function IconUserPlus() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-      <path strokeLinecap="round" d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="8.5" cy="7" r="4" />
-      <path strokeLinecap="round" d="M20 8v6M17 11h6" />
-    </svg>
-  );
+function pct(part: number, total: number) {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
 }
 
-// ─── componentes ─────────────────────────────────────────────────────────────
+// ── Icons ───────────────────────────────────────────────────────────────────
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 mb-4">
-      <span className="w-0.5 h-5 rounded-full bg-wine-500 shrink-0" aria-hidden="true" />
-      <h2 className="font-display text-xl text-wine-700">{children}</h2>
-    </div>
-  );
+function IconTrending() {
+  return (<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M22 7l-9 9-4-4-6 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M16 7h6v6"/></svg>);
 }
 
-const statusConfig: Record<string, { label: string; cls: string }> = {
-  pendente:        { label: 'Pendente',       cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  confirmado:      { label: 'Confirmado',     cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  concluido:       { label: 'Concluído',      cls: 'bg-green-50 text-green-700 border border-green-200' },
-  cancelado:       { label: 'Cancelado',      cls: 'bg-rose-50 text-rose-600 border border-rose-200' },
-  nao_compareceu:  { label: 'Não compareceu', cls: 'bg-gray-100 text-gray-500 border border-gray-200' },
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const cfg = statusConfig[status] ?? { label: status, cls: 'bg-gray-100 text-gray-500' };
-  return (
-    <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${cfg.cls}`}>
-      {cfg.label}
-    </span>
-  );
-}
+// ── VariacaoBadge ────────────────────────────────────────────────────────────
 
 function VariacaoBadge({ variacao }: { variacao: number | null }) {
   if (variacao === null) return null;
-  const positivo = variacao >= 0;
+  const pos = variacao >= 0;
   return (
-    <span
-      className={`inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
-        positivo ? 'bg-green-50 text-green-700' : 'bg-rose-50 text-rose-700'
-      }`}
-    >
-      {positivo ? '↑' : '↓'} {Math.abs(variacao)}%
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+      pos ? 'bg-white/15 text-white' : 'bg-rose-400/25 text-rose-200'
+    }`}>
+      {pos ? '↑' : '↓'} {Math.abs(variacao)}%
     </span>
   );
 }
 
-interface KpiCardProps {
-  label: string;
-  value: string;
-  sub?: React.ReactNode;
-  icon: React.ReactNode;
-  accent?: string;
-  onClick?: () => void;
-}
-function KpiCard({ label, value, sub, icon, accent = 'bg-wine-50 text-wine-600', onClick }: KpiCardProps) {
-  const base = 'bg-white rounded-xl border border-wine-100 p-5 flex flex-col gap-3 shadow-sm text-left w-full';
-  const interactive = onClick ? 'cursor-pointer hover:shadow-md hover:border-wine-200 transition-shadow transition-colors' : '';
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className={`${base} ${interactive}`}>
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent}`}>{icon}</div>
-        <div>
-          <p className="text-xs text-ink/50 leading-tight mb-1">{label}</p>
-          <p className="font-display text-2xl text-wine-700 leading-none tabular-nums">{value}</p>
-          {sub && <div className="mt-1.5">{sub}</div>}
-        </div>
-      </button>
-    );
-  }
-  return (
-    <div className={base}>
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent}`}>{icon}</div>
-      <div>
-        <p className="text-xs text-ink/50 leading-tight mb-1">{label}</p>
-        <p className="font-display text-2xl text-wine-700 leading-none tabular-nums">{value}</p>
-        {sub && <div className="mt-1.5">{sub}</div>}
-      </div>
-    </div>
-  );
-}
+// ── BarChart — mais alto, valor formatado curto ──────────────────────────────
 
-function HeroKpiCard({ label, value, sub, icon, accent = 'bg-wine-50 text-wine-600' }: KpiCardProps) {
-  return (
-    <div className="bg-white rounded-xl border border-wine-100 p-5 flex items-center gap-4 shadow-sm">
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${accent}`}>{icon}</div>
-      <div className="min-w-0">
-        <p className="text-xs text-ink/50 leading-tight mb-0.5">{label}</p>
-        <p className="font-display text-3xl text-wine-700 leading-none tabular-nums">{value}</p>
-        {sub && <div className="mt-1.5">{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-// ─── gráfico de barras SVG ────────────────────────────────────────────────────
-
-function BarChart({ data }: { data: Array<{ label: string; totalCents: number }> }) {
+function BarChart({ data }: { data: Array<{ label: string; totalCents: number; isCurrent?: boolean }> }) {
   const max = Math.max(...data.map((d) => d.totalCents), 1);
-  const H = 120; // altura útil das barras
-  const barW = 32;
-  const gap = 16;
+  const H = 130; const barW = 30; const gap = 18;
   const totalW = data.length * (barW + gap) - gap;
-  const viewW = totalW + 16;
-  const viewH = H + 40; // + espaço para labels
+  const viewW = totalW + 20; const viewH = H + 48;
+
+  function shortMoney(cents: number) {
+    const v = cents / 100;
+    if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`;
+    return `${Math.round(v)}`;
+  }
 
   return (
-    <svg
-      viewBox={`0 0 ${viewW} ${viewH}`}
-      className="w-full"
-      style={{ maxHeight: 180 }}
-      aria-label="Gráfico de faturamento dos últimos 6 meses"
-    >
-      {/* linhas de grade */}
-      {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-        const y = H - frac * H;
-        return (
-          <line key={frac} x1="0" y1={y} x2={viewW} y2={y}
-            stroke="currentColor" strokeOpacity="0.06" strokeWidth="1" />
-        );
-      })}
-
+    <svg viewBox={`0 0 ${viewW} ${viewH}`} className="w-full" style={{ maxHeight: 210 }} aria-label="Gráfico de faturamento">
+      {[0, 0.25, 0.5, 0.75, 1].map((frac) => (
+        <line key={frac} x1="0" y1={H - frac * H} x2={viewW} y2={H - frac * H}
+          stroke="currentColor" strokeOpacity={frac === 0 ? 0.12 : 0.05} strokeWidth="1" />
+      ))}
       {data.map((d, i) => {
-        const barH = Math.max((d.totalCents / max) * H, d.totalCents > 0 ? 4 : 0);
-        const x = i * (barW + gap) + 8;
-        const y = H - barH;
-        const isEmpty = d.totalCents === 0;
-
+        const barH = Math.max((d.totalCents / max) * H, d.totalCents > 0 ? 5 : 0);
+        const x = i * (barW + gap) + 10; const y = H - barH;
+        const isCurr = d.isCurrent;
         return (
           <g key={d.label}>
-            {/* barra */}
-            <rect
-              x={x} y={y} width={barW} height={barH || 2}
-              rx="4"
-              className={isEmpty ? 'fill-wine-100' : 'fill-wine-600'}
-            />
-            {/* valor no topo */}
-            {!isEmpty && (
-              <text
-                x={x + barW / 2} y={y - 4}
-                textAnchor="middle"
-                fontSize="8"
-                className="fill-wine-700"
-                fontWeight="600"
-              >
-                {formatMoney(d.totalCents).replace('R$ ', 'R$')}
+            <rect x={x} y={y} width={barW} height={Math.max(barH, 2)} rx="5"
+              className={d.totalCents === 0 ? 'fill-wine-100/60' : isCurr ? 'fill-wine-500' : 'fill-wine-300/70'} />
+            {d.totalCents > 0 && (
+              <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="8"
+                className={isCurr ? 'fill-wine-700' : 'fill-wine-600/70'} fontWeight="600">
+                {shortMoney(d.totalCents)}
               </text>
             )}
-            {/* label do mês */}
-            <text
-              x={x + barW / 2} y={H + 16}
-              textAnchor="middle"
-              fontSize="10"
-              className="fill-ink/50"
-            >
+            <text x={x + barW / 2} y={H + 16} textAnchor="middle" fontSize="10"
+              className={isCurr ? 'fill-wine-700' : 'fill-ink/40'} fontWeight={isCurr ? '700' : '400'}>
               {d.label}
             </text>
           </g>
@@ -288,373 +101,267 @@ function BarChart({ data }: { data: Array<{ label: string; totalCents: number }>
   );
 }
 
-// ─── skeleton ─────────────────────────────────────────────────────────────────
+// ── ProportionBar ────────────────────────────────────────────────────────────
 
-function LoadingSkeleton() {
+function ProportionBar({ segments, total }: {
+  segments: Array<{ label: string; value: number; color: string }>;
+  total: number;
+}) {
+  if (total === 0) return <div className="h-1.5 bg-wine-50 rounded-full" />;
   return (
-    <div className="animate-pulse space-y-8">
-      <div className="h-8 w-48 bg-wine-100 rounded-lg" />
-      <div className="bg-wine-700/30 rounded-xl h-20" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="bg-white rounded-xl border border-wine-100 p-5 space-y-3">
-            <div className="w-9 h-9 bg-wine-50 rounded-lg" />
-            <div className="h-3 w-24 bg-wine-50 rounded" />
-            <div className="h-7 w-20 bg-wine-100 rounded" />
-          </div>
+    <div>
+      <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+        {segments.filter((s) => s.value > 0).map((s) => (
+          <div key={s.label} className={`${s.color}`} style={{ flex: s.value }} />
         ))}
       </div>
-      <div className="bg-white rounded-xl border border-wine-100 h-40" />
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2">
+        {segments.map((s) => (
+          <span key={s.label} className="flex items-center gap-1.5 text-[10px] text-ink/45">
+            <span className={`w-1.5 h-1.5 rounded-full ${s.color} shrink-0`} />
+            {s.label} {pct(s.value, total)}%
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── página ──────────────────────────────────────────────────────────────────
+// ── LoadingSkeleton ──────────────────────────────────────────────────────────
 
-function monthRange() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-  return { from, to };
+function LoadingSkeleton() {
+  return (
+    <div className="max-w-2xl mx-auto animate-pulse space-y-8">
+      <div className="h-7 w-40 bg-wine-100 rounded-lg" />
+      <div className="bg-wine-200/50 rounded-2xl h-52" />
+      <div className="bg-wine-100/60 rounded-2xl h-56" />
+      <div className="bg-white rounded-xl border border-wine-100 h-24" />
+      <div className="bg-white rounded-xl border border-wine-100 h-20" />
+      <div className="bg-white rounded-xl border border-wine-100 h-36" />
+    </div>
+  );
 }
 
-function todayRange() {
-  const s = new Date();
-  s.setHours(0, 0, 0, 0);
-  const e = new Date(s);
-  e.setDate(e.getDate() + 1);
-  return { from: s.toISOString(), to: e.toISOString() };
-}
-
-type DetailModal = {
-  title: string;
-  status: 'concluido' | 'cancelado';
-  appointments: Appointment[] | null;
-} | null;
+// ── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
-  const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
-  const [detailModal, setDetailModal] = useState<DetailModal>(null);
+  usePageTitle('Dashboard');
+  const [summary, setSummary]       = useState<DashboardSummary | null>(null);
+  const [clients, setClients]       = useState<Client[]>([]);
+  const [monthAppts, setMonthAppts] = useState<Appointment[]>([]);
+  const [gastosCents, setGastosCents] = useState<number>(0);
+  const [error, setError]           = useState<string | null>(null);
 
-  function openDetail(status: 'concluido' | 'cancelado') {
-    const title = status === 'concluido' ? 'Concluídos' : 'Cancelados';
-    setDetailModal({ title, status, appointments: null });
-    const { from, to } = monthRange();
-    api
-      .get<Appointment[]>(`/appointments?from=${from}&to=${to}`)
-      .then((all) => {
-        setDetailModal((prev) => prev ? { ...prev, appointments: all.filter((a) => a.status === status) } : null);
+  useEffect(() => {
+    const { from, to }   = monthRange();
+    const { from: df, to: dt } = monthRangeDate();
+
+    Promise.all([
+      api.get<DashboardSummary>('/dashboard'),
+      api.get<Client[]>('/clients'),
+      api.get<Appointment[]>(`/appointments?from=${from}&to=${to}`),
+      fetch(`/api/expenses?from=${df}&to=${dt}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() as Promise<Expense[]> : Promise.resolve([]))
+        .catch(() => [] as Expense[]),
+    ])
+      .then(([s, c, a, expenses]) => {
+        setSummary(s);
+        setClients(c);
+        setMonthAppts(a);
+        setGastosCents(expenses.reduce((acc: number, e: Expense) => acc + e.amount_cents, 0));
       })
-      .catch(() => {
-        setDetailModal((prev) => prev ? { ...prev, appointments: [] } : null);
-      });
-  }
+      .catch((e: Error) => setError(e.message));
+  }, []);
 
-  function fetchAll() {
-    api.get<DashboardSummary>('/dashboard').then(setData).catch((e) => setError(e.message));
-    const { from, to } = todayRange();
-    api
-      .get<Appointment[]>(`/appointments?from=${from}&to=${to}`)
-      .then(setTodayAppointments)
-      .catch(() => {});
-  }
+  if (error) return (
+    <div className="max-w-2xl mx-auto rounded-xl bg-rose-50 border border-rose-200 p-6 text-center space-y-2">
+      <p className="text-wine-700 font-semibold">Erro ao carregar dados</p>
+      <p className="text-sm text-ink/50">{error}</p>
+    </div>
+  );
+  if (!summary) return <LoadingSkeleton />;
 
-  useEffect(() => { fetchAll(); }, []);
+  const { mes, variacao, topServicos, faturamento6Meses } = summary;
 
-  if (error)
-    return (
-      <div className="rounded-xl bg-rose-50 border border-rose-200 p-5 text-rose-600 text-sm">
-        Erro ao carregar painel: {error}
-      </div>
-    );
+  // Financeiro
+  const faturado    = mes.faturamentoRealizadoCents;
+  const resultado   = faturado - gastosCents;
+  const ticketMedio = mes.agendamentosConcluidos > 0
+    ? Math.round(faturado / mes.agendamentosConcluidos) : 0;
+  const resultadoPos = resultado >= 0;
 
-  if (!data) return <LoadingSkeleton />;
+  // Clientes
+  const INATIVO_MS = 60 * 24 * 60 * 60 * 1000;
+  const agora = Date.now();
+  const clientesInativos = clients.filter((c) =>
+    c.ultimoAtendimento ? agora - new Date(c.ultimoAtendimento).getTime() > INATIVO_MS : false
+  ).length;
+  const activeIds   = new Set(monthAppts.filter((a) => a.status !== 'cancelado').map((a) => a.clientId));
+  const clientesAtivos = activeIds.size;
 
-  const sixMonths = buildSixMonths(data.faturamento6Meses);
-  const mesLabel  = getCurrentMonthLabel();
+  // Operação
+  const totalAtend     = mes.agendamentosTotal;
+  const maxServCount   = Math.max(...topServicos.map((s) => s.count), 1);
+
+  // Gráfico — marcar mês atual
+  const chartData = buildSixMonths(faturamento6Meses).map((d, i) => ({ ...d, isCurrent: i === 5 }));
 
   return (
-    <>
-      <div className="space-y-10">
+    <div className="max-w-2xl mx-auto space-y-8 pb-10">
 
-        {/* ── cabeçalho ──────────────────────────────────────────────────────── */}
-        <div>
-          <h1 className="font-display text-3xl text-wine-700">{getGreeting()}</h1>
-          <p className="text-sm text-ink/50 mt-1 capitalize">{getTodayLabel()}</p>
-        </div>
-
-        {/* ── próximo atendimento ────────────────────────────────────────────── */}
-        {data.proximoAtendimento ? (
-          <div className="bg-gradient-to-r from-wine-700 to-wine-600 text-cream rounded-xl p-5 flex items-start gap-4 shadow-sm">
-            <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-              <IconSparkle />
-            </div>
-            <div>
-              <p className="text-wine-100 text-xs mb-1">Próximo atendimento</p>
-              <p className="font-display text-xl leading-snug">{data.proximoAtendimento.clientName}</p>
-              <p className="text-wine-100 text-sm mt-0.5">
-                {data.proximoAtendimento.serviceName} · {formatTime(data.proximoAtendimento.startsAt)}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-wine-50 border border-wine-100 rounded-xl p-5 text-sm text-ink/50 flex items-center gap-3">
-            <IconCalendar />
-            <span>Nenhum atendimento pendente para hoje.</span>
-          </div>
-        )}
-
-        {/* ── KPIs de hoje ──────────────────────────────────────────────────── */}
-        <div>
-          <SectionHeading>Hoje</SectionHeading>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <HeroKpiCard
-              label="Agendamentos hoje"
-              value={String(data.agendamentosHoje.length)}
-              icon={<IconCalendar />}
-            />
-            <HeroKpiCard
-              label="Horários disponíveis"
-              value={String(data.horariosDisponiveisHoje)}
-              icon={<IconClock />}
-            />
-            <HeroKpiCard
-              label="Faturamento estimado hoje"
-              value={formatMoney(data.faturamentoEstimadoHojeCents)}
-              icon={<IconMoney />}
-              accent="bg-green-50 text-green-700"
-            />
-          </div>
-        </div>
-
-        {/* ── faturamento do mês ────────────────────────────────────────────── */}
-        <div>
-          <SectionHeading><span className="capitalize">{mesLabel}</span></SectionHeading>
-
-          {/* linha 1: financeiro */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <KpiCard
-              label="Faturamento realizado"
-              value={formatMoney(data.mes.faturamentoRealizadoCents)}
-              icon={<IconMoney />}
-              accent="bg-green-50 text-green-700"
-              sub={
-                <div className="flex items-center gap-2 flex-wrap">
-                  {data.variacao !== null && <VariacaoBadge variacao={data.variacao} />}
-                  {data.mesAnterior && (
-                    <span className="text-xs text-ink/40">
-                      Mês ant.: {formatMoney(data.mesAnterior.faturamentoRealizadoCents)}
-                    </span>
-                  )}
-                </div>
-              }
-            />
-            <KpiCard
-              label="Faturamento previsto"
-              value={formatMoney(data.mes.faturamentoPrevistoCents)}
-              icon={<IconTrend />}
-              accent="bg-blue-50 text-blue-600"
-              sub={<span className="text-xs text-ink/40">Agendamentos futuros ativos</span>}
-            />
-            <KpiCard
-              label="Faturamento perdido"
-              value={formatMoney(data.mes.faturamentoPerdidoCents)}
-              icon={<IconAlert />}
-              accent="bg-rose-50 text-rose-500"
-              sub={
-                data.mes.agendamentosNaoCompareceu > 0 ? (
-                  <span className="text-xs text-ink/40">
-                    {data.mes.agendamentosNaoCompareceu} não compareceu
-                  </span>
-                ) : undefined
-              }
-            />
-          </div>
-
-          {/* linha 2: atendimentos + clientes */}
-          <p className="text-xs font-medium text-ink/30 uppercase tracking-wider mb-3">Atendimentos e clientes</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <KpiCard
-              label="Concluídos"
-              value={String(data.mes.agendamentosConcluidos)}
-              icon={<IconCheckCircle />}
-              accent="bg-green-50 text-green-700"
-              onClick={() => openDetail('concluido')}
-            />
-            <KpiCard
-              label="Cancelados"
-              value={String(data.mes.agendamentosCancelados)}
-              icon={<IconXCircle />}
-              accent="bg-rose-50 text-rose-500"
-              onClick={() => openDetail('cancelado')}
-            />
-            <KpiCard
-              label="Total de clientes"
-              value={String(data.totalClientes)}
-              icon={<IconUsers />}
-              onClick={() => navigate('/clientes')}
-            />
-            <KpiCard
-              label="Novos clientes"
-              value={String(data.mes.novosClientes)}
-              icon={<IconUserPlus />}
-              accent="bg-blue-50 text-blue-600"
-              sub={<span className="text-xs text-ink/40">no mês</span>}
-              onClick={() => navigate('/clientes')}
-            />
-          </div>
-        </div>
-
-        {/* ── gráfico 6 meses ───────────────────────────────────────────────── */}
-        <div>
-          <SectionHeading>Faturamento — últimos 6 meses</SectionHeading>
-          <div className="bg-white rounded-xl border border-wine-100 p-5 shadow-sm">
-            {sixMonths.every((m) => m.totalCents === 0) ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-ink/30 text-sm">
-                <IconMoney />
-                <p>Nenhum atendimento concluído registrado ainda.</p>
-              </div>
-            ) : (
-              <BarChart data={sixMonths} />
-            )}
-          </div>
-        </div>
-
-        {/* ── top serviços ──────────────────────────────────────────────────── */}
-        {data.topServicos.length > 0 && (
-          <div>
-            <SectionHeading>Serviços mais realizados</SectionHeading>
-            <div className="bg-white rounded-xl border border-wine-100 overflow-hidden shadow-sm">
-              <ul className="divide-y divide-wine-50">
-                {data.topServicos.map((s, i) => (
-                  <li key={s.serviceName} className="flex items-center justify-between px-5 py-4 gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="shrink-0 w-6 h-6 rounded-full bg-wine-50 text-wine-600 text-xs font-bold flex items-center justify-center">
-                        {i + 1}
-                      </span>
-                      <p className="font-medium text-ink truncate">{s.serviceName}</p>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 text-right">
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 font-semibold whitespace-nowrap">
-                        {s.count}×
-                      </span>
-                      <span className="text-sm font-semibold text-wine-700 tabular-nums whitespace-nowrap">
-                        {formatMoney(s.totalCents)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* ── agenda do dia ─────────────────────────────────────────────────── */}
-        <div>
-          <SectionHeading>Agenda de hoje</SectionHeading>
-          <div className="bg-white rounded-xl border border-wine-100 overflow-hidden shadow-sm">
-            {data.agendamentosHoje.length === 0 ? (
-              <div className="p-8 flex flex-col items-center gap-2 text-ink/40">
-                <IconCalendar />
-                <p className="text-sm">Nenhum agendamento para hoje.</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-wine-50">
-                {data.agendamentosHoje.map((a) => {
-                  const full = todayAppointments.find((t) => t.id === a.id);
-                  return (
-                    <li key={a.id}>
-                      <button
-                        onClick={() => full && setSelectedAppt(full)}
-                        disabled={!full}
-                        className="w-full flex items-center justify-between px-5 py-4 gap-4 text-left hover:bg-wine-50/60 transition-colors disabled:cursor-default"
-                      >
-                        <div className="flex items-center gap-4 min-w-0">
-                          <span className="shrink-0 text-sm font-semibold text-wine-700 tabular-nums w-11">
-                            {formatTime(a.startsAt)}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="font-medium text-ink truncate">{a.clientName}</p>
-                            <p className="text-xs text-ink/50 truncate">{a.serviceName}</p>
-                          </div>
-                        </div>
-                        <StatusBadge status={a.status} />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-
+      {/* ── Cabeçalho ── */}
+      <div>
+        <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Dashboard</h1>
+        <p className="text-sm text-ink/40 mt-1.5 capitalize tracking-wide">{getCurrentMonthLabel()}</p>
       </div>
 
-      {selectedAppt && (
-        <AppointmentModal
-          date={new Date(selectedAppt.startsAt)}
-          time={null}
-          appointment={selectedAppt}
-          onClose={() => setSelectedAppt(null)}
-          onSaved={() => { fetchAll(); setSelectedAppt(null); }}
-        />
-      )}
+      {/* ── 1. RESUMO FINANCEIRO — herói ── */}
+      <section className="bg-wine-800 rounded-2xl overflow-hidden text-cream shadow-lg">
+        {/* Faturamento — protagonista */}
+        <div className="px-6 pt-6 pb-5">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-wine-300 text-xs uppercase tracking-widest font-semibold">Faturamento realizado</p>
+            <VariacaoBadge variacao={variacao} />
+          </div>
+          <p className="font-display text-5xl sm:text-6xl leading-none tabular-nums mt-2">{formatMoney(faturado)}</p>
+          {variacao !== null && (
+            <p className="text-wine-400 text-xs mt-1.5 flex items-center gap-1">
+              <IconTrending /> vs mês anterior
+            </p>
+          )}
+        </div>
 
-      {detailModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          onClick={() => setDetailModal(null)}
-        >
-          <div className="absolute inset-0 bg-black/30" />
-          <div
-            className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* cabeçalho */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-wine-100 shrink-0">
-              <div>
-                <h3 className="font-display text-xl text-wine-700">{detailModal.title}</h3>
-                <p className="text-xs text-ink/40 capitalize mt-0.5">{getCurrentMonthLabel()}</p>
-              </div>
-              <button
-                onClick={() => setDetailModal(null)}
-                className="text-ink/40 hover:text-ink/70 transition-colors p-1 rounded-lg hover:bg-wine-50"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* conteúdo */}
-            <div className="overflow-y-auto flex-1">
-              {detailModal.appointments === null ? (
-                <div className="p-10 text-center text-ink/40 text-sm">Carregando…</div>
-              ) : detailModal.appointments.length === 0 ? (
-                <div className="p-10 text-center text-ink/40 text-sm">Nenhum agendamento encontrado.</div>
-              ) : (
-                <ul className="divide-y divide-wine-50">
-                  {detailModal.appointments.map((a) => (
-                    <li key={a.id} className="flex items-center justify-between px-6 py-3.5 gap-4">
-                      <div className="min-w-0">
-                        <p className="font-medium text-ink truncate">{a.clientName}</p>
-                        <p className="text-xs text-ink/50 truncate">
-                          {a.serviceName} · {formatTime(a.startsAt)}
-                        </p>
-                      </div>
-                      <StatusBadge status={a.status} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+        {/* Linha divisória + Gastos / Resultado */}
+        <div className="border-t border-wine-700/60 grid grid-cols-2 divide-x divide-wine-700/60">
+          <div className="px-6 py-4">
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">Gastos</p>
+            <p className="font-display text-2xl tabular-nums leading-none text-wine-200">
+              {gastosCents > 0 ? formatMoney(gastosCents) : '—'}
+            </p>
+          </div>
+          <div className="px-6 py-4">
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">Resultado</p>
+            {gastosCents > 0 ? (
+              <p className={`font-display text-2xl tabular-nums leading-none ${resultadoPos ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {formatMoney(resultado)}
+              </p>
+            ) : (
+              <p className="font-display text-2xl tabular-nums leading-none text-wine-400 text-sm font-sans font-normal">
+                sem gastos lançados
+              </p>
+            )}
           </div>
         </div>
+
+        {/* Rodapé: Ticket médio · Previsto · Perdido */}
+        <div className="border-t border-wine-700/60 px-6 py-4 flex flex-wrap gap-x-6 gap-y-2">
+          <div>
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Ticket médio</p>
+            <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(ticketMedio)}</p>
+          </div>
+          <div>
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Previsto</p>
+            <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(mes.faturamentoPrevistoCents)}</p>
+          </div>
+          <div>
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Perdido</p>
+            <p className="font-display text-xl tabular-nums text-rose-300 mt-0.5">{formatMoney(mes.faturamentoPerdidoCents)}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 2. EVOLUÇÃO — herói secundário ── */}
+      <section>
+        <div className="flex items-center gap-3 mb-4">
+          <span className="w-0.5 h-4 rounded-full bg-gold-500 shrink-0" aria-hidden="true" />
+          <h2 className="font-display text-lg sm:text-xl text-wine-700">Evolução — 6 meses</h2>
+        </div>
+        <div className="bg-white rounded-2xl border border-wine-100/80 px-5 pt-5 pb-4 shadow-sm">
+          <BarChart data={chartData} />
+        </div>
+      </section>
+
+      {/* ── 3. OPERAÇÃO — compacto ── */}
+      <section>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="w-0.5 h-4 rounded-full bg-gold-500 shrink-0" aria-hidden="true" />
+          <h2 className="font-display text-lg sm:text-xl text-wine-700">Atendimentos do mês</h2>
+        </div>
+        <div className="bg-white rounded-2xl border border-wine-100/80 p-5 shadow-sm space-y-4">
+          {/* Stats em linha */}
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Total',       value: totalAtend,                    note: undefined,                              dim: false },
+              { label: 'Concluídos', value: mes.agendamentosConcluidos,     note: `${pct(mes.agendamentosConcluidos, totalAtend)}%`, color: 'text-green-600' },
+              { label: 'Cancelados', value: mes.agendamentosCancelados,     note: `${pct(mes.agendamentosCancelados, totalAtend)}%`, color: 'text-rose-500' },
+              { label: 'No-show',    value: mes.agendamentosNaoCompareceu, note: `${pct(mes.agendamentosNaoCompareceu, totalAtend)}%`, color: 'text-amber-600' },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col gap-0.5">
+                <p className="text-[10px] text-ink/40 leading-none">{s.label}</p>
+                <p className="font-display text-2xl text-wine-700 tabular-nums leading-tight">{s.value}</p>
+                {s.note && <p className={`text-[10px] font-semibold ${'color' in s ? s.color : ''}`}>{s.note}</p>}
+              </div>
+            ))}
+          </div>
+          <ProportionBar total={totalAtend} segments={[
+            { label: 'Concluídos', value: mes.agendamentosConcluidos,     color: 'bg-green-500' },
+            { label: 'Cancelados', value: mes.agendamentosCancelados,     color: 'bg-rose-400' },
+            { label: 'No-show',    value: mes.agendamentosNaoCompareceu, color: 'bg-amber-400' },
+          ]} />
+        </div>
+      </section>
+
+      {/* ── 4. CLIENTES — compacto ── */}
+      <section>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="w-0.5 h-4 rounded-full bg-gold-500 shrink-0" aria-hidden="true" />
+          <h2 className="font-display text-lg sm:text-xl text-wine-700">Clientes</h2>
+        </div>
+        <div className="bg-white rounded-2xl border border-wine-100/80 px-5 py-4 shadow-sm">
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Total na base', value: summary.totalClientes,  note: undefined },
+              { label: 'Novos no mês',  value: mes.novosClientes,      note: undefined },
+              { label: 'Ativos no mês', value: clientesAtivos,         note: undefined },
+              { label: 'Inativos +60d', value: clientesInativos,       note: clientesInativos > 0 ? '!' : undefined },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col gap-0.5">
+                <p className="text-[10px] text-ink/40 leading-none">{s.label}</p>
+                <div className="flex items-baseline gap-1">
+                  <p className="font-display text-2xl text-wine-700 tabular-nums leading-tight">{s.value}</p>
+                  {s.note && <span className="text-xs font-bold text-amber-600">{s.note}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 5. SERVIÇOS ── */}
+      {topServicos.length > 0 && (
+        <section>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="w-0.5 h-4 rounded-full bg-gold-500 shrink-0" aria-hidden="true" />
+            <h2 className="font-display text-lg sm:text-xl text-wine-700">Serviços mais realizados</h2>
+          </div>
+          <div className="bg-white rounded-2xl border border-wine-100/80 divide-y divide-wine-50 shadow-sm">
+            {topServicos.map((s, i) => (
+              <div key={s.serviceName} className="px-5 py-3.5 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-5 h-5 rounded-full bg-wine-50 text-wine-600 text-[10px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                  <span className="flex-1 min-w-0 text-sm text-ink/80 truncate">{s.serviceName}</span>
+                  <span className="text-xs text-ink/35 tabular-nums shrink-0">{s.count}x</span>
+                  <span className="text-sm font-semibold text-wine-700 tabular-nums shrink-0">{formatMoney(s.totalCents)}</span>
+                </div>
+                <div className="h-1 bg-wine-50 rounded-full overflow-hidden">
+                  <div className="h-full bg-wine-300 rounded-full transition-all" style={{ width: `${pct(s.count, maxServCount)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
-    </>
+
+    </div>
   );
 }

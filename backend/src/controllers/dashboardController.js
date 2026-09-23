@@ -133,7 +133,7 @@ export async function getDashboardSummary(req, res, next) {
     const todayAppts = todayResult.rows;
     const proximo = todayAppts.find((a) => new Date(a.starts_at) > now) || null;
     const faturamentoEstimado = todayAppts
-      .filter((a) => a.status !== 'nao_compareceu')
+      .filter((a) => a.status !== 'nao_compareceu' && a.status !== 'cancelado')
       .reduce((sum, a) => sum + a.price_cents_snapshot, 0);
 
     // slots disponíveis hoje

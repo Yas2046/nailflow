@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
@@ -43,6 +44,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const [notes, setNotes]           = useState(appointment?.notes || '');
   const [error, setError]           = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
+  const { toast } = useToast();
   const [saving, setSaving]         = useState(false);
 
   // Recorrência (somente na criação)
@@ -92,6 +94,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       if (isEditing && scope === 'following') {
         // Atualiza este e os próximos (status + notes)
         await api.put(`/appointments/${appointment!.id}/and-following`, { status, notes: notes || null });
+        toast('Agendamentos atualizados');
         onSaved();
         return;
       }
@@ -100,6 +103,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
         await api.put(`/appointments/${appointment!.id}`, {
           clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null,
         });
+        toast('Agendamento atualizado');
         onSaved();
         return;
       }
@@ -117,6 +121,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       await api.post('/appointments', {
         clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null,
       });
+      toast('Agendamento criado com sucesso');
       onSaved();
     } catch (err) {
       setError(getFriendlyAvailabilityMessage(err, 'Não foi possível salvar o agendamento.'));
@@ -143,6 +148,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       } else {
         await api.delete(`/appointments/${appointment!.id}`);
       }
+      toast('Agendamento cancelado', 'info');
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao cancelar.');

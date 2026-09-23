@@ -1,4 +1,7 @@
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { api } from '../services/api';
+import type { WhatsAppInstanceConfig, WhatsAppStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from './LogoMark';
 
@@ -68,22 +71,58 @@ function IconLogout() {
   );
 }
 
+function IconChart() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16l4-4 4 4 4-6" />
+    </svg>
+  );
+}
+function IconChat() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+function IconWallet() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 12a2 2 0 0 0 0 4h5v-4h-5z" />
+    </svg>
+  );
+}
 // ─── dados da navegação ───────────────────────────────────────────────────────
 
 const links = [
-  { to: '/',                label: 'Painel',          shortLabel: 'Painel',   end: true,  icon: <IconHome /> },
-  { to: '/agenda',          label: 'Agenda',           shortLabel: 'Agenda',   end: false, icon: <IconCalendar /> },
-  { to: '/clientes',        label: 'Clientes',         shortLabel: 'Clientes', end: false, icon: <IconUsers /> },
-  { to: '/servicos',        label: 'Serviços',         shortLabel: 'Serviços', end: false, icon: <IconScissors /> },
-  { to: '/disponibilidade', label: 'Disponibilidade',  shortLabel: 'Horários', end: false, icon: <IconClock /> },
-  { to: '/perfil',          label: 'Perfil',           shortLabel: 'Perfil',   end: false, icon: <IconUser /> },
-  { to: '/configuracoes',   label: 'Configurações',    shortLabel: 'Config',   end: false, icon: <IconSettings /> },
+  { to: '/',              label: 'Início',        shortLabel: 'Início',   end: true,  icon: <IconHome /> },
+  { to: '/agenda',        label: 'Agenda',         shortLabel: 'Agenda',   end: false, icon: <IconCalendar /> },
+  { to: '/clientes',      label: 'Clientes',       shortLabel: 'Clientes', end: false, icon: <IconUsers /> },
+  { to: '/servicos',      label: 'Serviços',       shortLabel: 'Serviços', end: false, icon: <IconScissors /> },
+  { to: '/dashboard',     label: 'Dashboard',      shortLabel: 'Dash',     end: false, icon: <IconChart /> },
+  { to: '/gastos',        label: 'Gastos',         shortLabel: 'Gastos',   end: false, icon: <IconWallet /> },
+  { to: '/configuracoes', label: 'Configurações',  shortLabel: 'Config',   end: false, icon: <IconSettings /> },
 ];
 
 // ─── layout ───────────────────────────────────────────────────────────────────
 
 export default function Layout() {
   const { professional, logout } = useAuth();
+  const [waDisconnected, setWaDisconnected] = useState(false);
+
+  useEffect(() => {
+    if (!professional) return;
+    api.get<WhatsAppInstanceConfig>('/whatsapp/instance')
+      .then((cfg) => {
+        if (!cfg.configured) return;
+        api.get<WhatsAppStatus>('/whatsapp/status')
+          .then((st) => setWaDisconnected(!st.connected))
+          .catch(() => {});
+      })
+      .catch(() => {});
+  }, [professional]);
 
   if (!professional) return <Navigate to="/login" replace />;
 
@@ -96,34 +135,37 @@ export default function Layout() {
       <aside className="hidden md:flex md:w-60 min-h-screen bg-wine-700 flex-col shrink-0">
 
         {/* logo */}
-        <div className="px-5 pt-7 pb-5 border-b border-wine-600/40">
+        <div className="px-5 pt-8 pb-6 border-b border-wine-600/30">
           <div className="flex items-center gap-2.5 text-cream">
             <LogoMark className="w-5 h-5 shrink-0" />
-            <span className="font-display text-xl tracking-tight">NailFlow</span>
+            <span className="font-display text-xl tracking-tight font-semibold">NailFlow</span>
           </div>
-          <p className="text-wine-100/55 text-xs mt-1.5 truncate leading-tight">
+          <p className="font-display text-sm italic text-cream/80 mt-2 truncate leading-snug">
             {professional.businessName}
           </p>
         </div>
 
         {/* links */}
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
+        <nav className="flex-1 px-3 py-5 flex flex-col gap-1">
           {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               end={link.end}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   isActive
-                    ? 'bg-wine-600 text-white'
-                    : 'text-wine-100/75 hover:bg-wine-600/50 hover:text-white'
+                    ? 'bg-white/12 text-white'
+                    : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-50'}`}>
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-gold-400" aria-hidden="true" />
+                  )}
+                  <span className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-70'}`}>
                     {link.icon}
                   </span>
                   {link.label}
@@ -133,9 +175,16 @@ export default function Layout() {
           ))}
         </nav>
 
+        {/* badge WhatsApp desconectado */}
+        {waDisconnected && (
+          <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-rose-500/20 border border-rose-400/30 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0 animate-pulse" />
+            <span className="text-xs text-rose-200 leading-tight">WhatsApp desconectado</span>
+          </div>
+        )}
         {/* rodapé: avatar + nome + sair */}
-        <div className="px-4 py-4 border-t border-wine-600/40 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-wine-500/70 text-cream flex items-center justify-center font-display text-sm font-medium shrink-0 select-none">
+        <div className="px-4 py-4 border-t border-wine-600/25 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-white/15 ring-1 ring-white/25 text-cream flex items-center justify-center font-display text-sm font-medium shrink-0 select-none">
             {initial}
           </div>
           <div className="flex-1 min-w-0">
@@ -158,7 +207,12 @@ export default function Layout() {
           <LogoMark className="w-5 h-5 shrink-0" />
           <span className="font-display text-lg tracking-tight">NailFlow</span>
         </div>
-        <p className="text-wine-100/55 text-xs truncate max-w-[160px]">{professional.businessName}</p>
+        <div className="flex items-center gap-2">
+          {waDisconnected && (
+            <span title="WhatsApp desconectado" className="w-2 h-2 rounded-full bg-rose-400 animate-pulse shrink-0" />
+          )}
+          <p className="font-display text-xs italic text-cream/80 truncate max-w-[140px]">{professional.businessName}</p>
+        </div>
       </div>
 
       {/* ── conteúdo principal ─────────────────────────────────────────────── */}
@@ -184,10 +238,13 @@ export default function Layout() {
           >
             {({ isActive }) => (
               <>
-                <span className={`p-1 rounded-lg transition-colors ${isActive ? 'bg-wine-600' : ''}`}>
+                <span className={`p-1 rounded-lg transition-colors ${isActive ? 'text-white' : ''}`}>
                   {link.icon}
                 </span>
-                {link.shortLabel}
+                <span className={`transition-all ${isActive ? 'font-semibold text-white' : ''}`}>
+                  {link.shortLabel}
+                </span>
+                {isActive && <span className="w-1 h-1 rounded-full bg-gold-400 -mt-0.5" aria-hidden="true" />}
               </>
             )}
           </NavLink>

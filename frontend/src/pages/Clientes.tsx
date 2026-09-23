@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useToast } from '../context/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
+import { formatPhone } from '../utils/format';
 import { api } from '../services/api';
 import type { Client } from '../types';
 
@@ -91,7 +94,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg'
 
 function LoadingSkeleton() {
   return (
-    <div className="bg-white border border-wine-100 rounded-xl overflow-hidden animate-pulse">
+    <div className="bg-white border border-wine-100/80 rounded-2xl overflow-hidden animate-pulse">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-wine-50 last:border-0">
           <div className="w-10 h-10 rounded-full bg-wine-50 shrink-0" />
@@ -148,6 +151,8 @@ export default function Clientes() {
   const [clients, setClients]   = useState<Client[] | null>(null);
   const [selected, setSelected] = useState<Client | null>(null);
   const [history, setHistory]   = useState<HistoryItem[]>([]);
+  const { toast } = useToast();
+  usePageTitle('Clientes');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [metrics, setMetrics] = useState<ClientMetrics | null>(null);
   const [showNew, setShowNew]   = useState(false);
@@ -312,6 +317,7 @@ export default function Clientes() {
       );
 
       setEditing(false);
+      toast('Dados da cliente atualizados');
     } catch (err) {
       setEditError(err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.');
     } finally {
@@ -334,6 +340,7 @@ export default function Clientes() {
     try {
       await api.post('/clients', { name: name.trim(), phone: phone.trim(), notes: notes.trim() || null });
       setShowNew(false);
+      toast('Cliente cadastrada com sucesso');
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao cadastrar cliente.');
@@ -348,13 +355,14 @@ export default function Clientes() {
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="font-display text-3xl text-wine-700">Clientes</h1>
+        <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Clientes</h1>
+          {clients != null && <p className="text-sm text-ink/40 mt-1">{(clients ?? []).length} clientes cadastradas</p>}
         <button
           onClick={openNew}
-          className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm font-medium hover:bg-wine-700 transition-colors shadow-sm"
+          className="btn-primary"
         >
           + Nova cliente
         </button>
@@ -377,14 +385,27 @@ export default function Clientes() {
       {clients === null ? (
         <LoadingSkeleton />
       ) : filtered.length === 0 ? (
-        <div className="bg-white border border-wine-100 rounded-xl p-10 flex flex-col items-center gap-3 text-ink/30">
-          <IconUsers />
-          <p className="text-sm">
-            {search ? 'Nenhuma cliente encontrada para esta busca.' : 'Nenhuma cliente cadastrada ainda.'}
-          </p>
+        <div className="bg-white border border-wine-100 rounded-2xl p-10 flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-full bg-wine-50 flex items-center justify-center text-wine-200"><IconUsers /></div>
+          <div>
+            <p className="font-display text-lg text-wine-700">
+              {search ? 'Nenhuma cliente encontrada' : 'Nenhuma cliente cadastrada ainda'}
+            </p>
+            <p className="text-xs text-ink/30 mt-0.5">
+              {search ? 'Tente outro nome ou telefone' : 'Adicione sua primeira cliente para começar'}
+            </p>
+          </div>
+          {!search && (
+            <button
+              onClick={openNew}
+              className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm font-medium hover:bg-wine-700 transition-colors"
+            >
+              + Adicionar primeira cliente
+            </button>
+          )}
         </div>
       ) : (
-        <div className="bg-white border border-wine-100 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-white border border-wine-100 rounded-2xl overflow-hidden shadow-sm">
           <ul className="divide-y divide-wine-50">
             {filtered.map((c) => (
               <li key={c.id}>
@@ -397,8 +418,8 @@ export default function Clientes() {
 
                   {/* nome + telefone */}
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink truncate">{c.name}</p>
-                    <p className="text-sm text-ink/50 truncate">{c.phone}</p>
+                    <p className="font-bold text-ink truncate">{c.name}</p>
+                    <p className="text-sm text-ink/50 truncate">{formatPhone(c.phone)}</p>
                   </div>
 
                   {/* estatísticas */}
@@ -455,7 +476,7 @@ export default function Clientes() {
                 <div className="min-w-0">
                   <h3 className="font-display text-xl text-wine-700 truncate">{selected.name}</h3>
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                    <p className="text-sm text-ink/50">{selected.phone}</p>
+                    <p className="text-sm text-ink/50">{formatPhone(selected.phone)}</p>
                     {metrics?.inativaDias != null && metrics.inativaDias >= 60 && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
                         Inativa há {metrics.inativaDias}d
@@ -481,32 +502,24 @@ export default function Clientes() {
             </div>
 
             {/* KPIs */}
-            {metrics && (
-              <div className="grid grid-cols-2 gap-px bg-wine-100 border-b border-wine-100">
-                <div className="bg-white px-5 py-3">
-                  <p className="text-xs text-ink/40 mb-0.5">Total gasto</p>
-                  <p className="text-base font-semibold text-ink">{formatCents(metrics.valorTotalCents)}</p>
+            {metrics && (() => {
+              const kpis = [
+                { label: 'Total gasto', value: formatCents(metrics.valorTotalCents), cls: 'text-ink' },
+                { label: 'Ticket médio', value: metrics.totalConcluidos > 0 ? formatCents(metrics.ticketMedioCents) : '—', cls: 'text-ink' },
+                { label: 'Freq. de retorno', value: metrics.freqMediaDias != null && metrics.totalConcluidos > 1 ? `${metrics.freqMediaDias} dias` : '—', cls: 'text-ink' },
+                { label: 'Concluídos', value: String(metrics.totalConcluidos), cls: 'text-wine-700' },
+              ];
+              return (
+                <div className="grid grid-cols-2 gap-px bg-wine-100 border-b border-wine-100">
+                  {kpis.map((kpi) => (
+                    <div key={kpi.label} className="bg-white px-5 py-3">
+                      <p className="text-xs text-ink/40 mb-0.5">{kpi.label}</p>
+                      <p className={`text-base font-semibold ${kpi.cls}`}>{kpi.value}</p>
+                    </div>
+                  ))}
                 </div>
-                <div className="bg-white px-5 py-3">
-                  <p className="text-xs text-ink/40 mb-0.5">Ticket médio</p>
-                  <p className="text-base font-semibold text-ink">
-                    {metrics.totalConcluidos > 0 ? formatCents(metrics.ticketMedioCents) : '—'}
-                  </p>
-                </div>
-                <div className="bg-white px-5 py-3">
-                  <p className="text-xs text-ink/40 mb-0.5">Freq. de retorno</p>
-                  <p className="text-base font-semibold text-ink">
-                    {metrics.freqMediaDias != null && metrics.totalConcluidos > 1
-                      ? `${metrics.freqMediaDias} dias`
-                      : '—'}
-                  </p>
-                </div>
-                <div className="bg-wine-50/50 px-5 py-3">
-                  <p className="text-xs text-ink/40 mb-0.5">Concluídos</p>
-                  <p className="text-base font-semibold text-wine-700">{metrics.totalConcluidos}</p>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div className="overflow-y-auto flex-1">
               {editing ? (
@@ -601,22 +614,22 @@ export default function Clientes() {
                 <>
                   {/* informações rápidas */}
                   {metrics && (metrics.proximoAtendimento || metrics.ultimoAtendimento || metrics.servicoFavorito) && (
-                    <div className="px-6 pt-4 pb-1 space-y-2">
+                    <div className="px-6 pt-5 pb-2 space-y-2.5">
                       {metrics.proximoAtendimento && (
                         <div className="flex items-start gap-2 text-sm">
-                          <span className="text-ink/40 w-28 shrink-0 pt-0.5">Próx. agend.</span>
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 pt-0.5 uppercase tracking-wide">Próx. agend.</span>
                           <span className="text-emerald-700 font-medium">{formatDateTime(metrics.proximoAtendimento)}</span>
                         </div>
                       )}
                       {metrics.ultimoAtendimento && (
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="text-ink/40 w-28 shrink-0">Último atend.</span>
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 uppercase tracking-wide">Último atend.</span>
                           <span className="text-ink/70">{formatDate(metrics.ultimoAtendimento)}</span>
                         </div>
                       )}
                       {metrics.servicoFavorito && (
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="text-ink/40 w-28 shrink-0">Serv. favorito</span>
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 uppercase tracking-wide">Serv. favorito</span>
                           <span className="text-ink/70">{metrics.servicoFavorito}</span>
                         </div>
                       )}
@@ -718,7 +731,7 @@ export default function Clientes() {
                               className="flex items-center justify-between gap-3 py-2.5 border-b border-wine-50 last:border-0"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-ink truncate">{h.service_name}</p>
+                                <p className="text-sm font-semibold text-ink truncate">{h.service_name}</p>
                                 <p className="text-xs text-ink/40">{formatDate(h.starts_at)}</p>
                               </div>
                               <div className="shrink-0 flex flex-col items-end gap-1">
@@ -726,7 +739,7 @@ export default function Clientes() {
                                   {cfg.label}
                                 </span>
                                 {h.price_cents_snapshot > 0 && (
-                                  <span className="text-xs text-ink/40">{formatCents(h.price_cents_snapshot)}</span>
+                                  <span className="text-xs font-semibold text-wine-700">{formatCents(h.price_cents_snapshot)}</span>
                                 )}
                               </div>
                             </li>
@@ -744,14 +757,14 @@ export default function Clientes() {
                 <div className="flex gap-2">
                   <button
                     onClick={cancelEditing}
-                    className="flex-1 py-2.5 rounded-xl border border-wine-100 text-sm text-ink/70 hover:bg-wine-50 transition-colors"
+                    className="btn-secondary flex-1"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={saveEdits}
                     disabled={editSaving}
-                    className="flex-1 py-2.5 rounded-xl bg-wine-600 text-white text-sm font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors"
+                    className="btn-primary flex-1 disabled:opacity-60"
                   >
                     {editSaving ? 'Salvando…' : 'Salvar alterações'}
                   </button>
@@ -759,7 +772,7 @@ export default function Clientes() {
               ) : (
               <button
                 onClick={closeModal}
-                className="w-full py-2.5 rounded-xl border border-wine-100 text-sm text-ink/70 hover:bg-wine-50 transition-colors"
+                className="btn-secondary w-full"
               >
                 Fechar
               </button>
@@ -826,14 +839,14 @@ export default function Clientes() {
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={() => setShowNew(false)}
-                  className="px-4 py-2 text-sm rounded-lg border border-wine-100 text-ink/70 hover:bg-wine-50 transition-colors"
+                  className="btn-secondary"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={saving}
-                  className="px-5 py-2 text-sm rounded-lg bg-wine-600 text-white font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors"
+                  className="btn-primary disabled:opacity-60"
                 >
                   {saving ? 'Cadastrando…' : 'Cadastrar'}
                 </button>

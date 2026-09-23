@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useToast } from '../context/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
+import { formatPhone } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +12,7 @@ interface ProfileData {
   email: string;
   business_name: string;
   phone_whatsapp: string;
+  avatar_b64: string | null;
 }
 
 // ─── ícones ───────────────────────────────────────────────────────────────────
@@ -69,6 +73,20 @@ function IconEdit() {
     </svg>
   );
 }
+function IconPencil() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z" />
+    </svg>
+  );
+}
+function IconTrash() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 011-1h4a1 1 0 011 1m-7 0h8" />
+    </svg>
+  );
+}
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,11 +94,145 @@ function avatarInitial(name: string) {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
 
-function formatPhone(phone: string) {
-  const d = phone.replace(/\D/g, '');
-  if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  return phone;
+function resizeImageToBase64(file: File, size = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas não disponível.'));
+
+      // Crop centralizado para quadrado
+      const side = Math.min(img.width, img.height);
+      const sx = (img.width - side) / 2;
+      const sy = (img.height - side) / 2;
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagem inválida.')); };
+    img.src = url;
+  });
+}
+
+// ─── Avatar com edição ────────────────────────────────────────────────────────
+
+interface AvatarEditorProps {
+  name: string;
+  currentB64: string | null;
+  previewB64: string | null;
+  onSelect: (b64: string) => void;
+  onRemove: () => void;
+  processing: boolean;
+}
+
+function AvatarEditor({ name, currentB64, previewB64, onSelect, onRemove, processing }: AvatarEditorProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const displayB64 = previewB64 ?? currentB64;
+  const hasPhoto = !!displayB64;
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    setFileError(null);
+    const file = e.target.files?.[0];
+    if (!e.target) return;
+    // Reset so same file can be re-selected
+    (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setFileError('Selecione um arquivo de imagem (JPG, PNG, WEBP…).');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setFileError('Arquivo muito grande. Use uma imagem de até 10 MB.');
+      return;
+    }
+
+    try {
+      const b64 = await resizeImageToBase64(file);
+      onSelect(b64);
+    } catch {
+      setFileError('Não foi possível processar a imagem. Tente outra.');
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-5">
+      {/* Avatar clicável */}
+      <div className="relative shrink-0">
+        <div className="w-20 h-20 rounded-full overflow-hidden bg-wine-600 text-cream flex items-center justify-center font-display text-3xl shadow-sm">
+          {hasPhoto ? (
+            <img src={displayB64!} alt="Foto de perfil" className="w-full h-full object-cover" />
+          ) : (
+            avatarInitial(name)
+          )}
+        </div>
+
+        {/* Botão lápis sobre o avatar */}
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={processing}
+          title="Alterar foto"
+          className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-wine-600 text-white flex items-center justify-center shadow-md hover:bg-wine-700 transition-colors disabled:opacity-60 border-2 border-white"
+        >
+          <IconPencil />
+        </button>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFile}
+        />
+      </div>
+
+      {/* Info + ações de foto */}
+      <div className="min-w-0">
+        {previewB64 && (
+          <p className="text-xs text-amber-600 font-medium mb-1">Prévia — ainda não salva</p>
+        )}
+        {!previewB64 && hasPhoto && (
+          <p className="text-xs text-ink/40 mb-1">Foto de perfil ativa</p>
+        )}
+        {!hasPhoto && (
+          <p className="text-xs text-ink/40 mb-1">Sem foto de perfil</p>
+        )}
+
+        <div className="flex flex-wrap gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={processing}
+            className="text-xs font-medium text-wine-600 hover:text-wine-700 underline disabled:opacity-50 transition-colors"
+          >
+            {hasPhoto ? 'Trocar foto' : 'Adicionar foto'}
+          </button>
+          {hasPhoto && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={processing}
+              className="flex items-center gap-1 text-xs font-medium text-rose-500 hover:text-rose-700 underline disabled:opacity-50 transition-colors"
+            >
+              <IconTrash />
+              Remover
+            </button>
+          )}
+        </div>
+
+        {fileError && (
+          <p className="text-xs text-rose-600 mt-1.5">{fileError}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── componentes ─────────────────────────────────────────────────────────────
@@ -195,6 +347,8 @@ interface FormState {
 export default function Perfil() {
   const { logout, updateProfessional } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  usePageTitle('Perfil');
 
   const [profile, setProfile]       = useState<ProfileData | null>(null);
   const [error, setError]           = useState<string | null>(null);
@@ -204,6 +358,11 @@ export default function Perfil() {
   const [form, setForm]             = useState<FormState>({ name: '', business_name: '', phone_whatsapp: '', email: '' });
   const [saving, setSaving]         = useState(false);
   const [saveError, setSaveError]   = useState<string | null>(null);
+
+  // ── Avatar ─────────────────────────────────────────────────────────────
+  const [avatarPreview, setAvatarPreview]   = useState<string | null>(null);
+  const [avatarPending, setAvatarPending]   = useState<string | null | 'remove'>(undefined as unknown as null);
+  const [avatarSaving, setAvatarSaving]     = useState(false);
 
   useEffect(() => {
     api.get<ProfileData>('/auth/me')
@@ -241,11 +400,35 @@ export default function Perfil() {
         businessName: updated.business_name,
       });
       setEditing(false);
+      toast('Perfil atualizado com sucesso');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.';
       setSaveError(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Salvar foto separadamente ──────────────────────────────────────────
+  async function handleSaveAvatar(b64: string | null) {
+    if (!profile) return;
+    setAvatarSaving(true);
+    try {
+      const updated = await api.put<ProfileData>('/auth/me', {
+        name:           profile.name,
+        business_name:  profile.business_name,
+        phone_whatsapp: profile.phone_whatsapp,
+        email:          profile.email,
+        avatar_b64:     b64,
+      });
+      setProfile(updated);
+      setAvatarPreview(null);
+      setAvatarPending(null as unknown as null);
+      toast(b64 ? 'Foto salva com sucesso' : 'Foto removida', 'success');
+    } catch {
+      toast('Erro ao salvar foto. Tente novamente.', 'error');
+    } finally {
+      setAvatarSaving(false);
     }
   }
 
@@ -263,6 +446,10 @@ export default function Perfil() {
     );
 
   if (!profile) return <LoadingSkeleton />;
+
+  const pendingRemove = avatarPending === 'remove';
+  const currentAvatarB64 = pendingRemove ? null : (profile.avatar_b64 ?? null);
+  const hasPendingChange = avatarPreview !== null || pendingRemove;
 
   return (
     <div className="space-y-6 max-w-lg">
@@ -285,11 +472,24 @@ export default function Perfil() {
       </div>
 
       {/* avatar + nome */}
-      <div className="flex items-center gap-5">
-        <div className="w-20 h-20 rounded-full bg-wine-600 text-cream flex items-center justify-center font-display text-3xl shrink-0 shadow-sm">
-          {avatarInitial(editing ? form.name : profile.name)}
-        </div>
-        <div>
+      <div className="bg-white border border-wine-100 rounded-xl p-5 shadow-sm">
+        <AvatarEditor
+          name={editing ? form.name : profile.name}
+          currentB64={currentAvatarB64}
+          previewB64={avatarPreview}
+          processing={avatarSaving}
+          onSelect={(b64) => {
+            setAvatarPreview(b64);
+            setAvatarPending(b64);
+          }}
+          onRemove={() => {
+            setAvatarPreview(null);
+            setAvatarPending('remove');
+          }}
+        />
+
+        {/* Nome e negócio abaixo do avatar */}
+        <div className="mt-4 pt-4 border-t border-wine-50">
           <p className="font-display text-2xl text-wine-700 leading-tight">
             {editing ? form.name || '…' : profile.name}
           </p>
@@ -297,6 +497,26 @@ export default function Perfil() {
             {editing ? form.business_name || '…' : profile.business_name}
           </p>
         </div>
+
+        {/* Ações da foto — aparecem quando há mudança pendente */}
+        {hasPendingChange && (
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => handleSaveAvatar(pendingRemove ? null : avatarPreview)}
+              disabled={avatarSaving}
+              className="btn-primary flex-1 disabled:opacity-60"
+            >
+              {avatarSaving ? 'Salvando…' : pendingRemove ? 'Confirmar remoção' : 'Salvar foto'}
+            </button>
+            <button
+              onClick={() => { setAvatarPreview(null); setAvatarPending(null as unknown as null); }}
+              disabled={avatarSaving}
+              className="btn-secondary disabled:opacity-60"
+            >
+              Descartar
+            </button>
+          </div>
+        )}
       </div>
 
       {/* card de informações */}

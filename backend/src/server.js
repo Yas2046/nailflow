@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes.js';
 import appointmentsRoutes from './routes/appointments.routes.js';
 import availabilityRoutes from './routes/availability.routes.js';
 import clientsRoutes from './routes/clients.routes.js';
+import expensesRoutes from './routes/expenses.routes.js';
 import servicesRoutes from './routes/services.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
@@ -35,6 +36,8 @@ app.use('/appointments', appointmentsRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/clients', clientsRoutes);
 app.use('/services', servicesRoutes);
+app.use('/expenses', expensesRoutes);
+
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
 app.use('/bot', cors({ origin: '*' }), botRoutes);

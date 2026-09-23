@@ -118,3 +118,15 @@ export interface WhatsAppCreateInstance {
   instanceName: string;
   configured: boolean;
 }
+
+export interface Expense {
+  id: string;
+  professional_id: string;
+  description: string;
+  category: string;
+  amount_cents: number;
+  expense_date: string; // ISO date yyyy-mm-dd
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}

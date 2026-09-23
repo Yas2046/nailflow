@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useToast } from '../context/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { api } from '../services/api';
 import type { WeeklyAvailabilityDay } from '../types';
 
@@ -200,6 +202,9 @@ function DayCard({
 // ─── página ───────────────────────────────────────────────────────────────────
 
 export default function Disponibilidade() {
+  const { toast } = useToast();
+  usePageTitle('Disponibilidade');
+
   const [days, setDays]       = useState<DayForm[] | null>(null);
   const [error, setError]     = useState<string | null>(null);
   const [saved, setSaved]     = useState(false);
@@ -277,6 +282,7 @@ export default function Disponibilidade() {
       })));
       setSaved(true);
       setDirty(false);
+      toast('Disponibilidade salva com sucesso');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar disponibilidade.');
     } finally {

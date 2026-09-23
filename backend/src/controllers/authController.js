@@ -57,7 +57,7 @@ export async function logout(req, res) {
 export async function me(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, email, business_name, phone_whatsapp FROM professionals WHERE id = $1',
+      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64 FROM professionals WHERE id = $1',
       [req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
@@ -67,16 +67,20 @@ export async function me(req, res, next) {
   }
 }
 
+const MAX_AVATAR_B64_BYTES = 400_000;
+
 const updateMeSchema = z.object({
   name:            z.string().min(1, 'Nome obrigatório').max(100),
   business_name:   z.string().min(1, 'Nome do negócio obrigatório').max(100),
   phone_whatsapp:  z.string().min(10, 'WhatsApp inválido (mínimo 10 dígitos)').max(20),
   email:           z.string().email('E-mail inválido').max(200),
+  avatar_b64:      z.union([z.string().max(MAX_AVATAR_B64_BYTES, 'Imagem muito grande.'), z.null()]).optional(),
 });
 
 export async function updateMe(req, res, next) {
   try {
-    const { name, business_name, phone_whatsapp, email } = updateMeSchema.parse(req.body);
+    const { name, business_name, phone_whatsapp, email, avatar_b64 } = updateMeSchema.parse(req.body);
+    const hasAvatar = Object.prototype.hasOwnProperty.call(req.body, 'avatar_b64');
 
     const { rows: conflict } = await pool.query(
       'SELECT id FROM professionals WHERE email = $1 AND id != $2',
@@ -84,13 +88,25 @@ export async function updateMe(req, res, next) {
     );
     if (conflict.length > 0) throw new HttpError(409, 'Este e-mail já está em uso por outra conta.');
 
-    const { rows } = await pool.query(
-      `UPDATE professionals
-         SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4
-       WHERE id = $5
-       RETURNING id, name, email, business_name, phone_whatsapp`,
-      [name, business_name, phone_whatsapp, email, req.professionalId]
-    );
+    let rows;
+    if (hasAvatar) {
+      ({ rows } = await pool.query(
+        `UPDATE professionals
+           SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4, avatar_b64 = $5
+         WHERE id = $6
+         RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64`,
+        [name, business_name, phone_whatsapp, email, avatar_b64 ?? null, req.professionalId]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `UPDATE professionals
+           SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4
+         WHERE id = $5
+         RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64`,
+        [name, business_name, phone_whatsapp, email, req.professionalId]
+      ));
+    }
+
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
     res.json(rows[0]);
   } catch (err) {
