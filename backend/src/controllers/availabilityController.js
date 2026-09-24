@@ -62,9 +62,14 @@ export async function updateWeeklyAvailability(req, res, next) {
 
 export async function listBlockedTimes(req, res, next) {
   try {
+    const { from, to } = req.query;
+    const params = [req.professionalId];
+    let where = 'WHERE professional_id = $1';
+    if (from) { params.push(from); where += ` AND ends_at >= $${params.length}`; }
+    if (to)   { params.push(to);   where += ` AND starts_at <= $${params.length}`; }
     const { rows } = await pool.query(
-      'SELECT * FROM blocked_times WHERE professional_id = $1 ORDER BY starts_at DESC',
-      [req.professionalId]
+      `SELECT * FROM blocked_times ${where} ORDER BY starts_at ASC`,
+      params
     );
     res.json(rows);
   } catch (err) {

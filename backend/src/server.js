@@ -13,6 +13,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import botRoutes from './routes/bot.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
 app.use('/bot', cors({ origin: '*' }), botRoutes);
 app.use('/whatsapp', whatsappRoutes);
+app.use('/admin', adminRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });

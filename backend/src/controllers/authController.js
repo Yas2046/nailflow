@@ -14,7 +14,7 @@ export async function login(req, res, next) {
     const { email, password } = loginSchema.parse(req.body);
 
     const { rows } = await pool.query(
-      'SELECT id, name, email, password_hash, business_name FROM professionals WHERE email = $1',
+      'SELECT id, name, email, password_hash, business_name, is_admin FROM professionals WHERE email = $1',
       [email]
     );
     const professional = rows[0];
@@ -41,6 +41,7 @@ export async function login(req, res, next) {
         name: professional.name,
         email: professional.email,
         businessName: professional.business_name,
+        isAdmin: professional.is_admin ?? false,
       },
     });
   } catch (err) {
@@ -57,7 +58,7 @@ export async function logout(req, res) {
 export async function me(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64 FROM professionals WHERE id = $1',
+      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin FROM professionals WHERE id = $1',
       [req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');

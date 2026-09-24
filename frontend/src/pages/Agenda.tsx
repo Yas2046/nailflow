@@ -120,7 +120,7 @@ export default function Agenda() {
   function reload() {
     api.get<Appointment[]>(`/appointments?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`)
       .then(setAppointments).catch(() => {});
-    api.get<BlockedTime[]>('/availability/blocked').then(setBlocked).catch(() => {});
+    api.get<BlockedTime[]>(`/availability/blocked?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`).then(setBlocked).catch(() => {});
     setModalState(null);
   }
   useEffect(reload, [rangeStart.getTime(), rangeEnd.getTime()]);

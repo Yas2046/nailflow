@@ -40,21 +40,6 @@ function IconScissors() {
     </svg>
   );
 }
-function IconClock() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7v5l3 3" />
-    </svg>
-  );
-}
-function IconUser() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path strokeLinecap="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-    </svg>
-  );
-}
 function IconSettings() {
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
@@ -70,19 +55,11 @@ function IconLogout() {
     </svg>
   );
 }
-
 function IconChart() {
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M7 16l4-4 4 4 4-6" />
-    </svg>
-  );
-}
-function IconChat() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
@@ -94,16 +71,17 @@ function IconWallet() {
     </svg>
   );
 }
-// ─── dados da navegação ───────────────────────────────────────────────────────
+
+// ─── dados da navegação (somente links de profissional) ───────────────────────
 
 const links = [
-  { to: '/',              label: 'Início',        shortLabel: 'Início',   end: true,  icon: <IconHome /> },
-  { to: '/agenda',        label: 'Agenda',         shortLabel: 'Agenda',   end: false, icon: <IconCalendar /> },
-  { to: '/clientes',      label: 'Clientes',       shortLabel: 'Clientes', end: false, icon: <IconUsers /> },
-  { to: '/servicos',      label: 'Serviços',       shortLabel: 'Serviços', end: false, icon: <IconScissors /> },
-  { to: '/dashboard',     label: 'Dashboard',      shortLabel: 'Dash',     end: false, icon: <IconChart /> },
-  { to: '/gastos',        label: 'Gastos',         shortLabel: 'Gastos',   end: false, icon: <IconWallet /> },
-  { to: '/configuracoes', label: 'Configurações',  shortLabel: 'Config',   end: false, icon: <IconSettings /> },
+  { to: '/',              label: 'Início',       shortLabel: 'Início',   end: true,  icon: <IconHome /> },
+  { to: '/agenda',        label: 'Agenda',        shortLabel: 'Agenda',   end: false, icon: <IconCalendar /> },
+  { to: '/clientes',      label: 'Clientes',      shortLabel: 'Clientes', end: false, icon: <IconUsers /> },
+  { to: '/servicos',      label: 'Serviços',      shortLabel: 'Serviços', end: false, icon: <IconScissors /> },
+  { to: '/dashboard',     label: 'Dashboard',     shortLabel: 'Dash',     end: false, icon: <IconChart /> },
+  { to: '/gastos',        label: 'Gastos',        shortLabel: 'Gastos',   end: false, icon: <IconWallet /> },
+  { to: '/configuracoes', label: 'Configurações', shortLabel: 'Config',   end: false, icon: <IconSettings /> },
 ];
 
 // ─── layout ───────────────────────────────────────────────────────────────────
@@ -125,6 +103,9 @@ export default function Layout() {
   }, [professional]);
 
   if (!professional) return <Navigate to="/login" replace />;
+
+  // Admin tem layout próprio — redireciona
+  if (professional.isAdmin) return <Navigate to="/admin" replace />;
 
   const initial = (professional.name || professional.businessName || '?')[0].toUpperCase();
 
@@ -182,6 +163,7 @@ export default function Layout() {
             <span className="text-xs text-rose-200 leading-tight">WhatsApp desconectado</span>
           </div>
         )}
+
         {/* rodapé: avatar + nome + sair */}
         <div className="px-4 py-4 border-t border-wine-600/25 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-white/15 ring-1 ring-white/25 text-cream flex items-center justify-center font-display text-sm font-medium shrink-0 select-none">

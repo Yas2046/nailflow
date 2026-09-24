@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
+import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Inicio from './pages/Inicio';
@@ -15,6 +16,7 @@ import Disponibilidade from './pages/Disponibilidade';
 import Perfil from './pages/Perfil';
 import PaginaPublica from './pages/PaginaPublica';
 import Configuracoes from './pages/Configuracoes';
+import Admin from './pages/Admin';
 
 export default function App() {
   return (
@@ -27,6 +29,13 @@ export default function App() {
           <Route path="/agenda-publica" element={<PaginaPublica />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
+          {/* área admin — layout próprio */}
+          <Route element={<AdminLayout />}>
+            <Route path="/admin" element={<Admin />} />
+          </Route>
+
+          {/* área profissional */}
           <Route element={<Layout />}>
             <Route path="/" element={<Inicio />} />
             <Route path="/dashboard" element={<Dashboard />} />

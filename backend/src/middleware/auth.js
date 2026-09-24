@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { pool } from '../config/db.js';
 
 /**
  * Exige um JWT válido (via cookie httpOnly "nailflow_token" ou header Authorization).
@@ -21,5 +22,38 @@ export function requireAuth(req, res, next) {
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  }
+}
+
+export async function requireAdmin(req, res, next) {
+  const bearer = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  const token = req.cookies?.nailflow_token || bearer;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Não autenticado.' });
+  }
+
+  let professionalId;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    professionalId = payload.sub;
+  } catch {
+    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT is_admin FROM professionals WHERE id = $1',
+      [professionalId]
+    );
+    if (!rows[0] || !rows[0].is_admin) {
+      return res.status(403).json({ error: 'Acesso não autorizado.' });
+    }
+    req.professionalId = professionalId;
+    next();
+  } catch (err) {
+    next(err);
   }
 }

@@ -93,6 +93,10 @@ export interface DashboardSummary {
     mes: string;
     totalCents: number;
   }>;
+  gastos6Meses: Array<{
+    mes: string;
+    totalCents: number;
+  }>;
 }
 
 export interface WhatsAppStatus {
@@ -129,4 +133,15 @@ export interface Expense {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ExpenseSummary {
+  gastosCents: number;
+  faturadoCents: number;
+  resultadoCents: number;
+  categorias: Array<{
+    category: string;
+    totalCents: number;
+    count: number;
+  }>;
 }

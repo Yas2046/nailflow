@@ -5,6 +5,7 @@ import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../uti
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
 interface Props {
+  initialClientId?: string;
   date: Date;
   time: string | null;
   appointment: Appointment | null;
@@ -32,10 +33,10 @@ function fmtDate(iso: string) {
 
 type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'result';
 
-export default function AppointmentModal({ date, time, appointment, onClose, onSaved }: Props) {
+export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId }: Props) {
   const [clients, setClients]       = useState<Client[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
-  const [clientId, setClientId]     = useState(appointment?.clientId || '');
+  const [clientId, setClientId]     = useState(appointment?.clientId || initialClientId || '');
   const [serviceId, setServiceId]   = useState(appointment?.serviceId || '');
   const [timeValue, setTimeValue]   = useState(
     time || (appointment ? new Date(appointment.startsAt).toTimeString().slice(0, 5) : '09:00')

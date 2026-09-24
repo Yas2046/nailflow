@@ -28,6 +28,7 @@ export async function getDashboardSummary(req, res, next) {
     let sixY = todayParts.year;
     if (sixM <= 0) { sixM += 12; sixY -= 1; }
     const sixMonthsAgoStart = zonedTimeToUtc(sixY, sixM, 1, 0, 0);
+    const sixMonthsAgoDate  = `${String(sixY)}-${String(sixM).padStart(2, '0')}-01`;
 
     // ── queries paralelas ─────────────────────────────────────────────────────
     const [
@@ -40,6 +41,7 @@ export async function getDashboardSummary(req, res, next) {
       novosClientesResult,
       topServicosResult,
       sixMonthsResult,
+      gastosResult,
     ] = await Promise.all([
       // agendamentos de hoje (exceto cancelados)
       pool.query(
@@ -127,6 +129,17 @@ export async function getDashboardSummary(req, res, next) {
          ORDER BY 1 ASC`,
         [professionalId, sixMonthsAgoStart, BUSINESS_TIMEZONE]
       ),
+
+      // gastos dos últimos 6 meses (agrupado por mês)
+      pool.query(
+        `SELECT TO_CHAR(expense_date, 'YYYY-MM') AS mes,
+                COALESCE(SUM(amount_cents), 0)::int AS total_cents
+         FROM expenses
+         WHERE professional_id = $1 AND expense_date >= $2
+         GROUP BY TO_CHAR(expense_date, 'YYYY-MM')
+         ORDER BY 1 ASC`,
+        [professionalId, sixMonthsAgoDate]
+      ),
     ]);
 
     // ── hoje ──────────────────────────────────────────────────────────────────
@@ -157,7 +170,6 @@ export async function getDashboardSummary(req, res, next) {
     }
 
     res.json({
-      // ── dados já existentes ────────────────────────────────────────────────
       agendamentosHoje: todayAppts.map((a) => ({
         id: a.id,
         clientName: a.client_name,
@@ -171,8 +183,6 @@ export async function getDashboardSummary(req, res, next) {
       horariosDisponiveisHoje: availableToday.length,
       totalClientes: clientCountResult.rows[0].total,
       faturamentoEstimadoHojeCents: faturamentoEstimado,
-
-      // ── dados novos ────────────────────────────────────────────────────────
       mes: {
         faturamentoRealizadoCents:   faturamentoRealizado,
         faturamentoPrevistoCents:    futurePrevistResult.rows[0]?.total_cents ?? 0,
@@ -191,6 +201,10 @@ export async function getDashboardSummary(req, res, next) {
         totalCents: r.total_cents,
       })),
       faturamento6Meses: sixMonthsResult.rows.map((r) => ({
+        mes: r.mes,
+        totalCents: r.total_cents,
+      })),
+      gastos6Meses: gastosResult.rows.map((r) => ({
         mes: r.mes,
         totalCents: r.total_cents,
       })),

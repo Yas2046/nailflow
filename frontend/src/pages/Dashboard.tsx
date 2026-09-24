@@ -10,15 +10,27 @@ function getCurrentMonthLabel() {
   return new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 const PT_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-function buildSixMonths(raw: Array<{ mes: string; totalCents: number }>) {
+
+function buildChartData(
+  rawFat: Array<{ mes: string; totalCents: number }>,
+  rawGas: Array<{ mes: string; totalCents: number }>,
+) {
   const now = new Date();
   return Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const found = raw.find((r) => r.mes === key);
-    return { mes: key, label: PT_MONTHS[d.getMonth()], totalCents: found?.totalCents ?? 0 };
+    const fat = rawFat.find((r) => r.mes === key);
+    const gas = rawGas.find((r) => r.mes === key);
+    return {
+      mes:          key,
+      label:        PT_MONTHS[d.getMonth()],
+      faturadoCents: fat?.totalCents ?? 0,
+      gastosCents:   gas?.totalCents ?? 0,
+      isCurrent:    i === 5,
+    };
   });
 }
+
 function monthRange() {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -56,13 +68,17 @@ function VariacaoBadge({ variacao }: { variacao: number | null }) {
   );
 }
 
-// ── BarChart — mais alto, valor formatado curto ──────────────────────────────
+// ── ComboChart — barras faturamento + linha gastos ───────────────────────────
 
-function BarChart({ data }: { data: Array<{ label: string; totalCents: number; isCurrent?: boolean }> }) {
-  const max = Math.max(...data.map((d) => d.totalCents), 1);
+function ComboChart({ data }: {
+  data: Array<{ label: string; faturadoCents: number; gastosCents: number; isCurrent?: boolean }>;
+}) {
   const H = 130; const barW = 30; const gap = 18;
   const totalW = data.length * (barW + gap) - gap;
-  const viewW = totalW + 20; const viewH = H + 48;
+  const viewW  = totalW + 20;
+  const viewH  = H + 56; // extra para legenda
+
+  const max = Math.max(...data.map((d) => Math.max(d.faturadoCents, d.gastosCents)), 1);
 
   function shortMoney(cents: number) {
     const v = cents / 100;
@@ -70,33 +86,76 @@ function BarChart({ data }: { data: Array<{ label: string; totalCents: number; i
     return `${Math.round(v)}`;
   }
 
+  // pontos da linha de gastos (centro do topo de cada barra ou ponto zero)
+  const linePoints = data.map((d, i) => {
+    const x = i * (barW + gap) + 10 + barW / 2;
+    const gh = Math.max((d.gastosCents / max) * H, d.gastosCents > 0 ? 3 : 0);
+    const y  = H - gh;
+    return `${x},${y}`;
+  }).join(' ');
+
+  const dotPoints = data.map((d, i) => {
+    const x = i * (barW + gap) + 10 + barW / 2;
+    const gh = Math.max((d.gastosCents / max) * H, d.gastosCents > 0 ? 3 : 0);
+    return { x, y: H - gh, v: d.gastosCents };
+  });
+
   return (
-    <svg viewBox={`0 0 ${viewW} ${viewH}`} className="w-full" style={{ maxHeight: 210 }} aria-label="Gráfico de faturamento">
+    <svg viewBox={`0 0 ${viewW} ${viewH}`} className="w-full" style={{ maxHeight: 220 }} aria-label="Gráfico de faturamento e gastos">
+      {/* grid lines */}
       {[0, 0.25, 0.5, 0.75, 1].map((frac) => (
         <line key={frac} x1="0" y1={H - frac * H} x2={viewW} y2={H - frac * H}
           stroke="currentColor" strokeOpacity={frac === 0 ? 0.12 : 0.05} strokeWidth="1" />
       ))}
+
+      {/* barras de faturamento */}
       {data.map((d, i) => {
-        const barH = Math.max((d.totalCents / max) * H, d.totalCents > 0 ? 5 : 0);
-        const x = i * (barW + gap) + 10; const y = H - barH;
-        const isCurr = d.isCurrent;
+        const barH = Math.max((d.faturadoCents / max) * H, d.faturadoCents > 0 ? 5 : 0);
+        const x = i * (barW + gap) + 10;
+        const y = H - barH;
         return (
           <g key={d.label}>
             <rect x={x} y={y} width={barW} height={Math.max(barH, 2)} rx="5"
-              className={d.totalCents === 0 ? 'fill-wine-100/60' : isCurr ? 'fill-wine-500' : 'fill-wine-300/70'} />
-            {d.totalCents > 0 && (
+              className={d.faturadoCents === 0 ? 'fill-wine-100/60' : d.isCurrent ? 'fill-wine-500' : 'fill-wine-300/70'} />
+            {d.faturadoCents > 0 && (
               <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="8"
-                className={isCurr ? 'fill-wine-700' : 'fill-wine-600/70'} fontWeight="600">
-                {shortMoney(d.totalCents)}
+                className={d.isCurrent ? 'fill-wine-700' : 'fill-wine-600/70'} fontWeight="600">
+                {shortMoney(d.faturadoCents)}
               </text>
             )}
             <text x={x + barW / 2} y={H + 16} textAnchor="middle" fontSize="10"
-              className={isCurr ? 'fill-wine-700' : 'fill-ink/40'} fontWeight={isCurr ? '700' : '400'}>
+              className={d.isCurrent ? 'fill-wine-700' : 'fill-ink/40'} fontWeight={d.isCurrent ? '700' : '400'}>
               {d.label}
             </text>
           </g>
         );
       })}
+
+      {/* linha de gastos */}
+      {data.some((d) => d.gastosCents > 0) && (
+        <>
+          <polyline
+            points={linePoints}
+            fill="none"
+            stroke="#e11d48"
+            strokeWidth="1.5"
+            strokeOpacity="0.7"
+            strokeDasharray="4 2"
+          />
+          {dotPoints.map((p, i) => p.v > 0 && (
+            <circle key={i} cx={p.x} cy={p.y} r="3" fill="#e11d48" fillOpacity="0.8" />
+          ))}
+        </>
+      )}
+
+      {/* legenda */}
+      <g transform={`translate(10, ${H + 30})`}>
+        <rect width="8" height="8" rx="2" className="fill-wine-400" />
+        <text x="12" y="8" fontSize="9" className="fill-ink/50">Faturamento</text>
+        <line x1="80" y1="4" x2="92" y2="4" stroke="#e11d48" strokeWidth="1.5" strokeDasharray="4 2" strokeOpacity="0.7" />
+        <circle cx="86" cy="4" r="2.5" fill="#e11d48" fillOpacity="0.8" />
+        <text x="96" y="8" fontSize="9" className="fill-ink/50">Gastos</text>
+      </g>
     </svg>
   );
 }
@@ -160,9 +219,7 @@ export default function Dashboard() {
       api.get<DashboardSummary>('/dashboard'),
       api.get<Client[]>('/clients'),
       api.get<Appointment[]>(`/appointments?from=${from}&to=${to}`),
-      fetch(`/api/expenses?from=${df}&to=${dt}`, { credentials: 'include' })
-        .then(r => r.ok ? r.json() as Promise<Expense[]> : Promise.resolve([]))
-        .catch(() => [] as Expense[]),
+      api.get<Expense[]>(`/expenses?from=${df}&to=${dt}`).catch(() => [] as Expense[]),
     ])
       .then(([s, c, a, expenses]) => {
         setSummary(s);
@@ -181,7 +238,7 @@ export default function Dashboard() {
   );
   if (!summary) return <LoadingSkeleton />;
 
-  const { mes, variacao, topServicos, faturamento6Meses } = summary;
+  const { mes, variacao, topServicos, faturamento6Meses, gastos6Meses } = summary;
 
   // Financeiro
   const faturado    = mes.faturamentoRealizadoCents;
@@ -203,8 +260,8 @@ export default function Dashboard() {
   const totalAtend     = mes.agendamentosTotal;
   const maxServCount   = Math.max(...topServicos.map((s) => s.count), 1);
 
-  // Gráfico — marcar mês atual
-  const chartData = buildSixMonths(faturamento6Meses).map((d, i) => ({ ...d, isCurrent: i === 5 }));
+  // Gráfico combo
+  const chartData = buildChartData(faturamento6Meses, gastos6Meses ?? []);
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 pb-10">
@@ -277,7 +334,7 @@ export default function Dashboard() {
           <h2 className="font-display text-lg sm:text-xl text-wine-700">Evolução — 6 meses</h2>
         </div>
         <div className="bg-white rounded-2xl border border-wine-100/80 px-5 pt-5 pb-4 shadow-sm">
-          <BarChart data={chartData} />
+          <ComboChart data={chartData} />
         </div>
       </section>
 
