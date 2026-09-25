@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import type { Theme } from '../context/ThemeContext';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import QRCode from 'qrcode';
 import type { WhatsAppStatus, WhatsAppConnect, WhatsAppInstanceConfig, WhatsAppCreateInstance } from '../types';
@@ -626,7 +627,15 @@ const TAB_TITLES: Record<Tab, string> = {
 
 export default function Configuracoes() {
   usePageTitle('Configurações');
-  const [tab, setTab] = useState<Tab>('perfil');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(
+    tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' ? tabParam : 'perfil'
+  );
+
+  useEffect(() => {
+    if (tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp') setTab(tabParam);
+  }, [tabParam]);
   const { theme, setTheme } = useTheme();
 
   return (

@@ -203,11 +203,18 @@ async function getLastCompletedService(professionalId, phone) {
   return rows[0] ?? null;
 }
 
-// Returns up to maxDays days that have slots for given service duration
+// Returns up to maxDays days that have slots for given service duration.
+// The search window is capped by the professional's booking_horizon_days setting.
 async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDays = 5) {
+  const { rows } = await pool.query(
+    'SELECT booking_horizon_days FROM professionals WHERE id = $1',
+    [professionalId]
+  );
+  const horizon = rows[0]?.booking_horizon_days ?? 60;
+
   const days = [];
   const today = new Date();
-  for (let i = 1; i <= 21 && days.length < maxDays; i++) {
+  for (let i = 1; i <= horizon && days.length < maxDays; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     d.setHours(12, 0, 0, 0); // use noon so timezone math is safe

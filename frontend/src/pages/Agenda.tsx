@@ -93,6 +93,7 @@ export default function Agenda() {
   const [blocked, setBlocked]       = useState<BlockedTime[]>([]);
   const [weeklyAvailability, setWeeklyAvailability] = useState<WeeklyAvailabilityDay[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
+  const [horizonDays, setHorizonDays] = useState<number>(60);
   const [modalState, setModalState] = useState<
     | { type: 'create'; time: string }
     | { type: 'edit'; appointment: Appointment }
@@ -103,7 +104,12 @@ export default function Agenda() {
   useEffect(() => {
     api.get<WeeklyAvailabilityDay[]>('/availability').then(setWeeklyAvailability).catch(() => {});
     api.get<Service[]>('/services').then(setServices).catch(() => {});
+    api.get<{ bookingHorizonDays: number }>('/availability/horizon')
+      .then((d) => setHorizonDays(d.bookingHorizonDays))
+      .catch(() => {});
   }, []);
+
+  const maxDate = useMemo(() => addDays(startOfDay(new Date()), horizonDays), [horizonDays]);
 
   const rangeStart = useMemo(() => {
     if (view === 'dia') return currentDate;
@@ -127,7 +133,17 @@ export default function Agenda() {
 
   const dayAvailability = weeklyAvailability.find((d) => d.weekday === currentDate.getDay());
 
+  const canGoForward = useMemo(() => {
+    if (view === 'dia') return addDays(currentDate, 1).getTime() <= maxDate.getTime();
+    if (view === 'semana') return addDays(rangeStart, 7).getTime() <= maxDate.getTime();
+    const nextMonth = new Date(rangeStart);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    return nextMonth.getTime() <= maxDate.getTime();
+  }, [view, currentDate, rangeStart, maxDate]);
+
   function navigate(dir: -1 | 1) {
+    if (dir === 1 && !canGoForward) return;
     setCurrentDate((d) => {
       if (view === 'mes') {
         const r = new Date(d);
@@ -170,33 +186,47 @@ export default function Agenda() {
       </div>
 
       {/* ── Barra de navegação ── */}
-      <div className="flex items-center gap-2 bg-white border border-wine-100/80 rounded-2xl px-3 py-2.5 shadow-sm">
-        <button
-          onClick={() => navigate(-1)}
-          className="shrink-0 p-2 rounded-lg hover:bg-wine-50 text-ink/50 hover:text-wine-700 transition-colors"
-          aria-label="Anterior"
-        >
-          <IconChevronLeft />
-        </button>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 bg-white border border-wine-100/80 rounded-2xl px-3 py-2.5 shadow-sm">
+          <button
+            onClick={() => navigate(-1)}
+            className="shrink-0 p-2 rounded-lg hover:bg-wine-50 text-ink/50 hover:text-wine-700 transition-colors"
+            aria-label="Anterior"
+          >
+            <IconChevronLeft />
+          </button>
 
-        <span className="flex-1 min-w-0 font-medium text-ink/75 text-sm sm:text-base px-1 capitalize text-center truncate">
-          {dateLabel}
-        </span>
+          <span className="flex-1 min-w-0 font-medium text-ink/75 text-sm sm:text-base px-1 capitalize text-center truncate">
+            {dateLabel}
+          </span>
 
-        <button
-          onClick={() => setCurrentDate(startOfDay(new Date()))}
-          className="shrink-0 px-3 py-1.5 text-xs rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors font-semibold"
-        >
-          Hoje
-        </button>
+          <button
+            onClick={() => setCurrentDate(startOfDay(new Date()))}
+            className="shrink-0 px-3 py-1.5 text-xs rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors font-semibold"
+          >
+            Hoje
+          </button>
 
-        <button
-          onClick={() => navigate(1)}
-          className="shrink-0 p-2 rounded-lg hover:bg-wine-50 text-ink/50 hover:text-wine-700 transition-colors"
-          aria-label="Próximo"
-        >
-          <IconChevronRight />
-        </button>
+          <button
+            onClick={() => navigate(1)}
+            disabled={!canGoForward}
+            className={`shrink-0 p-2 rounded-lg transition-colors ${
+              canGoForward
+                ? 'hover:bg-wine-50 text-ink/50 hover:text-wine-700'
+                : 'text-ink/20 cursor-not-allowed'
+            }`}
+            aria-label="Próximo"
+            title={!canGoForward ? `Limite de ${horizonDays} dias de antecedência` : undefined}
+          >
+            <IconChevronRight />
+          </button>
+        </div>
+        <p className="text-xs text-ink/30 text-right pr-1">
+          Agenda aberta até{' '}
+          <span className="font-medium text-ink/45">
+            {maxDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </span>
+        </p>
       </div>
 
       {/* ── Views ── */}
@@ -207,6 +237,7 @@ export default function Agenda() {
           appointments={appointments}
           blocked={blocked}
           services={services}
+          isBeyondHorizon={currentDate.getTime() > maxDate.getTime()}
           onSlotClick={(time, existing) =>
             existing
               ? setModalState({ type: 'edit', appointment: existing })
@@ -221,6 +252,7 @@ export default function Agenda() {
           rangeStart={rangeStart}
           appointments={appointments}
           weeklyAvailability={weeklyAvailability}
+          maxDate={maxDate}
           onDayClick={(d) => { setCurrentDate(d); setView('dia'); }}
         />
       )}
@@ -229,6 +261,7 @@ export default function Agenda() {
         <MonthView
           rangeStart={rangeStart}
           appointments={appointments}
+          maxDate={maxDate}
           onDayClick={(d) => { setCurrentDate(d); setView('dia'); }}
         />
       )}
@@ -259,6 +292,7 @@ function DayView({
   appointments,
   blocked,
   services,
+  isBeyondHorizon,
   onSlotClick,
   onBlockClick,
 }: {
@@ -267,6 +301,7 @@ function DayView({
   appointments: Appointment[];
   blocked: BlockedTime[];
   services: Service[];
+  isBeyondHorizon: boolean;
   onSlotClick: (time: string, existing: Appointment | null) => void;
   onBlockClick: (time: string) => void;
 }) {
@@ -316,6 +351,16 @@ function DayView({
           <span className="text-xs px-2.5 py-1 rounded-full bg-wine-600 text-white font-semibold">Hoje</span>
         )}
       </div>
+
+      {/* Banner: data além do horizonte */}
+      {isBeyondHorizon && (
+        <div className="px-5 py-3 bg-amber-50/80 border-b border-amber-100 flex items-center gap-2 text-xs text-amber-700">
+          <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          Esta data está além da antecedência máxima configurada. Agendamentos desabilitados.
+        </div>
+      )}
 
       <div>
         {slots.map((min) => {
@@ -441,26 +486,28 @@ function DayView({
             <div
               key={time}
               className={`group flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] border-b border-wine-50/40 transition-colors ${
-                isPast ? 'opacity-50' : 'hover:bg-wine-50/40'
+                isPast || isBeyondHorizon ? 'opacity-50' : 'hover:bg-wine-50/40'
               }`}
             >
-              <span className={`text-xs tabular-nums w-12 shrink-0 ${isPast ? 'text-ink/20 font-normal' : 'text-ink/30 font-medium'}`}>
+              <span className={`text-xs tabular-nums w-12 shrink-0 ${isPast || isBeyondHorizon ? 'text-ink/20 font-normal' : 'text-ink/30 font-medium'}`}>
                 {time}
               </span>
-              <div className="flex gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                <button
-                  onClick={() => onSlotClick(time, null)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors font-medium"
-                >
-                  + Agendar
-                </button>
-                <button
-                  onClick={() => onBlockClick(time)}
-                  className="hidden sm:block text-xs px-3 py-1.5 rounded-lg border border-wine-100 text-ink/50 hover:bg-white hover:border-wine-200 transition-colors"
-                >
-                  Bloquear
-                </button>
-              </div>
+              {!isBeyondHorizon && (
+                <div className="flex gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                  <button
+                    onClick={() => onSlotClick(time, null)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors font-medium"
+                  >
+                    + Agendar
+                  </button>
+                  <button
+                    onClick={() => onBlockClick(time)}
+                    className="hidden sm:block text-xs px-3 py-1.5 rounded-lg border border-wine-100 text-ink/50 hover:bg-white hover:border-wine-200 transition-colors"
+                  >
+                    Bloquear
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -477,11 +524,13 @@ function WeekView({
   rangeStart,
   appointments,
   weeklyAvailability,
+  maxDate,
   onDayClick,
 }: {
   rangeStart: Date;
   appointments: Appointment[];
   weeklyAvailability: WeeklyAvailabilityDay[];
+  maxDate: Date;
   onDayClick: (d: Date) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(rangeStart, i));
@@ -492,6 +541,7 @@ function WeekView({
         const today    = isToday(day);
         const avail    = weeklyAvailability.find((a) => a.weekday === day.getDay());
         const isWorking = avail?.is_working ?? true;
+        const beyond   = day.getTime() > maxDate.getTime();
         const dayAppts = appointments
           .filter(a => startOfDay(new Date(a.startsAt)).getTime() === day.getTime() && a.status !== 'cancelado')
           .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
@@ -499,12 +549,15 @@ function WeekView({
         return (
           <button
             key={day.toISOString()}
-            onClick={() => onDayClick(day)}
-            className={`text-left rounded-2xl border p-4 transition-all hover:shadow-md ${
-              today
-                ? 'border-wine-400 bg-wine-50 shadow-sm'
-                : 'border-wine-100/80 bg-white hover:border-wine-200'
-            } ${!isWorking ? 'opacity-45' : ''}`}
+            onClick={() => !beyond && onDayClick(day)}
+            disabled={beyond}
+            className={`text-left rounded-2xl border p-4 transition-all ${
+              beyond
+                ? 'border-ink/5 bg-ink/[0.02] opacity-40 cursor-not-allowed'
+                : today
+                  ? 'border-wine-400 bg-wine-50 shadow-sm hover:shadow-md'
+                  : 'border-wine-100/80 bg-white hover:border-wine-200 hover:shadow-md'
+            } ${!isWorking && !beyond ? 'opacity-45' : ''}`}
           >
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -552,10 +605,12 @@ const MONTH_HEADERS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 function MonthView({
   rangeStart,
   appointments,
+  maxDate,
   onDayClick,
 }: {
   rangeStart: Date;
   appointments: Appointment[];
+  maxDate: Date;
   onDayClick: (d: Date) => void;
 }) {
   const firstWeekday = rangeStart.getDay();
@@ -575,25 +630,30 @@ function MonthView({
       <div className="grid grid-cols-7 divide-x divide-y divide-wine-50/60">
         {cells.map((day, i) => {
           if (!day) return <div key={i} className="aspect-square" />;
-          const today = isToday(day);
+          const today  = isToday(day);
+          const beyond = day.getTime() > maxDate.getTime();
           const dayAppts = appointments.filter(
             a => startOfDay(new Date(a.startsAt)).getTime() === day.getTime() && a.status !== 'cancelado'
           );
-          // Pegar statuses dos agendamentos para dots coloridos
           const statusSet = [...new Set(dayAppts.map(a => a.status))].slice(0, 3);
 
           return (
             <button
               key={i}
-              onClick={() => onDayClick(day)}
-              className={`aspect-square flex flex-col items-center justify-center gap-1 transition-colors hover:bg-wine-50/60 ${today ? 'bg-wine-50' : ''}`}
+              onClick={() => !beyond && onDayClick(day)}
+              disabled={beyond}
+              className={`aspect-square flex flex-col items-center justify-center gap-1 transition-colors ${
+                beyond
+                  ? 'opacity-30 cursor-not-allowed'
+                  : `hover:bg-wine-50/60 ${today ? 'bg-wine-50' : ''}`
+              }`}
             >
               <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full font-medium leading-none transition-colors ${
-                today ? 'bg-wine-600 text-white' : 'text-ink/65 hover:bg-wine-100'
+                today && !beyond ? 'bg-wine-600 text-white' : 'text-ink/65 hover:bg-wine-100'
               }`}>
                 {day.getDate()}
               </span>
-              {statusSet.length > 0 && (
+              {statusSet.length > 0 && !beyond && (
                 <div className="flex gap-0.5 items-center">
                   {statusSet.map(s => (
                     <span key={s} className={`w-1.5 h-1.5 rounded-full ${getCfg(s).dot}`} />

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Appointment, DashboardSummary, Service } from '../types';
 import AppointmentModal from '../components/AppointmentModal';
+import OnboardingChecklist from '../components/OnboardingChecklist';
 
 // ── Utils ────────────────────────────────────────────────────────────────────
 
@@ -154,6 +155,8 @@ export default function Inicio() {
           <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">{getGreeting()}</h1>
           <p className="text-sm text-ink/40 mt-1.5 capitalize">{getTodayLabel()}</p>
         </div>
+
+        <OnboardingChecklist />
 
         {/* ── 1. PRÓXIMO ATENDIMENTO — HERO ── */}
         {proximo ? (

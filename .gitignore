@@ -42,3 +42,29 @@ frontend/dist_bak_*/
 
 # ── arquivos .bak com sufixo de data/fase (padrão usado no projeto) ───────────
 *.bak-*
+
+# ── variáveis de ambiente (qualquer variante) ─────────────────────────────────
+.env.*
+!.env.example
+
+# ── builds alternativos (dist-next, dist-test…) ───────────────────────────────
+dist-*/
+
+# ── dumps e backups de banco ──────────────────────────────────────────────────
+*.dump
+*.sql.gz
+**/backup_*/
+**/backup_*.sql
+
+# ── chaves, certificados e bancos locais ──────────────────────────────────────
+*.pem
+*.key
+*.sqlite
+
+# ── temporários e artefatos de teste ──────────────────────────────────────────
+*.pid
+*.eml
+mail-out/
+coverage/
+smtp-sink.mjs
+start-local.mjs

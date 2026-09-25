@@ -6,7 +6,7 @@ import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 // Mantido para compatibilidade da rota antiga /public/info e /public/availability.
 async function getSingleProfessional() {
   const { rows } = await pool.query(
-    'SELECT id, business_name, phone_whatsapp FROM professionals ORDER BY created_at ASC LIMIT 1'
+    'SELECT id, business_name, phone_whatsapp, booking_horizon_days FROM professionals ORDER BY created_at ASC LIMIT 1'
   );
   return rows[0] || null;
 }
@@ -14,19 +14,23 @@ async function getSingleProfessional() {
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
   const { rows } = await pool.query(
-    'SELECT id, business_name, phone_whatsapp FROM professionals WHERE slug = $1',
+    'SELECT id, business_name, phone_whatsapp, booking_horizon_days FROM professionals WHERE slug = $1',
     [slug]
   );
   return rows[0] || null;
 }
 
-// Calcula dias de disponibilidade para uma profissional.
-async function buildAvailabilityResponse(professional, days) {
+// Calcula dias de disponibilidade para uma profissional respeitando o horizonte configurado.
+async function buildAvailabilityResponse(professional, requestedDays) {
   const { rows: shortestService } = await pool.query(
     'SELECT duration_minutes FROM services WHERE professional_id = $1 AND active = true ORDER BY duration_minutes ASC LIMIT 1',
     [professional.id]
   );
   const duration = shortestService[0]?.duration_minutes || 40;
+
+  // Limita ao horizonte máximo configurado pela profissional
+  const horizon = professional.booking_horizon_days ?? 60;
+  const days = Math.min(requestedDays, horizon);
 
   const result = [];
   const now = new Date();
@@ -73,8 +77,8 @@ export async function getPublicAvailability(req, res, next) {
   try {
     const professional = await getSingleProfessional();
     if (!professional) return res.status(404).json({ error: 'Nenhuma profissional cadastrada.' });
-    const days = Math.min(Number(req.query.days) || 5, 14);
-    res.json(await buildAvailabilityResponse(professional, days));
+    const requestedDays = Number(req.query.days) || (professional.booking_horizon_days ?? 60);
+    res.json(await buildAvailabilityResponse(professional, requestedDays));
   } catch (err) {
     next(err);
   }
@@ -101,8 +105,8 @@ export async function getPublicAvailabilityBySlug(req, res, next) {
   try {
     const professional = await getProfessionalBySlug(req.params.slug);
     if (!professional) return res.status(404).json({ error: 'Profissional não encontrada.' });
-    const days = Math.min(Number(req.query.days) || 5, 14);
-    res.json(await buildAvailabilityResponse(professional, days));
+    const requestedDays = Number(req.query.days) || (professional.booking_horizon_days ?? 60);
+    res.json(await buildAvailabilityResponse(professional, requestedDays));
   } catch (err) {
     next(err);
   }
