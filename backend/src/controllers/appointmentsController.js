@@ -47,6 +47,15 @@ const SELECT_BASE = `
   JOIN services s ON s.id = a.service_id
 `;
 
+// Mesma resposta para UUID inexistente ou de outra profissional: não revela a outra conta.
+async function assertOwnClient(clientId, professionalId) {
+  const { rows } = await pool.query(
+    'SELECT id FROM clients WHERE id = $1 AND professional_id = $2',
+    [clientId, professionalId]
+  );
+  if (!rows[0]) throw new HttpError(400, 'Cliente inválido.');
+}
+
 // Retorna até 6 slots disponíveis no mesmo dia, ordenados por proximidade ao
 // horário solicitado. Usado para popular o campo `alternatives` da resposta 409.
 // Se qualquer coisa falhar, retorna [] silenciosamente — nunca deve quebrar a
@@ -100,6 +109,7 @@ export async function createAppointment(req, res, next) {
       [data.serviceId, req.professionalId]
     );
     if (!serviceRows[0]) throw new HttpError(400, 'Serviço inválido.');
+    await assertOwnClient(data.clientId, req.professionalId);
 
     const check = await checkSlotAvailability(req.professionalId, data.serviceId, data.startsAt);
     if (!check.available) {
@@ -127,6 +137,7 @@ export async function createAppointment(req, res, next) {
 export async function updateAppointment(req, res, next) {
   try {
     const data = updateSchema.parse(req.body);
+    if (data.clientId) await assertOwnClient(data.clientId, req.professionalId);
 
     let newStartsAt;
     let newEndsAt;

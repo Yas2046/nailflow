@@ -1,0 +1,340 @@
+{
+  "name": "NailFlow — Lembretes de Agendamento",
+  "nodes": [
+    {
+      "id": "m6V3cUjqGYwfbhGY",
+      "name": "A cada 30 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "D96cIyu-CjR0XIF4",
+      "name": "Buscar agendamentos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3333/bot/appointments-tomorrow",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "instance",
+              "value": "={{ $('Split instancias').item.json.wa_instance_name }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "_q1P1OEUUf9Fuxr3",
+      "name": "Tem lembretes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "uLLDEia1z5we9Wip",
+      "name": "Para cada agendamento",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1340,
+        180
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "lS0LxZ-Y4IsKPi6e",
+      "name": "Montar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const appt = $input.first().json;\nconst waInst = $('Split instancias').item.json.wa_instance_name;\nconst firstName = (appt.client_name || '').split(' ')[0];\nconst dt = new Date(appt.starts_at);\nconst timeBRT = dt.toLocaleTimeString('pt-BR', {\n  hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'\n});\nreturn [{\n  json: {\n    phone: appt.client_phone,\n    appointmentId: appt.id,\n    wa_instance_name: waInst,\n    text: `Oi, ${firstName}! 💅 Passando para lembrar que você tem um horário amanhã às ${timeBRT}. Te esperamos! 😊`\n  }\n}];"
+      }
+    },
+    {
+      "id": "g-VDRvkUo9QBpF27",
+      "name": "Enviar via Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://nailflow-evolution.duckdns.org/message/sendText/' + $json.wa_instance_name }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"number\": \"{{ $json.phone }}\", \"text\": \"{{ $json.text }}\" }",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SEzSTK4yU9MsfW08",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "id": "uztoCo8sdRqUIlYW",
+      "name": "Marcar reminder_sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3333/bot/mark-reminder-sent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"appointmentId\": \"{{ $('Montar mensagem').item.json.appointmentId }}\", \"instance\": \"{{ $('Montar mensagem').item.json.wa_instance_name }}\" }",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "LMB_buscar_inst_01",
+      "name": "Buscar instancias",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3333/bot/instances",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "LMB_split_inst_01",
+      "name": "Split instancias",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "A cada 30 minutos": {
+      "main": [
+        [
+          {
+            "node": "Buscar instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar instancias": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split instancias": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar agendamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar agendamentos": {
+      "main": [
+        [
+          {
+            "node": "Tem lembretes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem lembretes?": {
+      "main": [
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Para cada agendamento": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar mensagem": {
+      "main": [
+        [
+          {
+            "node": "Enviar via Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar via Evolution": {
+      "main": [
+        [
+          {
+            "node": "Marcar reminder_sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar reminder_sent": {
+      "main": [
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": null
+}

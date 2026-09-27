@@ -209,7 +209,8 @@ export async function createEvolutionInstance(req, res, next) {
 
     // 2. Configurar webhook n8n
     const webhookUrl = process.env.N8N_BOT_WEBHOOK_URL;
-    if (!webhookUrl) {
+    const webhookSecret = process.env.N8N_BOT_WEBHOOK_SECRET;
+    if (!webhookUrl || !webhookSecret) {
       // Instância criada mas webhook não configurado — deletar da Evolution para manter consistência
       await evolutionFetch(`/instance/delete/${trimmed}`, { method: 'DELETE' }).catch(() => {});
       return res.status(500).json({
@@ -226,6 +227,7 @@ export async function createEvolutionInstance(req, res, next) {
           events: ['MESSAGES_UPSERT'],
           webhookByEvents: false,
           webhookBase64: false,
+          headers: { 'X-NailFlow-Webhook-Secret': webhookSecret },
         },
       }),
     });

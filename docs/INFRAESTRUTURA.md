@@ -16,31 +16,61 @@
 
 | Domínio | Aponta para | Finalidade |
 |---|---|---|
-| `nailflow.duckdns.org` | 77.237.242.192 | Frontend + API |
-| `nailflow-n8n.duckdns.org` | 77.237.242.192 | n8n (automação) |
+| `nailflow.duckdns.org` | VPS | Frontend + API |
+| `nailflow-n8n.duckdns.org` | VPS | n8n (automação e webhooks) |
+| `nailflow-evolution.duckdns.org` | VPS | Evolution API (usada pelo n8n para enviar mensagens) |
 
-Ambos usam DuckDNS. Renovação de HTTPS: automática via Certbot.
+Todos usam DuckDNS. Renovação de HTTPS: automática via Certbot.
 
 ---
 
-## Portas ativas
+## Firewall (UFW)
 
-| Porta | Serviço | Visibilidade |
-|---|---|---|
-| 80 | Nginx (redirect → 443) | público |
-| 443 | Nginx (HTTPS) | público |
-| 3333 | NailFlow Backend (Express) | localhost only |
-| 5432 | PostgreSQL | localhost only |
-| 5678 | n8n | localhost only (proxy Nginx) |
-| 5679 | n8n interno | localhost only |
-| 8080 | Evolution API (Docker) | 127.0.0.1 only |
-| 22 | SSH | público |
+Ativo desde **2026-09-25** e habilitado no boot.
+
+```
+Status: active
+Default: deny (incoming), allow (outgoing), deny (routed)
+22/tcp   ALLOW IN  Anywhere  # SSH
+80/tcp   ALLOW IN  Anywhere  # HTTP Nginx
+443/tcp  ALLOW IN  Anywhere  # HTTPS Nginx
+(as mesmas regras também em IPv6)
+```
+
+- Somente **22, 80 e 443** aceitam conexões externas
+- **3333 (backend) e 5678 (n8n) ficam acessíveis apenas localmente**; de fora, o acesso passa pelo Nginx
+- Tráfego local (Nginx → backend, n8n → backend, containers → 443) não é afetado
+- Com o acesso direto à 3333 fechado, os rate limits do backend passam a contar o IP real repassado pelo Nginx (`X-Forwarded-For` + `trust proxy 1`)
+- O UFW **não filtra portas publicadas pelo Docker**; hoje a única publicada é `127.0.0.1:8080` (local). Se algum container for publicado em `0.0.0.0` no futuro, ele não será protegido pelo UFW
+- Rollback de emergência: `ufw disable` (as regras ficam gravadas)
+
+Validação feita na ativação (2026-09-25): SSH novo, backend/n8n/Evolution locais, HTTPS do site/API/n8n/Evolution, Evolution → n8n pela 443, `chip2` `open` (na época), PM2 e Docker sem reinício; teste externo com 22/80/443 abertas e 3333/5678 fechadas. Em 2026-09-27 o UFW continua ativo com as mesmas regras.
+
+Os webhooks do n8n expostos pela 443 exigem, desde 2026-09-27, o cabeçalho `X-NailFlow-Webhook-Secret` (ver [`N8N.md`](./N8N.md)).
+
+---
+
+## Portas
+
+| Porta | Serviço | Escuta em | Acesso externo |
+|---|---|---|---|
+| 22 | SSH | todas | ✅ liberada no UFW |
+| 80 | Nginx (redirect → 443) | todas | ✅ liberada no UFW |
+| 443 | Nginx (HTTPS) | todas | ✅ liberada no UFW |
+| 3333 | NailFlow Backend (Express) | todas | ❌ bloqueada pelo UFW (use `/api` via Nginx) |
+| 5678 | n8n | todas | ❌ bloqueada pelo UFW (use o domínio via Nginx) |
+| 5679 | n8n interno | 127.0.0.1 | ❌ |
+| 5432 | PostgreSQL | 127.0.0.1 / ::1 | ❌ |
+| 8080 | Evolution API (Docker) | 127.0.0.1 | ❌ |
+| 6379 | Redis (Docker) | rede interna do Docker | ❌ |
+
+> O backend e o n8n escutam em todas as interfaces; a restrição é feita pelo firewall. Não trocar o backend para escutar só em `127.0.0.1` sem revisar: o Node resolve `localhost` primeiro para `::1`, e o Nginx e os workflows chamam `localhost:3333`.
 
 ---
 
 ## Nginx
 
-Arquivo: `/etc/nginx/sites-enabled/nailflow`
+Arquivos: `/etc/nginx/sites-enabled/nailflow` (site + n8n) e `/etc/nginx/sites-enabled/evolution` (Evolution → `127.0.0.1:8080`)
 
 ### nailflow.duckdns.org (Frontend + API)
 
@@ -82,10 +112,12 @@ server {
 
 ## PM2
 
-| ID | Nome | Porta | Restart count | Status |
-|---|---|---|---|---|
-| 0 | nailflow-backend | 3333 | 47 | online |
-| 4 | n8n | 5678 | 2 | online |
+| ID | Nome | Porta | Status |
+|---|---|---|---|
+| 0 | nailflow-backend | 3333 | online |
+| 4 | n8n | 5678 | online |
+
+O backend é iniciado pelo PM2 com `npm start` (`node src/server.js`) e lê o `backend/.env` via `dotenv`. `NODE_ENV` **não** está definido em produção (o cookie de sessão ainda sai sem a flag `Secure`) — a correção faz parte da publicação pendente da recuperação de senha.
 
 ### Comandos PM2
 
@@ -154,13 +186,14 @@ pg_restore -U postgres -d nailflow -Fc /var/backups/nailflow/nailflow_YYYY-MM-DD
 /var/www/nailflow/
 ├── backend/
 │   ├── src/           # código-fonte backend
-│   ├── db/            # schema.sql, migrations, seeds
+│   ├── db/            # schema.sql, migrations (002, 001, 003–014), _historico/, seed
 │   ├── tests/
 │   ├── .env           # ⚠️ NUNCA comitar
 │   └── package.json
 ├── frontend/
 │   ├── src/           # código-fonte React
 │   ├── dist/          # build atual (servido pelo Nginx)
+│   ├── dist-next/     # build candidato da recuperação de senha — NÃO servido, ignorado pelo Git
 │   ├── .env           # ⚠️ NUNCA comitar
 │   └── package.json
 ├── n8n/
@@ -169,6 +202,8 @@ pg_restore -U postgres -d nailflow -Fc /var/backups/nailflow/nailflow_YYYY-MM-DD
 ├── docker-compose.yml
 ├── README.md
 └── DEPLOY.md
+
+/opt/nailflow-next/  # cópia isolada da recuperação de senha (não publicada, fora do Git)
 
 /usr/local/bin/
 └── nailflow-backup.sh

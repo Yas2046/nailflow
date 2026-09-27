@@ -12,7 +12,7 @@ let capturedCalls = [];
 before(() => {
   originalFetch = global.fetch;
   global.fetch = async (url, opts) => {
-    capturedCalls.push({ url, body: JSON.parse(opts.body) });
+    capturedCalls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
     return { ok: true };
   };
 });
@@ -21,9 +21,35 @@ after(() => {
   global.fetch = originalFetch;
   delete process.env.N8N_WEBHOOK_CONFIRMED_URL;
   delete process.env.N8N_WEBHOOK_CANCELLED_URL;
+  delete process.env.N8N_NOTIFY_SECRET;
 });
 
 function clearCalls() { capturedCalls = []; }
+
+test('envia o cabeçalho X-NailFlow-Webhook-Secret quando N8N_NOTIFY_SECRET está definido', async () => {
+  process.env.N8N_WEBHOOK_CONFIRMED_URL = 'http://n8n-test/confirmed';
+  process.env.N8N_NOTIFY_SECRET = 'valor-de-teste';
+  clearCalls();
+
+  notifyN8n('appointment.confirmed', { id: 'h1' });
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(capturedCalls.length, 1);
+  assert.equal(capturedCalls[0].headers['X-NailFlow-Webhook-Secret'], 'valor-de-teste');
+  delete process.env.N8N_NOTIFY_SECRET;
+});
+
+test('sem N8N_NOTIFY_SECRET não envia o cabeçalho', async () => {
+  process.env.N8N_WEBHOOK_CONFIRMED_URL = 'http://n8n-test/confirmed';
+  delete process.env.N8N_NOTIFY_SECRET;
+  clearCalls();
+
+  notifyN8n('appointment.confirmed', { id: 'h2' });
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(capturedCalls.length, 1);
+  assert.equal('X-NailFlow-Webhook-Secret' in capturedCalls[0].headers, false);
+});
 
 test('appointment.confirmed envia para N8N_WEBHOOK_CONFIRMED_URL', async () => {
   process.env.N8N_WEBHOOK_CONFIRMED_URL = 'http://n8n-test/confirmed';

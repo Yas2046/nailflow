@@ -1,121 +1,112 @@
 # NailFlow — Próximos Passos
 
-Sequência ordenada por dependência. Não pule etapas.
+> Atualizado em 2026-09-27. Sequência ordenada por dependência. Não pule etapas.
+> Toda mudança em produção, n8n, Evolution ou banco exige autorização explícita.
 
 ---
 
-## Fase 1 — Estabilização (fazer antes de qualquer nova feature)
+## Concluído recentemente
 
-### 1.1 Commitar arquivos pendentes
+- ✅ V1 (`d82603c`) e V2 (`38b3fe7`) finalizadas
+- ✅ Mudanças de produção versionadas (`b26d682`): antecedência máxima, fechamentos, limite da Agenda, onboarding, correção do `$1`, migrations 007–010
+- ✅ `.gitignore` reforçado
+- ✅ Firewall UFW ativo (públicas só 22/80/443)
+- ✅ Workflow "NailFlow — Notificações" ativo
+- ✅ Crons de Abandono e Lembretes corrigidos (2026-09-27)
+- ✅ Webhooks do n8n com Header Auth; classificador sim/não; isolamento de `clientId`; normalização de telefone (2026-09-27, sem commit)
+- ✅ Migrations reproduzíveis: 002 oficial + 011–014 (2026-09-27, sem commit)
+- ✅ Seed compatível e suíte automatizada 57/57 em banco descartável (2026-09-27, sem commit)
+- ✅ Documentação atualizada com o fechamento técnico (2026-09-27)
 
-```bash
-cd /var/www/nailflow
-git add backend/src/controllers/clientsController.js
-git add backend/src/controllers/whatsappController.js
-git add backend/src/routes/whatsapp.routes.js
-git add frontend/src/pages/Clientes.tsx
-git commit -m "feat(bloco5+whatsapp): CRM com busca/filtro por tag e gestão de instância WhatsApp"
-git push origin feat/phase5-register
-```
+---
 
-### 1.2 Ativar workflow "NailFlow — Notificações"
+## Fase 1 — Estabilização
 
-1. Acessar https://nailflow-n8n.duckdns.org
-2. Localizar "NailFlow — Notificações" (ID: jgCnaeacHYMH6SRT)
-3. Verificar se o nó Webhook tem path `nailflow/notificacoes` (confirmar)
-4. Ativar
-5. Testar: enviar confirmação de agendamento pelo bot → verificar se execução aparece no n8n
+### 1.1 Fechar o repositório da V2 (nesta ordem)
+1. ✅ Documentação atualizada
+2. ✅ Exports de Abandono e Lembretes regenerados das versões publicadas (2026-09-27); falta, se desejado, regenerar os do "Definitivo" e do "Notificações"
+3. Revisão final do `git status` e do diff
+4. Commit, adicionando arquivos por nome
+5. Push
+6. Só depois, quando autorizado: reconectar o WhatsApp e validar ponta a ponta (1.3)
 
-### 1.3 Executar testes automatizados
+### 1.2 Executar testes automatizados — sempre em banco descartável
 
 ```bash
 cd /var/www/nailflow/backend
 npm test
 ```
 
-Verificar se todos passam. Se algum falhar, corrigir antes de continuar.
+Banco descartável montado com `schema.sql` → migrations → `seed.sql`, URLs do n8n vazias e `EVOLUTION_API_URL` inválida (ver [`INSTALACAO_NOVA_MAQUINA.md`](./INSTALACAO_NOVA_MAQUINA.md)). Estado atual: 57/57.
+
+### 1.3 Reconectar o `chip2` e teste ponta a ponta pelo WhatsApp (somente com autorização)
+
+- Reconexão feita pela responsável; acompanhar a primeira mensagem (webhook com Header Auth — se der 403, ver rollback em [`N8N.md`](./N8N.md))
+
+- Agendamento: "oi" → menu → serviço → data → horário → confirmar
+- Cancelamento: "cancelar" → escolher → confirmar
+- Respostas sim/não ambíguas devem pedir de novo
+- Verificar execuções do "WhatsApp NailFlow — Definitivo" e do "Notificações"
+- Acompanhar o primeiro lembrete e o primeiro aviso de abandono reais (`reminder_sent = true` no banco)
 
 ---
 
-## Fase 2 — Validação dos fluxos críticos do bot
+## Fase 2 — Publicar recuperação e troca de senha
 
-### 2.1 Testar agendamento completo pelo WhatsApp
+Pré-requisitos:
+- Conta Brevo e remetente verificado (configuração feita pela responsável)
+- `SMTP_PASS` inserido pela responsável no `backend/.env` do servidor
+- Autorização explícita para publicar
 
-Cenário: cliente envia "oi" → recebe menu → escolhe serviço → escolhe horário → confirma
-
-Verificar:
-- Agendamento criado no banco (`SELECT * FROM appointments ORDER BY created_at DESC LIMIT 1`)
-- n8n "WhatsApp NailFlow — Definitivo" executou (success)
-- n8n "NailFlow — Notificações" executou (após ativar em 1.2)
-- `reminder_sent = false` no agendamento criado
-
-### 2.2 Testar cancelamento pelo WhatsApp
-
-Cenário: cliente envia "cancelar" → lista agendamentos → confirma cancelamento
-
-Verificar:
-- `status = 'cancelado'` no banco
-- n8n "NailFlow — Notificações" executou
-
-### 2.3 Testar lembrete de agendamento
-
-1. Criar agendamento para amanhã
-2. Aguardar o cron do workflow "NailFlow — Lembretes de Agendamento"
-3. Verificar WhatsApp recebeu lembrete
-4. Verificar `reminder_sent = true` no banco
-
-### 2.4 Testar modo atendimento humano
-
-- Enviar frase de escape ("falar com atendente")
-- Verificar que bot silencia
-- Aguardar 2h → verificar que bot volta automaticamente
+Ordem (a migration precisa vir antes do restart do backend):
+1. Backup do banco (`pg_dump`) e dos arquivos atuais
+2. Aplicar a migration de senha no banco de produção
+3. Copiar os arquivos do backend de `/opt/nailflow-next` e rodar `npm install` (inclui `nodemailer`)
+4. No `.env`: `NODE_ENV=production`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `MAIL_FROM`
+5. Reiniciar apenas o `nailflow-backend`
+6. Trocar `frontend/dist` por `frontend/dist-next` (guardando a `dist` atual como backup)
+7. Testar um reset real
+8. Versionar no Git: arquivos da implementação, migration renumerada no padrão `backend/db/migrations/0NN_*.sql` e `.env.example` com as variáveis SMTP (sem valores)
 
 ---
 
-## Fase 3 — Conexão WhatsApp pelo sistema (QR Code)
+## Fase 3 — Organização do repositório
 
-### 3.1 Testar `POST /api/whatsapp/connect`
-
-Cenário: profissional acessa Configurações → WhatsApp → clicar "Conectar"
-
-Verificar:
-- QR Code aparece na tela
-- QR é escaneável (preto/branco puro)
-- Após escaneio, status muda para "conectado"
-
-**Nota:** testar APENAS com instância de teste. Não usar número real.
+1. Integrar `feat/phase5-register` ao `main` (resolver a divergência entre `main` local e `origin/main`)
+2. Remover `N8N_API_KEY` e `N8N_PROFESSIONAL_ID` do `.env` do servidor (não usadas)
+3. Limpar arquivos `.bak*` e dumps antigos (ou mover para um arquivo fora do repositório)
 
 ---
 
-## Fase 4 — CRM e interface
+## Fase 4 — Segurança
 
-### 4.1 Testar Bloco 5 CRM
+1. SSH somente por chave (depois de confirmar o acesso por chave)
+2. Senha forte / 2FA no painel do n8n
+3. Corrigir o node "Registrar Mensagem Bot" para enviar a instância
 
-Verificar:
-- Busca por nome funciona
-- Busca por telefone funciona
-- Filtro por tag funciona
-- Filtro "Inativas" funciona
+## Melhorias de banco (sem urgência)
+
+- Remover o índice duplicado `message_history_dedup_idx` (migration própria, com autorização)
+- Decidir sobre `message_history.client_id` (usar ou remover)
 
 ---
 
-## Fase 5 — Multi-tenancy (nova profissional)
+## Fase 5 — Conexão WhatsApp pelo sistema (QR Code)
 
-### 5.1 Testar cadastro de segunda profissional
+Testar Configurações → WhatsApp → conectar com **instância de teste**:
+- QR aparece e é escaneável
+- Após o escaneio, o status muda para conectado e o onboarding marca WhatsApp como concluído
 
-1. Registrar segunda profissional via `/auth/register` ou pela UI
-2. Criar instância no Evolution (ex: `chip-pro2`)
-3. Configurar `wa_instance_name` para `chip-pro2`
-4. Verificar que dados ficam isolados (agendamentos, clientes, serviços)
+**Nunca usar o número real nesse teste.**
 
 ---
 
 ## Fase 6 — Preparação para número real
 
-**Fazer APENAS quando as fases 2 e 3 estiverem validadas.**
+**Somente depois das fases 1 e 5 validadas.**
 
-1. Criar nova instância Evolution (ex: `chip-real` ou nome definitivo)
-2. Configurar webhook na instância nova
+1. Criar nova instância Evolution
+2. Configurar o webhook na instância nova
 3. Fazer **UMA** tentativa de QR para o número real
 4. Vincular no banco (`wa_instance_name`)
 5. Monitorar por 24h
@@ -124,26 +115,18 @@ Verificar:
 
 ---
 
-## Fase 7 — Limpeza e organização
+## Fase 7 — Monitoramento
 
-- Remover workflows duplicados/inativos do n8n
-- Remover `N8N_API_KEY` do `.env` e `.env.example`
-- Atualizar `.env.example` com variáveis atuais
-- Limpar arquivos `.bak*` do VPS (ou mover para `archive/`)
-
----
-
-## Fase 8 — Monitoramento
-
-- Configurar alertas de queda do bot (UptimeRobot ou similar)
-- Considerar logs estruturados (Winston/Pino)
-- Monitorar espaço em disco (`df -h` — backup cresce ~X MB/dia)
+- Alertas de queda do bot e de falha dos crons (UptimeRobot ou similar)
+- Logs estruturados (Winston/Pino)
+- Monitorar espaço em disco (`df -h`)
 
 ---
 
-## Fase 9 — Features futuras
+## Fase 8 — Futuro
 
 - Campanhas (envio em massa para reativar clientes inativas)
 - Painel de histórico de conversas para a profissional
 - Export de dados (LGPD)
+- Versão pública do projeto para portfólio (repositório separado, sem infraestrutura nem segredos)
 - App mobile (longo prazo)

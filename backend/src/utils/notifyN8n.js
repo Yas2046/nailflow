@@ -25,9 +25,13 @@ export function notifyN8n(event, payload) {
   const url = process.env[envVar];
   if (!url) return;
 
+  const secret = process.env.N8N_NOTIFY_SECRET;
   fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(secret ? { 'X-NailFlow-Webhook-Secret': secret } : {}),
+    },
     body: JSON.stringify({ event, payload, sentAt: new Date().toISOString() }),
   }).catch((err) => {
     console.error(`Falha ao notificar n8n (${event}):`, err.message);

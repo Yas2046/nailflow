@@ -33,8 +33,8 @@ before(async () => {
   const { default: bcrypt } = await import('bcryptjs');
   const hash = await bcrypt.hash(PROFESSIONAL_PASSWORD, 10);
   const { rows } = await pool.query(
-    `INSERT INTO professionals (name, email, password_hash, phone_whatsapp, business_name)
-     VALUES ('Snap Tester', $1, $2, '5531000000001', 'SnapStudio')
+    `INSERT INTO professionals (name, email, password_hash, phone_whatsapp, business_name, slug)
+     VALUES ('Snap Tester', $1, $2, '5531000000001', 'SnapStudio', 'teste-snapshot')
      RETURNING id`,
     [PROFESSIONAL_EMAIL, hash]
   );
@@ -95,7 +95,7 @@ async function criarCliente(name) {
   const res = await fetch(`${baseUrl}/clients`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ name, phone: `5531${Date.now().toString().slice(-9)}` }),
+    body: JSON.stringify({ name, phone: `55319${Date.now().toString().slice(-8)}` }),
   });
   assert.equal(res.status, 201, `falha ao criar cliente "${name}": ${res.status}`);
   return res.json();

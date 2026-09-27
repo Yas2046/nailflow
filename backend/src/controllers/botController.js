@@ -2,12 +2,10 @@ import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.js';
 import { zonedTimeToUtc } from '../utils/timezone.js';
+import { classifyReply } from '../utils/replyClassifier.js';
+import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
 
 // ---------- helpers ----------
-
-function cleanPhone(raw) {
-  return String(raw).replace('@s.whatsapp.net', '').replace(/\D/g, '');
-}
 
 function formatDateBR(isoOrDate) {
   const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
@@ -115,34 +113,6 @@ async function findMessageBySender(professionalId, waMessageId) {
     `SELECT sender FROM message_history
      WHERE professional_id = $1 AND wa_message_id = $2 LIMIT 1`,
     [professionalId, waMessageId]
-  );
-  return rows[0] ?? null;
-}
-
-function normalizeBrPhone(phone) {
-  const digits = String(phone).replace(/\D/g, '');
-  // BR mobile: 55 + DDD(2) + 9 + 8 digits = 13 digits; normalize to 12 by removing the 9
-  if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') {
-    return digits.slice(0, 4) + digits.slice(5);
-  }
-  return digits;
-}
-
-async function findClientByPhone(professionalId, phone) {
-  const normalized = normalizeBrPhone(phone);
-  const { rows } = await pool.query(
-    `SELECT * FROM clients
-     WHERE professional_id = $1
-       AND (
-         regexp_replace(phone, '\\D', '', 'g') = $2
-         OR (
-           length(regexp_replace(phone, '\\D', '', 'g')) = 13
-           AND left(regexp_replace(phone, '\\D', '', 'g'), 4) || right(regexp_replace(phone, '\\D', '', 'g'), 8) = $2
-         )
-       )
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    [professionalId, normalized]
   );
   return rows[0] ?? null;
 }
@@ -584,7 +554,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok|isso)/.test(text)) {
+    const answer = classifyReply(rawText, 'booking');
+
+    if (answer === 'yes') {
       // Find or create client
       const client = await findOrCreateClient(professionalId, phone, pushName || 'Cliente WhatsApp');
 
@@ -637,7 +609,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(n|nao|nope|cancel)/.test(text)) {
+    if (answer === 'no') {
       return reply(
         `Tudo bem! 😊 O que mais posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU',
@@ -698,7 +670,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok)/.test(text)) {
+    const answer = classifyReply(rawText, 'cancel');
+
+    if (answer === 'yes') {
       await pool.query(
         `UPDATE appointments SET status = 'cancelado' WHERE id = $1 AND professional_id = $2`,
         [ctx.apptIdToCancel, professionalId]
@@ -710,7 +684,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(n|nao|nope)/.test(text)) {
+    if (answer === 'no') {
       return reply(
         `Ok, mantive seu agendamento! 😊 Posso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento`,
         'MENU',
@@ -727,7 +701,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
 
   // ---------- AGUARDANDO_REPETICAO ----------
   if (state === 'AGUARDANDO_REPETICAO') {
-    if (isBackCommand(text) || /^(n|nao|nope|outr|ver|opcoes|menu)/.test(text)) {
+    const answer = classifyReply(rawText, 'repeat');
+
+    if (isBackCommand(text) || answer === 'no') {
       return reply(
         `Sem problema! 😊 Como posso ajudar?
 
@@ -740,7 +716,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok|isso|quero|pode|bora|va|vamos|claro|com certeza)/.test(text)) {
+    if (answer === 'yes') {
       const { lastServiceId, lastServiceName, lastServiceDuration, lastServicePrice } = ctx;
 
       if (!lastServiceId) {

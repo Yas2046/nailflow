@@ -1,10 +1,19 @@
 import { z } from 'zod';
 import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
+
+async function prepareClientPhone(raw, professionalId, excludeId = null) {
+  const phone = normalizeClientPhone(raw);
+  if (!isValidBrPhone(phone)) throw new HttpError(400, 'Telefone inválido.');
+  const existing = await findClientByPhone(professionalId, phone, { excludeId, includeWithoutDdi: true });
+  if (existing) throw new HttpError(409, 'Já existe uma cliente com este telefone.');
+  return phone;
+}
 
 const clientSchema = z.object({
   name: z.string().min(1),
-  phone: z.string().min(8),
+  phone: z.string().min(1),
   notes: z.string().optional().nullable(),
   tags: z.array(
     z.string().trim().min(1, 'Tag inválida.').max(30, 'Tag deve ter no máximo 30 caracteres.')
@@ -125,9 +134,10 @@ export async function getClientHistory(req, res, next) {
 export async function createClient(req, res, next) {
   try {
     const data = clientSchema.parse(req.body);
+    const phone = await prepareClientPhone(data.phone, req.professionalId);
     const { rows } = await pool.query(
       `INSERT INTO clients (professional_id, name, phone, notes, tags) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [req.professionalId, data.name, data.phone, data.notes ?? null, data.tags ?? []]
+      [req.professionalId, data.name, phone, data.notes ?? null, data.tags ?? []]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -141,6 +151,20 @@ export async function updateClient(req, res, next) {
     const data = clientSchema.partial().parse(req.body);
     const notesInBody = 'notes' in req.body;
     const tagsInBody  = 'tags' in req.body;
+
+    // Telefone igual ao gravado fica como está (inclusive números antigos fora do padrão).
+    let phone = null;
+    if (data.phone !== undefined) {
+      const { rows: current } = await pool.query(
+        'SELECT phone FROM clients WHERE id = $1 AND professional_id = $2',
+        [req.params.id, req.professionalId]
+      );
+      if (!current[0]) throw new HttpError(404, 'Cliente não encontrada.');
+      if (data.phone !== current[0].phone) {
+        phone = await prepareClientPhone(data.phone, req.professionalId, req.params.id);
+      }
+    }
+
     const { rows } = await pool.query(
       `UPDATE clients SET
          name  = COALESCE($1, name),
@@ -149,7 +173,7 @@ export async function updateClient(req, res, next) {
          tags  = CASE WHEN $5 THEN $6 ELSE tags END
        WHERE id = $7 AND professional_id = $8 RETURNING *`,
       [
-        data.name, data.phone,
+        data.name, phone,
         notesInBody, data.notes ?? null,
         tagsInBody,  data.tags  ?? [],
         req.params.id, req.professionalId,

@@ -2,14 +2,15 @@
 -- Senha de todos os exemplos: "senha123" (hash bcrypt abaixo).
 -- Gerado com bcrypt rounds=10.
 
-INSERT INTO professionals (id, name, email, password_hash, phone_whatsapp, business_name)
+INSERT INTO professionals (id, name, email, password_hash, phone_whatsapp, business_name, slug)
 VALUES (
   '11111111-1111-1111-1111-111111111111',
   'Camila Souza',
   'camila@nailflow.com',
   '$2a$10$KRMyKOorWVVj/j6lwwrkx.RDsQp7D90fLaqLSXpm4eitIMDi7vN66', -- senha123
   '5531999999999',
-  'Camila Nails Studio'
+  'Camila Nails Studio',
+  'camila-nails-studio'
 );
 
 INSERT INTO services (professional_id, name, description, price_cents, duration_minutes, active) VALUES
