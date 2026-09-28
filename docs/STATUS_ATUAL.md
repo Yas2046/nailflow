@@ -4,7 +4,7 @@
 
 - **Repositório:** https://github.com/Yas2046/nailflow
 - **Branch de trabalho:** `feat/phase5-register`
-- **Último commit:** ver `git log` (rodada de segurança V6–V17, commitada e enviada em 2026-09-28)
+- **Último commit:** `46ba4c8` — security: unicidade de instância, bloqueio de conta, FKs compostas multi-tenant, hardening do bot e npm audit fix
 - **Sincronização:** `feat/phase5-register` = `origin/feat/phase5-register`
 - **Working tree:** limpo após o commit de 2026-09-28 (migrations 015–017, middleware/rotas de segurança, rate limiting, correção do `qs`, documentação)
 - **Atenção — `main`:** o `main` local e o `origin/main` estão divergentes entre si e **não contêm a V1 nem a V2**. A integração ao `main` ainda não foi feita.
