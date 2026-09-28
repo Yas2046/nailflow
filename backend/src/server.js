@@ -42,7 +42,7 @@ app.use('/expenses', expensesRoutes);
 
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
-app.use('/bot', cors({ origin: '*' }), botRoutes);
+app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/admin', adminRoutes);
 app.use('/onboarding', onboardingRoutes);

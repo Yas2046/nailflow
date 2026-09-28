@@ -1,6 +1,6 @@
 # NailFlow — Pendências e Auditoria
 
-> Atualizado em 2026-09-27.
+> Atualizado em 2026-09-28.
 
 ---
 
@@ -36,7 +36,7 @@
 **C4. Integrar V1/V2 ao `main`**
 - `main` local e `origin/main` estão divergentes e não contêm V1 nem V2; todo o trabalho está em `feat/phase5-register`
 
-**C5. Revisão final e commit/push das mudanças de 2026-09-27** (backend, testes, seed, migrations e docs) — revisar o diff e adicionar arquivos por nome, incluindo os 2 exports regenerados do n8n (`nailflow_abandono_de_conversa.json`, `nailflow_lembretes_de_agendamento.json`)
+~~**C5. Revisão final e commit/push das mudanças de 2026-09-27**~~ — feito em 2026-09-28 (commit da rodada de segurança V6–V17). Os 2 exports do n8n regenerados (Abandono/Lembretes) e o restante ainda pendente (Definitivo/Notificações) seguem em I9.
 
 ---
 
@@ -71,6 +71,22 @@
 **I11. Notificação de confirmação/cancelamento pelo painel** — validar com o cabeçalho novo
 
 ---
+
+**I12. Migrations 015–017, middleware e rotas da rodada de segurança (2026-09-28) sem commit**
+- Unicidade de `wa_instance_name`, bloqueio de conta (`blocked_at`/`token_version`), foreign keys compostas cross-tenant, validação de ownership no bot, rate limiting de rotas sensíveis, CORS do `/bot` restrito — tudo já aplicado e testado em produção, faltando só o commit/push (ver "Resolvido" abaixo)
+
+**I13. PM2 (backend e n8n) rodando como root**
+- Auditado em 2026-09-28: sem necessidade técnica (nenhuma porta privilegiada, nenhum acesso a dispositivo) — é assim porque o PM2 foi originalmente configurado como serviço do usuário root (`pm2-root.service`)
+- Risco: um RCE futuro em qualquer um dos dois processos dá acesso root ao servidor inteiro, sem contenção
+- Migração para usuários dedicados desenhada mas **não implementada** — depende de mover o `database.sqlite` do n8n para fora de `/root` (operação sensível, precisa de janela de manutenção e testes)
+
+**I14. 9 testes antigos esperando `body.token` no login**
+- `auth-flow.test.js`, `price-snapshot.test.js`, `availability-check.test.js` — quebraram quando o `token` foi removido do corpo da resposta de login (a sessão passou a ser só via cookie JWT), mudança já aprovada e aplicada
+- Os testes precisam ser atualizados para usar o cookie em vez de `body.token`; não é uma regressão de produção, é a suíte que ficou desatualizada
+
+**I15. React Router mantido em 6.30.6 (decisão registrada, não uma pendência ativa)**
+- Auditoria de 2026-09-28 nos dois advisories do `npm audit` (open redirect e SSR hydration) concluiu que **nenhum é explorável no NailFlow hoje**: todo destino de navegação (`<Link>`/`navigate()`) é string fixa no código, e o app usa Declarative Mode sem SSR (o segundo advisory se autoexclui para esse modo)
+- Não é necessário corrigir agora; revisar só se uma funcionalidade futura introduzir navegação com destino dinâmico/vindo de URL ou API, ou uso de SSR
 
 ### 🟡 Melhoria
 
@@ -132,3 +148,18 @@
 | Exemplo de QR com valor real em `WHATSAPP_EVOLUTION.md` | 2026-09-27 | Trocado por placeholder |
 | Exports de Abandono e Lembretes errados (saídas do loop trocadas) | 2026-09-27 | Regenerados com `n8n export:workflow --published` das versões `d566c2fe` / `9da88cb4`; sem segredos |
 | `seed.sql` quebrado e 30 testes falhando (sem `slug`) | 2026-09-27 | `slug` no seed e nos setups de teste; telefone válido no `price-snapshot`; suíte 57/57 em dois bancos descartáveis |
+| `wa_instance_name` sem unicidade (duas profissionais podiam assumir a mesma instância) | 2026-09-28 | Índice único parcial (migration 015) |
+| `PUT`/`DELETE /whatsapp/instance` permitiam assumir/orfanar instância sem sincronizar com a Evolution | 2026-09-28 | Rotas removidas; só `/evolution-instance` configura/remove, sincronizando com a Evolution |
+| Sem forma de bloquear/revogar sessão de uma profissional | 2026-09-28 | `blocked_at` + `token_version` (migration 016), checados a cada `requireAuth`/`requireAdmin`/`botAuth` direto no banco |
+| Isolamento entre profissionais garantido só na aplicação, não no banco | 2026-09-28 | Foreign keys compostas `(id, professional_id)` em clients/services/recurring_groups → appointments/message_history (migration 017) |
+| `/bot/record-sent` sem `waInstance` obrigatório | 2026-09-28 | `instance` agora obrigatório (400 se ausente), sem fallback |
+| Cancelamento pelo bot sem checar dono do agendamento | 2026-09-28 | `findClientByPhone` + `client_id` exigido no `WHERE` do SELECT e do UPDATE |
+| CORS `*` nas rotas `/bot` | 2026-09-28 | Removido; `/bot` herda o CORS restritivo global |
+| `qs` — vulnerabilidade do `npm audit` (Item 17) | 2026-09-28 | `npm audit fix` (sem `--force`): `qs` 6.15.3→6.16.0, `body-parser`, `express` — patch dentro do range já fixado no `package.json` |
+| Sem rate limit em rotas sensíveis (login, registro, conexão WhatsApp, página pública) | 2026-09-28 | Rate limit por rota no Express (`express-rate-limit`) + `limit_req` no Nginx |
+| Sem security headers / CSP | 2026-09-28 | HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy e CSP (validada em Report-Only antes de aplicar); `server_tokens off`; `X-Powered-By` ocultado |
+| Evolution API exposta publicamente pelo Nginx | 2026-09-28 | `location /` restrito por IP (loopback + IP público da própria VPS, confirmado por teste ao vivo do hairpin NAT do n8n/backend) |
+| Evolution com logs em `VERBOSE`/`debug` (volume alto, dados sensíveis) | 2026-09-28 | `LOG_LEVEL=ERROR,WARN`, `LOG_BAILEYS=error`, rotação de log do container |
+| Imagem Docker da Evolution na tag `latest` (pode mudar sem aviso) | 2026-09-28 | Fixada por digest exato (`@sha256:...`) |
+| `.env`, `.pgpass`, sqlite do n8n com permissão `644` | 2026-09-28 | `600` (conteúdo verificado inalterado) |
+| Senha do PostgreSQL em texto puro em 5 scripts (`/root/v2close-20260927/`) | 2026-09-28 | Migrados para `/root/.pgpass` (`600`); `PGPASSWORD`/`DATABASE_URL` com credencial removidos dos 5 scripts; validado com `psql`/`pg_dump`/`node` sem regressão |

@@ -14,16 +14,20 @@ export async function login(req, res, next) {
     const { email, password } = loginSchema.parse(req.body);
 
     const { rows } = await pool.query(
-      'SELECT id, name, email, password_hash, business_name, is_admin FROM professionals WHERE email = $1',
+      'SELECT id, name, email, password_hash, business_name, is_admin, blocked_at, token_version FROM professionals WHERE email = $1',
       [email]
     );
     const professional = rows[0];
-    if (!professional) throw new HttpError(401, 'E-mail ou senha inválidos.');
+    // Mensagem sempre igual (e-mail inexistente, senha errada ou conta
+    // bloqueada): não revela qual dessas situações ocorreu.
+    const invalidCredentials = () => new HttpError(401, 'Credenciais inválidas ou acesso indisponível.');
+    if (!professional) throw invalidCredentials();
 
     const valid = await bcrypt.compare(password, professional.password_hash);
-    if (!valid) throw new HttpError(401, 'E-mail ou senha inválidos.');
+    if (!valid) throw invalidCredentials();
+    if (professional.blocked_at !== null) throw invalidCredentials();
 
-    const token = jwt.sign({ sub: professional.id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ sub: professional.id, ver: professional.token_version }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
 
@@ -34,8 +38,10 @@ export async function login(req, res, next) {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // O frontend usa so o cookie httpOnly; devolver o token tambem no corpo
+    // expunha ele em texto plano a qualquer leitor da resposta (log, extensao
+    // de navegador etc.), enfraquecendo a protecao do httpOnly.
     res.json({
-      token,
       professional: {
         id: professional.id,
         name: professional.name,

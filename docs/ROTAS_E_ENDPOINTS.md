@@ -136,12 +136,12 @@ Resposta: `{ perfil, servicos, horarios, whatsapp, clientes, concluidos, total: 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
 | GET | `/whatsapp/status` | JWT | Status real da instância da profissional (consulta a Evolution) |
-| POST | `/whatsapp/connect` | JWT | Solicitar QR para conectar |
+| POST | `/whatsapp/connect` | JWT | Solicitar QR para conectar (rate limit 10/5min por profissional) |
 | GET | `/whatsapp/instance` | JWT | Instância configurada |
-| PUT | `/whatsapp/instance` | JWT | Configurar nome da instância |
-| DELETE | `/whatsapp/instance` | JWT | Remover instância configurada |
 | POST | `/whatsapp/evolution-instance` | JWT | Criar instância na Evolution |
 | DELETE | `/whatsapp/evolution-instance` | JWT | Remover instância da Evolution |
+
+> `PUT /whatsapp/instance` e `DELETE /whatsapp/instance` foram **removidos** (2026-09-28): permitiam vincular/desvincular `wa_instance_name` sem sincronizar com a Evolution (uma profissional podia assumir a instância de outra, ou deixar uma instância órfã e ativa). A única forma de configurar/remover instância agora é `/evolution-instance`.
 
 ---
 
@@ -159,8 +159,8 @@ Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admi
 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
-| GET | `/public/:slug/info` | ✗ | Nome do negócio e link do WhatsApp da profissional |
-| GET | `/public/:slug/availability` | ✗ | Dias com horários livres (`?days=N`, limitado por `booking_horizon_days`) |
+| GET | `/public/:slug/info` | ✗ | Nome do negócio e link do WhatsApp da profissional (rate limit 60/5min por IP) |
+| GET | `/public/:slug/availability` | ✗ | Dias com horários livres (`?days=N`, limitado por `booking_horizon_days`; rate limit 60/5min por IP) |
 | GET | `/public/info` | ✗ | Compatibilidade: usa a primeira profissional cadastrada |
 | GET | `/public/availability` | ✗ | Compatibilidade: idem |
 

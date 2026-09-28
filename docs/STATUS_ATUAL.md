@@ -1,12 +1,12 @@
-# NailFlow — Status Atual (2026-09-27)
+# NailFlow — Status Atual (2026-09-28)
 
 ## Git
 
 - **Repositório:** https://github.com/Yas2046/nailflow
 - **Branch de trabalho:** `feat/phase5-register`
-- **Último commit:** `b26d682` — chore: version V2 production changes
-- **Sincronização:** `feat/phase5-register` = `origin/feat/phase5-register` (push feito em 2026-09-25)
-- **Working tree:** com as mudanças de 2026-09-27 **ainda sem commit** — correções de segurança e do bot no backend, testes novos e corrigidos, `seed.sql`, migrations 002/011–014 e esta documentação (ver "Fechamento técnico da V2" abaixo). Os 2 JSONs novos em `n8n/workflows/` (Abandono e Lembretes) foram regenerados das versões publicadas em 2026-09-27, não contêm segredos e podem ser versionados
+- **Último commit:** ver `git log` (rodada de segurança V6–V17, commitada e enviada em 2026-09-28)
+- **Sincronização:** `feat/phase5-register` = `origin/feat/phase5-register`
+- **Working tree:** limpo após o commit de 2026-09-28 (migrations 015–017, middleware/rotas de segurança, rate limiting, correção do `qs`, documentação)
 - **Atenção — `main`:** o `main` local e o `origin/main` estão divergentes entre si e **não contêm a V1 nem a V2**. A integração ao `main` ainda não foi feita.
 
 ### Histórico recente
@@ -62,6 +62,26 @@ Estas mudanças já estavam em produção antes do commit:
 
 ---
 
+## Rodada de segurança V6–V17 (2026-09-28)
+
+Auditoria numerada (itens 9–17) seguida de correções implementadas, testadas e commitadas:
+
+- **Isolamento multi-tenant reforçado no banco**: foreign keys compostas `(id, professional_id)` (migration 017) garantem no PostgreSQL, não só na aplicação, que uma profissional nunca alcança dado de outra
+- **Bloqueio/revogação de conta**: `blocked_at` + `token_version` (migration 016), checados a cada requisição autenticada direto no banco
+- **Unicidade de instância WhatsApp**: índice único parcial em `wa_instance_name` (migration 015)
+- **Rotas de instância WhatsApp mais seguras**: `PUT`/`DELETE /whatsapp/instance` removidas (permitiam assumir/orfanar instância sem sincronizar com a Evolution)
+- **Bot**: `instance` obrigatório em todas as rotas (sem fallback), cancelamento valida dono do agendamento, CORS `*` removido de `/bot`
+- **Dependências**: `qs`/`body-parser`/`express` atualizados via `npm audit fix` (sem `--force`); `react-router-dom` auditado e mantido em 6.30.6 (ver [`PENDENCIAS.md`](./PENDENCIAS.md) — não há exploração possível no uso atual)
+- **Rate limiting**: por rota no Express (login, registro, conexão WhatsApp, página pública) e por IP no Nginx (`limit_req`)
+- **Security headers e CSP**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy e CSP (validada em Report-Only antes de aplicar, zero violações); `server_tokens off`; `X-Powered-By` oculto
+- **Evolution API**: exposição pública fechada no Nginx (restrita por IP, confirmado o hairpin NAT do n8n/backend antes de aplicar); logs reduzidos de `VERBOSE`/`debug` para `ERROR,WARN`/`error` com rotação; imagem Docker fixada por digest exato
+- **Permissões de arquivo**: `.env` (backend/frontend), `.pgpass` e o sqlite do n8n em `600`
+- **Segredos em scripts**: senha do PostgreSQL removida de 5 scripts de teste em `/root/v2close-20260927/`, migrada para `/root/.pgpass`
+
+**Pendente desta rodada** (ver [`PENDENCIAS.md`](./PENDENCIAS.md) para detalhes): PM2 (backend e n8n) ainda roda como root; 9 testes antigos esperando `body.token` no login; exports do n8n "Definitivo"/"Notificações" ainda não regenerados.
+
+---
+
 ## O que NÃO está publicado
 
 | Item | Situação |
@@ -69,10 +89,9 @@ Estas mudanças já estavam em produção antes do commit:
 | Recuperação de senha ("Esqueci minha senha") | ❌ não publicada |
 | Troca de senha logada | ❌ não publicada |
 | Invalidação de sessões após troca de senha | ❌ não publicada |
-| `NODE_ENV=production` (cookie `Secure`) | ❌ não aplicado em produção |
 | Normalização de e-mail no login | ❌ não publicada |
 
-A recuperação de senha **continua isolada e não publicada**.
+A recuperação de senha **continua isolada e não publicada**. (`NODE_ENV=production` já está aplicado em produção desde 2026-09-27, fora do escopo do `nailflow-next` — cookie de sessão já sai com `Secure`.)
 
 Existe uma **implementação isolada** desses itens em `/opt/nailflow-next` (fora do repositório e fora de produção), validada somente em ambiente de teste com banco descartável. **O Brevo (SMTP) ainda não está configurado.** Nada disso deve ser tratado como funcionalidade disponível até a publicação autorizada.
 

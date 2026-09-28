@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireBotAuth } from '../middleware/botAuth.js';
+import { requireBotAuth, hasValidBotKey } from '../middleware/botAuth.js';
 import {
   processMessage,
   recordSentMessage,
@@ -17,11 +17,7 @@ const router = Router();
 // Middleware que valida somente o BOT_API_KEY, sem resolver professionalId.
 // Usado por GET /instances que nao pertence a uma profissional especifica.
 function requireBotKey(req, res, next) {
-  const bearer = req.headers.authorization?.startsWith('Bearer ')
-    ? req.headers.authorization.slice(7)
-    : null;
-  const key = process.env.BOT_API_KEY;
-  if (!key || !bearer || bearer !== key) {
+  if (!hasValidBotKey(req)) {
     return res.status(401).json({ error: 'Bot nao autorizado.' });
   }
   next();

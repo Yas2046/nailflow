@@ -644,11 +644,17 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    // Get appointment details for confirmation
+    // Get appointment details for confirmation.
+    // Exige tambem client_id: apptId vem de apptMap (context), que pode ter
+    // sido adulterado via POST /bot/conversation/:phone; sem essa checagem,
+    // uma conversa poderia confirmar o cancelamento do agendamento de OUTRA
+    // cliente da mesma profissional.
+    const cancelClient = await findClientByPhone(professionalId, phone);
     const { rows } = await pool.query(
       `SELECT a.starts_at, s.name AS service_name FROM appointments a
-       JOIN services s ON s.id = a.service_id WHERE a.id = $1 AND a.professional_id = $2`,
-      [apptId, professionalId]
+       JOIN services s ON s.id = a.service_id
+       WHERE a.id = $1 AND a.professional_id = $2 AND a.client_id = $3`,
+      [apptId, professionalId, cancelClient?.id ?? null]
     );
     if (!rows[0]) {
       return reply('Agendamento não encontrado. 😕', 'MENU', {});
@@ -673,10 +679,18 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     const answer = classifyReply(rawText, 'cancel');
 
     if (answer === 'yes') {
-      await pool.query(
-        `UPDATE appointments SET status = 'cancelado' WHERE id = $1 AND professional_id = $2`,
-        [ctx.apptIdToCancel, professionalId]
+      // Mesma exigencia de client_id do passo anterior, para o caso de o
+      // estado ter sido forjado direto em AGUARDANDO_CONFIRMACAO_CANCELAMENTO
+      // (pulando a etapa de listagem) via POST /bot/conversation/:phone.
+      const cancelClient = await findClientByPhone(professionalId, phone);
+      const { rowCount } = await pool.query(
+        `UPDATE appointments SET status = 'cancelado'
+         WHERE id = $1 AND professional_id = $2 AND client_id = $3`,
+        [ctx.apptIdToCancel, professionalId, cancelClient?.id ?? null]
       );
+      if (rowCount === 0) {
+        return reply('Agendamento não encontrado. 😕', 'MENU', {});
+      }
       return reply(
         `Agendamento cancelado com sucesso! ✅\n\nSe quiser remarcar, é só me avisar. 😊\n\n1️⃣ Agendar horário`,
         'MENU',
