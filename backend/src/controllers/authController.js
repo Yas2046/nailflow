@@ -74,9 +74,9 @@ export async function me(req, res, next) {
   }
 }
 
-const MAX_AVATAR_B64_BYTES = 400_000;
+export const MAX_AVATAR_B64_BYTES = 400_000;
 
-const updateMeSchema = z.object({
+export const updateMeSchema = z.object({
   name:            z.string().min(1, 'Nome obrigatório').max(100),
   business_name:   z.string().min(1, 'Nome do negócio obrigatório').max(100),
   phone_whatsapp:  z.string().min(10, 'WhatsApp inválido (mínimo 10 dígitos)').max(20),
