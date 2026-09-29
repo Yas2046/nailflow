@@ -150,8 +150,15 @@ Resposta: `{ perfil, servicos, horarios, whatsapp, clientes, concluidos, total: 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
 | GET | `/admin/professionals` | JWT + `is_admin` | Listar profissionais (sem `password_hash` e `avatar_b64`) |
+| PUT | `/admin/professionals/:id` | JWT + `is_admin` | Editar `name`/`business_name`/`phone_whatsapp`/`email`/`avatar_b64` (mesmo schema de `PUT /auth/me`, e-mail único); não permite editar a própria conta; não altera `slug`/`wa_instance_name`/`is_admin`/`blocked_at`/`token_version`/senha (2026-09-29) |
+| POST | `/admin/professionals/:id/block` | JWT + `is_admin` | Bloqueia (`blocked_at = now()`); não permite bloquear a própria conta (2026-09-29) |
+| POST | `/admin/professionals/:id/unblock` | JWT + `is_admin` | Desbloqueia e incrementa `token_version` (invalida tokens emitidos antes do desbloqueio, exige novo login) (2026-09-29) |
+| GET | `/admin/professionals/:id/delete-preview` | JWT + `is_admin` | Contagens (clientes, agendamentos, serviços, recorrências, mensagens, despesas) antes de excluir (2026-09-29) |
+| DELETE | `/admin/professionals/:id` | JWT + `is_admin` | Exclusão definitiva: snapshot em disco → exclui instância na Evolution se houver (aborta sem tocar no banco se falhar) → `DELETE` em transação (cascade apaga tudo que pertence à profissional). Exige digitar o `business_name` exato no corpo (`businessNameConfirmation`); não permite excluir a própria conta nem a última conta admin (2026-09-29) |
 
-Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admin → 403.
+Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admin → 403. Desde 2026-09-29 também expõe `req.actorEmail` (usado pelo audit log).
+
+Toda ação de sucesso em `block`/`unblock`/`update`/`delete` grava 1 linha em `admin_audit_log` (`actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`) — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md). Falhas/tentativas não são registradas nesta primeira versão.
 
 ---
 

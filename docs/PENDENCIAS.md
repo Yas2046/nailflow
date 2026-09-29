@@ -1,6 +1,6 @@
 # NailFlow — Pendências e Auditoria
 
-> Atualizado em 2026-09-28.
+> Atualizado em 2026-09-29.
 
 ---
 
@@ -87,6 +87,7 @@
 **I15. React Router mantido em 6.30.6 (decisão registrada, não uma pendência ativa)**
 - Auditoria de 2026-09-28 nos dois advisories do `npm audit` (open redirect e SSR hydration) concluiu que **nenhum é explorável no NailFlow hoje**: todo destino de navegação (`<Link>`/`navigate()`) é string fixa no código, e o app usa Declarative Mode sem SSR (o segundo advisory se autoexclui para esse modo)
 - Não é necessário corrigir agora; revisar só se uma funcionalidade futura introduzir navegação com destino dinâmico/vindo de URL ou API, ou uso de SSR
+- **Reconfirmado em 2026-09-29** (revisão de segurança do audit log/admin): `npm audit` do frontend continua reportando as mesmas 2 vulnerabilidades moderadas em `react-router-dom` (`package.json` fixa `^6.26.0`). Correção via `npm audit fix --force` seria um bump major (breaking change, o próprio npm avisa) — decisão de não aplicar agora se mantém pelo mesmo motivo já registrado acima. Reavaliar só se as condições descritas mudarem.
 
 ### 🟡 Melhoria
 
@@ -104,6 +105,9 @@
 
 **M4. Numeração das migrations**
 - A 002 é aplicada antes da 001 e há dois "003" no histórico. Não causa erro, mas exige seguir a ordem documentada em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)
+
+**M5. Rate limiting nos endpoints administrativos**
+- `block`/`unblock`/`update`/`delete` de profissionais (`/admin/professionals/*`) não têm rate limit próprio, diferente de login/registro. Risco baixo hoje (já exige JWT + `is_admin`), mas seria defesa em profundidade — achado da revisão de segurança de 2026-09-29
 
 **M6. Migração do número real da profissional**
 1. Criar nova instância Evolution
@@ -163,3 +167,9 @@
 | Imagem Docker da Evolution na tag `latest` (pode mudar sem aviso) | 2026-09-28 | Fixada por digest exato (`@sha256:...`) |
 | `.env`, `.pgpass`, sqlite do n8n com permissão `644` | 2026-09-28 | `600` (conteúdo verificado inalterado) |
 | Senha do PostgreSQL em texto puro em 5 scripts (`/root/v2close-20260927/`) | 2026-09-28 | Migrados para `/root/.pgpass` (`600`); `PGPASSWORD`/`DATABASE_URL` com credencial removidos dos 5 scripts; validado com `psql`/`pg_dump`/`node` sem regressão |
+| Admin não tinha como bloquear/desbloquear uma profissional (só via SQL manual) | 2026-09-29 | `POST /admin/professionals/:id/block` e `.../unblock` (migrations 016 já existiam; endpoints novos), com confirmação na UI e impedimento de autobloqueio |
+| Admin não tinha como editar cadastro de outra profissional | 2026-09-29 | `PUT /admin/professionals/:id`, reaproveitando o schema/regras de `PUT /auth/me`; não permite editar `slug`/`wa_instance_name`/`is_admin`/`blocked_at`/`token_version`/senha |
+| Admin não tinha como excluir uma profissional | 2026-09-29 | `DELETE /admin/professionals/:id`: snapshot em disco (permissão 600/700, fora de `/var/www`, retenção de 90 dias) → exclui instância na Evolution se houver (aborta sem tocar no banco se falhar) → exclusão em transação; exige digitar o nome do negócio; impede autoexclusão e exclusão do último admin |
+| Nenhuma ação administrativa (bloquear/editar/excluir) deixava rastro de quem fez o quê | 2026-09-29 | Tabela `admin_audit_log` (migration 019) + `logAdminAction()`, chamada nos 4 fluxos só em caso de sucesso; `actor_email`/`target_business_name` denormalizados para sobreviver à exclusão de qualquer uma das contas |
+| Tela Admin ilegível/espremida no celular (única página do app com `<table>` crua) | 2026-09-29 | Tabela mantida em `md:` e acima; abaixo disso, cards responsivos (mesmo padrão visual de `Servicos.tsx`) |
+| Revisão completa de segurança (auth, isolamento/IDOR, SQLi/XSS/CSRF/CORS, headers, secrets, rate limiting, dependências, migrations 016–019) | 2026-09-29 | Nenhum problema real encontrado; ver [`STATUS_ATUAL.md`](./STATUS_ATUAL.md) para o resumo e os 🟡 acima (M5, I15) para o que ficou registrado como pendência não bloqueante |

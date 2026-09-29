@@ -17,6 +17,9 @@
 - ✅ Migrations reproduzíveis: 002 oficial + 011–014 (2026-09-27, sem commit)
 - ✅ Seed compatível e suíte automatizada 57/57 em banco descartável (2026-09-27, sem commit)
 - ✅ Documentação atualizada com o fechamento técnico (2026-09-27)
+- ✅ Recorrência de agendamento "Por X dias" (além de "Até uma data"), badge WhatsApp/Somente Agenda em Serviços, Agenda sem limite de antecedência (horizonte externo separado, só WhatsApp/página pública) (2026-09-29)
+- ✅ Admin: bloquear/desbloquear, editar e excluir profissionais (com snapshot pré-exclusão e exclusão sincronizada da instância Evolution), audit log de todas as ações administrativas, tela Admin responsiva no mobile (2026-09-29)
+- ✅ Revisão completa de segurança do estado atual (auth, isolamento/IDOR, SQLi/XSS/CSRF/CORS, headers, secrets, rate limiting, dependências, migrations 016–019) — nenhum problema real encontrado (2026-09-29)
 
 ---
 

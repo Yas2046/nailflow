@@ -250,6 +250,11 @@ psql $DATABASE_URL -f backend/db/migrations/014_expenses.sql
 | 012 | `clients.tags TEXT[] NOT NULL DEFAULT '{}'` |
 | 013 | `professionals.avatar_b64 TEXT` |
 | 014 | Tabela `expenses` (PK, FK, CHECK, índice e trigger `trg_expenses_updated`) |
+| 015 | Índice único parcial em `professionals.wa_instance_name` |
+| 016 | `professionals.blocked_at`, `professionals.token_version` (bloqueio/revogação de sessão) |
+| 017 | Foreign keys compostas `(id, professional_id)` cross-tenant (`appointments`→`clients`/`services`/`recurring_groups`, `message_history`→`clients`) |
+| 018 | `services.available_on_whatsapp BOOLEAN NOT NULL DEFAULT true` |
+| 019 | Tabela `admin_audit_log` (audit log de ações administrativas — ver [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md)); sem FK obrigatória para `professionals` (o registro precisa sobreviver à exclusão do ator ou do alvo) |
 
 ### Migration obsoleta: `002_bot_tables.sql`
 
