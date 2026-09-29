@@ -212,6 +212,15 @@ export async function createEvolutionInstance(req, res, next) {
 
 // ── Excluir instância da Evolution ────────────────────────────────────────────
 
+// Exclui a instância na Evolution API. Retorna true se excluída com sucesso
+// OU se já não existia (404 -- nada a fazer). Retorna false só em falha real.
+// Reaproveitada pelo self-service abaixo e pela exclusão administrativa de
+// profissional inteira (adminController.deleteProfessional).
+export async function deleteEvolutionInstanceByName(instanceName) {
+  const deleteResp = await evolutionFetch(`/instance/delete/${instanceName}`, { method: 'DELETE' });
+  return deleteResp.ok || deleteResp.status === 404;
+}
+
 export async function deleteEvolutionInstance(req, res, next) {
   try {
     const instance = await getInstanceName(req.professionalId);
@@ -229,18 +238,14 @@ export async function deleteEvolutionInstance(req, res, next) {
       return res.status(403).json({ error: 'Instância não pertence a esta profissional.' });
     }
 
-    // 1. Excluir na Evolution
-    const deleteResp = await evolutionFetch(`/instance/delete/${instance}`, { method: 'DELETE' });
-
-    if (!deleteResp.ok && deleteResp.status !== 404) {
-      // 404 = já não existe na Evolution; outros erros bloqueiam a exclusão
-      const errBody = await deleteResp.json().catch(() => ({}));
+    const deleted = await deleteEvolutionInstanceByName(instance);
+    if (!deleted) {
       return res.status(502).json({
         error: 'Falha ao excluir instância na Evolution. O vínculo no banco foi mantido.',
       });
     }
 
-    // 2. Limpar o banco apenas após sucesso na Evolution (ou 404 = já inexistente)
+    // Limpar o banco apenas após sucesso na Evolution (ou 404 = já inexistente)
     await pool.query(
       'UPDATE professionals SET wa_instance_name = NULL WHERE id = $1',
       [req.professionalId]

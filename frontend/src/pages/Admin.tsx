@@ -28,6 +28,15 @@ interface EditForm {
   email: string;
 }
 
+interface DeletePreview {
+  clients: number;
+  appointments: number;
+  services: number;
+  recurringGroups: number;
+  messages: number;
+  expenses: number;
+}
+
 // Recorta a imagem em quadrado e reduz para um base64 leve (mesma técnica
 // usada em Perfil.tsx para o avatar da própria conta).
 function resizeImageToBase64(file: File, size = 256): Promise<string> {
@@ -69,6 +78,14 @@ export default function Admin() {
   const [editAvatarChanged, setEditAvatarChanged] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // ── Exclusão definitiva de profissional ──
+  const [deleteTarget, setDeleteTarget] = useState<ProfessionalRow | null>(null);
+  const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null);
+  const [deletePreviewLoading, setDeletePreviewLoading] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // AdminLayout já protege a rota; este guard é só camada extra
   if (!professional) return <Navigate to="/login" replace />;
@@ -161,6 +178,38 @@ export default function Admin() {
       setEditError(err instanceof Error ? err.message : 'Erro ao salvar profissional.');
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  function openDelete(p: ProfessionalRow) {
+    setDeleteTarget(p);
+    setDeletePreview(null);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+    setDeletePreviewLoading(true);
+    api.get<DeletePreview>(`/admin/professionals/${p.id}/delete-preview`)
+      .then(setDeletePreview)
+      .catch(() => setDeleteError('Erro ao carregar os dados que seriam apagados.'))
+      .finally(() => setDeletePreviewLoading(false));
+  }
+
+  function closeDelete() {
+    setDeleteTarget(null);
+    setDeleteError(null);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/admin/professionals/${deleteTarget.id}`, { businessNameConfirmation: deleteConfirmText });
+      setDeleteTarget(null);
+      reload();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir profissional.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -264,6 +313,12 @@ export default function Admin() {
                               Bloquear
                             </button>
                           )}
+                          <button
+                            onClick={() => openDelete(p)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors font-medium"
+                          >
+                            Excluir
+                          </button>
                         </div>
                       )}
                     </td>
@@ -323,28 +378,36 @@ export default function Admin() {
                 {isSelf ? (
                   <p className="text-xs text-stone-400 italic">Esta é a sua conta</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="text-sm py-2 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors font-medium"
+                      >
+                        Editar
+                      </button>
+                      {isBlocked ? (
+                        <button
+                          onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'unblock' })}
+                          className="text-sm py-2 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors font-medium"
+                        >
+                          Desbloquear
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'block' })}
+                          className="text-sm py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors font-medium"
+                        >
+                          Bloquear
+                        </button>
+                      )}
+                    </div>
                     <button
-                      onClick={() => openEdit(p)}
-                      className="text-sm py-2 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors font-medium"
+                      onClick={() => openDelete(p)}
+                      className="w-full text-sm py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors font-medium"
                     >
-                      Editar
+                      Excluir
                     </button>
-                    {isBlocked ? (
-                      <button
-                        onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'unblock' })}
-                        className="text-sm py-2 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors font-medium"
-                      >
-                        Desbloquear
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'block' })}
-                        className="text-sm py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors font-medium"
-                      >
-                        Bloquear
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -514,6 +577,64 @@ export default function Admin() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Exclusão definitiva de profissional */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 bg-ink/50 flex items-end sm:items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) closeDelete(); }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6">
+            <h3 className="font-display text-lg text-rose-700 mb-2">Excluir profissional definitivamente?</h3>
+            <p className="text-sm text-stone-600 mb-3">
+              Esta ação é <strong>irreversível</strong>. Todos os dados de <strong>{deleteTarget.name}</strong> (
+              {deleteTarget.business_name}) serão apagados, incluindo:
+            </p>
+
+            {deletePreviewLoading ? (
+              <p className="text-sm text-stone-400 mb-3">Calculando o que será apagado…</p>
+            ) : deletePreview ? (
+              <ul className="text-sm text-stone-600 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1 mb-3">
+                <li>{deletePreview.clients} cliente(s)</li>
+                <li>{deletePreview.appointments} agendamento(s)</li>
+                <li>{deletePreview.services} serviço(s)</li>
+                <li>{deletePreview.recurringGroups} recorrência(s)</li>
+                <li>{deletePreview.messages} mensagem(ns) de WhatsApp</li>
+                <li>{deletePreview.expenses} despesa(s)</li>
+              </ul>
+            ) : null}
+
+            <label className="block mb-3">
+              <span className="block text-xs font-medium text-ink/50 uppercase tracking-wide mb-1.5">
+                Digite <strong>{deleteTarget.business_name}</strong> para confirmar
+              </span>
+              <input
+                className="input"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+
+            {deleteError && (
+              <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 mb-3">{deleteError}</div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={closeDelete} disabled={deleting} className="btn-secondary flex-1 disabled:opacity-60">
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting || deleteConfirmText.trim() !== deleteTarget.business_name}
+                className="flex-1 text-sm py-2 rounded-lg font-medium transition-colors disabled:opacity-40 bg-rose-600 text-white hover:bg-rose-700"
+              >
+                {deleting ? 'Excluindo…' : 'Excluir definitivamente'}
+              </button>
+            </div>
           </div>
         </div>
       )}
