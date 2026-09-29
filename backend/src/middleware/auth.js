@@ -64,7 +64,7 @@ export async function requireAdmin(req, res, next) {
 
   try {
     const { rows } = await pool.query(
-      'SELECT is_admin, blocked_at, token_version FROM professionals WHERE id = $1',
+      'SELECT email, is_admin, blocked_at, token_version FROM professionals WHERE id = $1',
       [payload.sub]
     );
     const professional = rows[0];
@@ -75,6 +75,7 @@ export async function requireAdmin(req, res, next) {
       return res.status(403).json({ error: 'Acesso não autorizado.' });
     }
     req.professionalId = payload.sub;
+    req.actorEmail = professional.email; // usado pelo audit log (admin_audit_log)
     next();
   } catch (err) {
     next(err);

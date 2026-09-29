@@ -5,6 +5,7 @@ import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { updateMeSchema } from './authController.js';
 import { deleteEvolutionInstanceByName } from './whatsappController.js';
+import { logAdminAction } from '../utils/auditLog.js';
 
 export async function listProfessionals(req, res, next) {
   try {
@@ -32,10 +33,17 @@ export async function blockProfessional(req, res, next) {
     }
     const { rows } = await pool.query(
       `UPDATE professionals SET blocked_at = now() WHERE id = $1
-       RETURNING id, blocked_at`,
+       RETURNING id, blocked_at, business_name`,
       [id]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    await logAdminAction({
+      actorId: req.professionalId,
+      actorEmail: req.actorEmail,
+      action: 'block',
+      targetId: rows[0].id,
+      targetBusinessName: rows[0].business_name,
+    });
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -52,10 +60,17 @@ export async function unblockProfessional(req, res, next) {
       `UPDATE professionals
          SET blocked_at = NULL, token_version = token_version + 1
        WHERE id = $1
-       RETURNING id, blocked_at`,
+       RETURNING id, blocked_at, business_name`,
       [id]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    await logAdminAction({
+      actorId: req.professionalId,
+      actorEmail: req.actorEmail,
+      action: 'unblock',
+      targetId: rows[0].id,
+      targetBusinessName: rows[0].business_name,
+    });
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -106,6 +121,13 @@ export async function updateProfessional(req, res, next) {
     }
 
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    await logAdminAction({
+      actorId: req.professionalId,
+      actorEmail: req.actorEmail,
+      action: 'update',
+      targetId: rows[0].id,
+      targetBusinessName: rows[0].business_name,
+    });
     res.json(rows[0]);
   } catch (err) {
     if (err instanceof z.ZodError)
@@ -249,6 +271,15 @@ export async function deleteProfessional(req, res, next) {
     } finally {
       client.release();
     }
+
+    // Só registra depois do COMMIT: se a transação falhar, nada é logado.
+    await logAdminAction({
+      actorId: req.professionalId,
+      actorEmail: req.actorEmail,
+      action: 'delete',
+      targetId: id,
+      targetBusinessName: target.business_name,
+    });
 
     res.status(204).end();
   } catch (err) {
