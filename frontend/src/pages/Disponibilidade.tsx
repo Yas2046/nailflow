@@ -457,9 +457,9 @@ export default function Disponibilidade() {
       {/* antecedência máxima */}
       <div className="bg-white border border-wine-100 rounded-xl p-5 shadow-sm space-y-2">
         <div>
-          <p className="text-sm font-semibold text-ink/80">Antecedência máxima para agendamento</p>
+          <p className="text-sm font-semibold text-ink/80">Antecedência máxima para agendamento externo</p>
           <p className="text-xs text-ink/40 mt-0.5">
-            Clientes e o WhatsApp só poderão agendar dentro desse período.
+            Controla até quantos dias à frente o WhatsApp e a página pública podem oferecer horários. Não afeta a sua Agenda, que continua aberta para qualquer data.
           </p>
         </div>
         <div className="flex items-center gap-3">

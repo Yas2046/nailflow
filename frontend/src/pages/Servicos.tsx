@@ -115,13 +115,26 @@ function ServiceCard({ service, onClick }: { service: Service; onClick: () => vo
         </p>
       )}
 
-      {/* Duração */}
-      <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${
-        isActive ? 'bg-wine-50 text-wine-600' : 'bg-ink/5 text-ink/35'
-      }`}>
-        <IconClock />
-        {formatDuration(service.durationMinutes)}
-      </span>
+      {/* Duração + WhatsApp */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${
+          isActive ? 'bg-wine-50 text-wine-600' : 'bg-ink/5 text-ink/35'
+        }`}>
+          <IconClock />
+          {formatDuration(service.durationMinutes)}
+        </span>
+        {isActive && (
+          service.availableOnWhatsapp ? (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold whitespace-nowrap">
+              WhatsApp
+            </span>
+          ) : (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 font-semibold whitespace-nowrap">
+              Somente Agenda
+            </span>
+          )
+        )}
+      </div>
     </button>
   );
 }
