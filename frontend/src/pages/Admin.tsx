@@ -182,7 +182,7 @@ export default function Admin() {
       )}
 
       {!loading && !error && (
-        <div className="rounded-2xl border border-stone-200 bg-white overflow-hidden shadow-sm">
+        <div className="hidden md:block rounded-2xl border border-stone-200 bg-white overflow-hidden shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-stone-100 bg-stone-50 text-left">
@@ -279,6 +279,82 @@ export default function Admin() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Cards — abaixo de md, substitui visualmente a tabela acima */}
+      {!loading && !error && (
+        <div className="md:hidden space-y-3">
+          {rows.map((p) => {
+            const isSelf = p.id === professional.id;
+            const isBlocked = p.blocked_at !== null;
+            return (
+              <div key={p.id} className="bg-white border border-stone-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-stone-800 truncate">{p.name}</p>
+                    <p className="text-xs text-stone-400 mt-0.5 truncate">{p.business_name}</p>
+                  </div>
+                  {p.is_admin ? (
+                    <span className="shrink-0 inline-flex items-center rounded-full bg-wine-100 text-wine-700 px-2.5 py-0.5 text-xs font-medium">
+                      Admin
+                    </span>
+                  ) : (
+                    <span className="shrink-0 inline-flex items-center rounded-full bg-stone-100 text-stone-500 px-2.5 py-0.5 text-xs font-medium">
+                      Profissional
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-sm text-stone-600 break-all mb-3">{p.email}</p>
+
+                <div className="mb-3">
+                  {isBlocked ? (
+                    <span className="inline-flex items-center rounded-full bg-rose-50 text-rose-600 border border-rose-200 px-2.5 py-0.5 text-xs font-medium">
+                      Bloqueada
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 text-xs font-medium">
+                      Ativa
+                    </span>
+                  )}
+                </div>
+
+                {isSelf ? (
+                  <p className="text-xs text-stone-400 italic">Esta é a sua conta</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => openEdit(p)}
+                      className="text-sm py-2 rounded-lg border border-wine-200 text-wine-700 hover:bg-wine-50 transition-colors font-medium"
+                    >
+                      Editar
+                    </button>
+                    {isBlocked ? (
+                      <button
+                        onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'unblock' })}
+                        className="text-sm py-2 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors font-medium"
+                      >
+                        Desbloquear
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmAction({ id: p.id, name: p.name, action: 'block' })}
+                        className="text-sm py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors font-medium"
+                      >
+                        Bloquear
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {rows.length === 0 && (
+            <div className="rounded-2xl border border-stone-200 bg-white p-10 text-center text-stone-400 text-sm">
+              Nenhuma profissional encontrada.
+            </div>
+          )}
         </div>
       )}
 
