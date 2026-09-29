@@ -59,8 +59,8 @@ export async function getClientHistory(req, res, next) {
 
     const [historyResult, metricsResult, servicoResult] = await Promise.all([
       pool.query(
-        `SELECT a.id, a.starts_at, a.ends_at, a.status, s.name AS service_name,
-                a.price_cents_snapshot, a.notes AS appointment_notes
+        `SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_id, s.name AS service_name,
+                a.price_cents_snapshot, a.notes AS appointment_notes, a.recurring_group_id
          FROM appointments a JOIN services s ON s.id = a.service_id
          WHERE a.client_id = $1 AND a.professional_id = $2 ORDER BY a.starts_at DESC`,
         [req.params.id, req.professionalId]
@@ -121,9 +121,11 @@ export async function getClientHistory(req, res, next) {
         starts_at:            r.starts_at,
         ends_at:              r.ends_at,
         status:               r.status,
+        service_id:           r.service_id,
         service_name:         r.service_name,
         price_cents_snapshot: r.price_cents_snapshot,
         appointment_notes:    r.appointment_notes,
+        recurring_group_id:   r.recurring_group_id,
       })),
     });
   } catch (err) {

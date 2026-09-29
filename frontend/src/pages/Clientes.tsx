@@ -4,16 +4,18 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { formatPhone } from '../utils/format';
 import { api } from '../services/api';
 import AppointmentModal from '../components/AppointmentModal';
-import type { Client } from '../types';
+import type { Client, Appointment } from '../types';
 
 interface HistoryItem {
   id: string;
   starts_at: string;
   ends_at: string;
   status: string;
+  service_id: string;
   service_name: string;
   price_cents_snapshot: number;
   appointment_notes: string | null;
+  recurring_group_id: string | null;
 }
 
 interface ClientMetrics {
@@ -199,6 +201,7 @@ export default function Clientes() {
 
   // agendamento rápido
   const [showBooking, setShowBooking] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
   // tags (ficha da cliente)
   const [localTags, setLocalTags]   = useState<string[]>([]);
@@ -257,6 +260,24 @@ export default function Clientes() {
       })
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
+  }
+
+  function openAppointmentEdit(h: HistoryItem) {
+    if (!selected) return;
+    const appointment: Appointment = {
+      id: h.id,
+      clientId: selected.id,
+      clientName: selected.name,
+      clientPhone: selected.phone,
+      serviceId: h.service_id,
+      serviceName: h.service_name,
+      startsAt: h.starts_at,
+      endsAt: h.ends_at,
+      status: h.status as Appointment['status'],
+      notes: h.appointment_notes,
+      recurringGroupId: h.recurring_group_id,
+    };
+    setEditingAppointment(appointment);
   }
 
   function addTag() {
@@ -920,13 +941,24 @@ export default function Clientes() {
                                   <p className="text-sm font-semibold text-ink truncate">{h.service_name}</p>
                                   <p className="text-xs text-ink/40">{formatDate(h.starts_at)}</p>
                                 </div>
-                                <div className="shrink-0 flex flex-col items-end gap-1">
-                                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
-                                    {cfg.label}
-                                  </span>
-                                  {h.price_cents_snapshot > 0 && (
-                                    <span className="text-xs font-semibold text-wine-700">{formatCents(h.price_cents_snapshot)}</span>
-                                  )}
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
+                                      {cfg.label}
+                                    </span>
+                                    {h.price_cents_snapshot > 0 && (
+                                      <span className="text-xs font-semibold text-wine-700">{formatCents(h.price_cents_snapshot)}</span>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => openAppointmentEdit(h)}
+                                    className="p-1.5 rounded-lg hover:bg-wine-50 text-ink/40 hover:text-wine-600 transition-colors shrink-0"
+                                    aria-label="Editar agendamento"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                  </button>
                                 </div>
                               </div>
                               {/* notas do agendamento */}
@@ -1001,6 +1033,21 @@ export default function Clientes() {
           onSaved={() => {
             setShowBooking(false);
             toast('Agendamento criado');
+            openHistory(selected);
+          }}
+        />
+      )}
+
+      {/* editar agendamento a partir do histórico da ficha */}
+      {editingAppointment && selected && (
+        <AppointmentModal
+          date={new Date(editingAppointment.startsAt)}
+          time={null}
+          appointment={editingAppointment}
+          onClose={() => setEditingAppointment(null)}
+          onSaved={() => {
+            setEditingAppointment(null);
+            toast('Agendamento atualizado');
             openHistory(selected);
           }}
         />
