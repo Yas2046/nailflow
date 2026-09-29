@@ -138,6 +138,7 @@ export default function Servicos() {
   const [price, setPrice]             = useState('');
   const [duration, setDuration]       = useState('40');
   const [active, setActive]           = useState(true);
+  const [availableOnWhatsapp, setAvailableOnWhatsapp] = useState(true);
   const [error, setError]             = useState<string | null>(null);
   const [success, setSuccess]         = useState(false);
   const [saving, setSaving]           = useState(false);
@@ -149,7 +150,7 @@ export default function Servicos() {
 
   function openNew() {
     setName(''); setDescription(''); setPrice(''); setDuration('40');
-    setActive(true); setError(null); setSuccess(false);
+    setActive(true); setAvailableOnWhatsapp(true); setError(null); setSuccess(false);
     setEditing('new');
   }
   function openEdit(s: Service) {
@@ -158,6 +159,7 @@ export default function Servicos() {
     setPrice((s.priceCents / 100).toFixed(2).replace('.', ','));
     setDuration(String(s.durationMinutes));
     setActive(s.active);
+    setAvailableOnWhatsapp(s.availableOnWhatsapp);
     setError(null); setSuccess(false);
     setEditing(s);
   }
@@ -178,6 +180,7 @@ export default function Servicos() {
         priceCents,
         durationMinutes: durationMin,
         active,
+        availableOnWhatsapp,
       };
       if (editing === 'new') {
         await api.post('/services', payload);
@@ -325,6 +328,22 @@ export default function Servicos() {
                   <p className="text-sm font-medium text-ink/80">Serviço ativo</p>
                   <p className="text-xs text-ink/40">
                     {active ? 'Disponível para agendamento' : 'Não aparece em novos agendamentos'}
+                  </p>
+                </div>
+              </label>
+
+              {/* Visibilidade no WhatsApp */}
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-wine-100/80 cursor-pointer hover:bg-wine-50/40 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={availableOnWhatsapp}
+                  onChange={(e) => setAvailableOnWhatsapp(e.target.checked)}
+                  className="w-4 h-4 accent-wine-600"
+                />
+                <div>
+                  <p className="text-sm font-medium text-ink/80">Aparece no WhatsApp</p>
+                  <p className="text-xs text-ink/40">
+                    {availableOnWhatsapp ? 'Oferecido pelo bot e na página pública' : 'Continua na Agenda, mas oculto do bot e da página pública'}
                   </p>
                 </div>
               </label>

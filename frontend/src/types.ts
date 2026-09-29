@@ -40,6 +40,7 @@ export interface Service {
   priceCents: number;
   durationMinutes: number;
   active: boolean;
+  availableOnWhatsapp: boolean;
 }
 
 // Retornado cru pelo backend (colunas em snake_case da tabela weekly_availability).

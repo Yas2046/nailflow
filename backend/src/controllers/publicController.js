@@ -23,7 +23,7 @@ async function getProfessionalBySlug(slug) {
 // Calcula dias de disponibilidade para uma profissional respeitando o horizonte configurado.
 async function buildAvailabilityResponse(professional, requestedDays) {
   const { rows: shortestService } = await pool.query(
-    'SELECT duration_minutes FROM services WHERE professional_id = $1 AND active = true ORDER BY duration_minutes ASC LIMIT 1',
+    'SELECT duration_minutes FROM services WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true ORDER BY duration_minutes ASC LIMIT 1',
     [professional.id]
   );
   const duration = shortestService[0]?.duration_minutes || 40;

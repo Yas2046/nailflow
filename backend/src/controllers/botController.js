@@ -133,7 +133,7 @@ async function findOrCreateClient(professionalId, phone, name) {
 async function listActiveServices(professionalId) {
   const { rows } = await pool.query(
     `SELECT id, name, description, price_cents, duration_minutes
-     FROM services WHERE professional_id = $1 AND active = true ORDER BY name ASC`,
+     FROM services WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true ORDER BY name ASC`,
     [professionalId]
   );
   return rows;
@@ -166,6 +166,7 @@ async function getLastCompletedService(professionalId, phone) {
        AND a.professional_id = $2
        AND a.status = 'concluido'
        AND s.active = true
+       AND s.available_on_whatsapp = true
      ORDER BY a.starts_at DESC
      LIMIT 1`,
     [client.id, professionalId]
