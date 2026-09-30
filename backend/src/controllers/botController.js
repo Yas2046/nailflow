@@ -4,6 +4,7 @@ import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
+import { extractSlots, extractDateMention, extractPeriodMention } from '../utils/conversationContext.js';
 
 // ---------- helpers ----------
 
@@ -197,6 +198,95 @@ async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDay
   return days;
 }
 
+// ---------- Motor de contexto (Parte 1) ----------
+//
+// Camada leve por cima da máquina de estados existente: tenta reconhecer
+// intenção/serviço/data/período em mensagens livres (ex.: "quero fazer
+// unha sexta depois das 18h") e guarda o que já foi entendido em
+// `ctx.slots`, para não perder essa informação a cada resposta — sem
+// substituir os estados/menus existentes, que continuam sendo o fallback
+// sempre que nada é reconhecido.
+
+// Filtra uma lista de slots (Date) por um período { afterMinutes?, beforeMinutes? }
+// em minutos desde 00:00 no fuso de São Paulo.
+function filterSlotsByPeriod(slots, period) {
+  if (!period) return slots;
+  return slots.filter((s) => {
+    const parts = s.start.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    const [h, m] = parts.split(':').map(Number);
+    const minutes = h * 60 + m;
+    if (period.afterMinutes != null && minutes < period.afterMinutes) return false;
+    if (period.beforeMinutes != null && minutes >= period.beforeMinutes) return false;
+    return true;
+  });
+}
+
+// Monta a lista de dias disponíveis para um serviço, já formatada como
+// resposta + daysMap (mesmo formato usado em AGUARDANDO_SERVICO). Se um
+// slot de data já foi reconhecido e aquele dia específico tem horários,
+// pula direto para a lista de horários daquele dia (usando buildTimeReply).
+async function buildDaysReply(professionalId, service, slots) {
+  const days = await getAvailableDaysWithSlots(professionalId, service.duration_minutes);
+  if (days.length === 0) {
+    return {
+      message: `No momento não há horários disponíveis para ${service.name}. Tente novamente mais tarde ou entre em contato diretamente. 😊`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+
+  // Preserva ctx.slots no context salvo, do mesmo jeito que os caminhos de
+  // correção em AGUARDANDO_DATA/AGUARDANDO_HORARIO já fazem — consistência
+  // pedida na revisão, sem mudar nenhuma regra de negócio.
+  const baseCtx = {
+    serviceId: service.id,
+    serviceName: service.name,
+    serviceDuration: service.duration_minutes,
+    servicePrice: service.price_cents,
+    ...(slots ? { slots } : {}),
+  };
+
+  if (slots?.date) {
+    const dayMatch = days.find((d) => d.date.toISOString().split('T')[0] === slots.date);
+    if (dayMatch) {
+      const timeReply = buildTimeReply(dayMatch.date, dayMatch.slots, baseCtx, slots.period);
+      if (timeReply) return timeReply;
+    }
+  }
+
+  const daysMap = {};
+  const lines = days.map((d, i) => {
+    daysMap[String(i + 1)] = d.date.toISOString().split('T')[0];
+    return `${i + 1}. ${formatDateBR(d.date)}`;
+  });
+
+  return {
+    message: `Ótimo! ${service.name} 💅\n\nEscolha a data:\n\n${lines.join('\n')}\n\nDigite o número da data.`,
+    botState: 'AGUARDANDO_DATA',
+    context: { ...baseCtx, daysMap, abandonment_notified: false },
+  };
+}
+
+// Monta a lista de horários de um dia já carregado (slots = resultado de
+// getAvailableSlots), aplicando um filtro de período opcional. Retorna null
+// se o período filtrar todos os horários (quem chama decide o que fazer).
+function buildTimeReply(date, slots, baseCtx, period) {
+  const filtered = filterSlotsByPeriod(slots, period);
+  if (filtered.length === 0) return null;
+
+  const slotsMap = {};
+  const lines = filtered.slice(0, 8).map((s, i) => {
+    slotsMap[String(i + 1)] = s.start.toISOString();
+    return `${i + 1}. ${formatTimeBR(s.start)}`;
+  });
+
+  return {
+    message: `${formatDateBR(date)} 📅\n\nHorários disponíveis:\n\n${lines.join('\n')}\n\nDigite o número do horário.`,
+    botState: 'AGUARDANDO_HORARIO',
+    context: { ...baseCtx, selectedDate: date.toISOString().split('T')[0], slotsMap, abandonment_notified: false },
+  };
+}
+
 // ---------- Bot state machine ----------
 
 async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
@@ -219,6 +309,18 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     return `Claro! 😊 Vou chamar a profissional para te atender. Um momentinho! 🌸`;
   }
 
+  // Motor de contexto (Parte 1): tenta reconhecer intenção/serviço/data/
+  // período em mensagens livres e acumula em ctx.slots, sem interferir em
+  // respostas que já são um número de menu ou um comando de navegação.
+  const CONTEXTUAL_STATES = new Set(['INICIO', 'MENU', 'AGUARDANDO_SERVICO', 'AGUARDANDO_DATA', 'AGUARDANDO_HORARIO']);
+  if (CONTEXTUAL_STATES.has(state) && !/^\d+$/.test(text) && !isBackCommand(text) && !isEscapePhrase(text)) {
+    const servicesForContext = await listActiveServices(professionalId);
+    const newSlots = extractSlots(rawText, servicesForContext);
+    if (Object.keys(newSlots).length > 0) {
+      ctx.slots = { ...(ctx.slots || {}), ...newSlots };
+    }
+  }
+
   // ---------- INICIO ----------
   if (state === 'INICIO') {
     const existingClient = await findClientByPhone(professionalId, phone);
@@ -232,6 +334,19 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     const firstName = rawFirstName || null;
 
     const greeting = firstName ? `Oi, ${firstName}! 😊` : `Oi! 😊 Seja bem-vinda!`;
+
+    // Se a própria primeira mensagem já identifica um serviço com intenção
+    // clara de agendar (ex.: "quero fazer unha sexta depois das 18h"),
+    // pula a saudação genérica e o menu numerado e vai direto para a
+    // seleção de data/horário daquele serviço.
+    if (ctx.slots?.serviceId && ctx.slots?.intent === 'agendar') {
+      const services = await listActiveServices(professionalId);
+      const chosen = services.find((s) => s.id === ctx.slots.serviceId);
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+        return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
+      }
+    }
 
     if (existingClient) {
       const upcoming = await getUpcomingAppointments(professionalId, phone);
@@ -310,6 +425,21 @@ Como posso ajudar?
 
   // ---------- MENU ----------
   if (state === 'MENU') {
+    // Serviço já identificado na própria mensagem (ex.: "quero fazer unha
+    // sexta depois das 18h") → pula a lista de serviços e vai direto para
+    // data/horário, já aplicando data/período se também reconhecidos.
+    // Exige intenção explícita de agendar reconhecida no texto — não basta
+    // citar o nome de um serviço (ex.: "quero cancelar minha manicure" não
+    // deve ser tratado como um novo agendamento).
+    if (ctx.slots?.serviceId && ctx.slots?.intent === 'agendar') {
+      const services = await listActiveServices(professionalId);
+      const chosen = services.find((s) => s.id === ctx.slots.serviceId);
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+        return reply(built.message, built.botState, built.context);
+      }
+    }
+
     // agendar
     if (/^1$/.test(text) || /agendar|marcar|horario|quero marcar/.test(text)) {
       const services = await listActiveServices(professionalId);
@@ -388,10 +518,14 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       await updateConversation(professionalId, phone, { mode: 'ATENDIMENTO_HUMANO', botState: 'MENU', context: {} });
       return `Parece que não estou conseguindo te ajudar da forma certa. 😊 Vou chamar a profissional para te atender melhor! Aguarda um momento. 🌸`;
     }
+    // Mensagem não reconhecida no MENU: não carrega slots parciais (data/
+    // período/intenção/serviço) para a próxima tentativa — só uma menção
+    // solta não deve influenciar um agendamento futuro sem confirmação
+    // clara. Mantém só o contador de tentativas.
     return reply(
       `Não entendi. 😊 Por favor escolha uma opção:\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
       'MENU',
-      { ...ctx, menuRetries }
+      { menuRetries }
     );
   }
 
@@ -411,6 +545,12 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     if (!chosen) {
       const all = Object.values(servicesMap);
       chosen = all.find((s) => normalizeText(s.name).includes(text));
+    }
+
+    // Sinônimo coloquial reconhecido pelo motor de contexto (ex.: "unha"
+    // → Manicure), quando o serviço citado está entre as opções mostradas.
+    if (!chosen && ctx.slots?.serviceId) {
+      chosen = Object.values(servicesMap).find((s) => s.id === ctx.slots.serviceId);
     }
 
     if (!chosen) {
@@ -465,6 +605,26 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     const dateStr = daysMap[text];
 
     if (!dateStr) {
+      // Correção de data dita em texto livre (ex.: "Não, sábado é melhor"),
+      // mesmo que não esteja entre as datas inicialmente oferecidas — busca
+      // a disponibilidade real daquele dia em vez de inventar horário.
+      const mentionedDate = extractDateMention(rawText);
+      if (mentionedDate) {
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const period = extractPeriodMention(rawText) || ctx.slots?.period;
+        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, period) : null;
+        if (timeReply) {
+          return reply(timeReply.message, timeReply.botState, timeReply.context);
+        }
+        return reply(
+          `Não há horários disponíveis em ${formatDateBR(mentionedDate)}. 😕 Escolha outra data:\n\n${Object.entries(daysMap)
+            .map(([k, v]) => `${k}. ${formatDateBR(new Date(v + 'T12:00:00'))}`)
+            .join('\n')}`,
+          'AGUARDANDO_DATA',
+          ctx
+        );
+      }
+
       const lines = Object.entries(daysMap).map(([k, v]) => {
         const d = new Date(v + 'T12:00:00');
         return `${k}. ${formatDateBR(d)}`;
@@ -516,6 +676,38 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     const slotIso = slotsMap[text];
 
     if (!slotIso) {
+      // Correção de período dita em texto livre (ex.: "Pode ser qualquer
+      // horário à tarde") — refiltra os horários do MESMO dia já escolhido,
+      // sem consultar de novo o banco além do necessário.
+      const period = extractPeriodMention(rawText);
+      if (period && ctx.selectedDate) {
+        const d = new Date(ctx.selectedDate + 'T12:00:00-03:00');
+        const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
+        const timeReply = buildTimeReply(d, daySlots, ctx, period);
+        if (timeReply) {
+          return reply(timeReply.message, timeReply.botState, timeReply.context);
+        }
+        return reply(
+          `Não há horários nesse período para essa data. 😕 Escolha um dos horários abaixo:\n\n${Object.entries(slotsMap)
+            .map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`)
+            .join('\n')}`,
+          'AGUARDANDO_HORARIO',
+          ctx
+        );
+      }
+
+      // Correção de data dita nesta etapa (ex.: "sábado é melhor" direto
+      // na escolha de horário, sem passar de novo pela lista de datas).
+      const mentionedDate = extractDateMention(rawText);
+      if (mentionedDate) {
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
+        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
+        if (timeReply) {
+          return reply(timeReply.message, timeReply.botState, timeReply.context);
+        }
+      }
+
       const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
       return reply(
         `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
