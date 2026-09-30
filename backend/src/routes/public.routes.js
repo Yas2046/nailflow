@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import {
   getPublicInfoBySlug,
   getPublicAvailabilityBySlug,
+  getPublicServicesBySlug,
 } from '../controllers/publicController.js';
 
 // Rotas sem autenticação (página pública de agendamento): limite por IP para
@@ -24,5 +25,6 @@ const router = Router();
 // Devem vir antes das rotas genéricas para não conflitar.
 router.get('/:slug/info', publicRateLimit, getPublicInfoBySlug);
 router.get('/:slug/availability', publicRateLimit, getPublicAvailabilityBySlug);
+router.get('/:slug/services', publicRateLimit, getPublicServicesBySlug);
 
 export default router;

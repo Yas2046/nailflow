@@ -74,3 +74,33 @@ export async function getPublicAvailabilityBySlug(req, res, next) {
     next(err);
   }
 }
+
+// GET /public/:slug/services
+// Lista os serviços dessa profissional visíveis para agendamento externo
+// (WhatsApp/página pública). professional_id nunca vem da requisição — só
+// da resolução do slug, para garantir isolamento entre profissionais.
+export async function getPublicServicesBySlug(req, res, next) {
+  try {
+    const professional = await getProfessionalBySlug(req.params.slug);
+    if (!professional) return res.status(404).json({ error: 'Profissional não encontrada.' });
+
+    const { rows } = await pool.query(
+      `SELECT id, name, price_cents, duration_minutes
+       FROM services
+       WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true
+       ORDER BY name ASC`,
+      [professional.id]
+    );
+
+    res.json(
+      rows.map((s) => ({
+        id: s.id,
+        name: s.name,
+        priceCents: s.price_cents,
+        durationMinutes: s.duration_minutes,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+}
