@@ -14,13 +14,21 @@ async function getProfessionalBySlug(slug) {
   return rows[0] || null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Calcula dias de disponibilidade para uma profissional respeitando o horizonte configurado.
-async function buildAvailabilityResponse(professional, requestedDays) {
-  const { rows: shortestService } = await pool.query(
-    'SELECT duration_minutes FROM services WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true ORDER BY duration_minutes ASC LIMIT 1',
-    [professional.id]
-  );
-  const duration = shortestService[0]?.duration_minutes || 40;
+// `overrideDurationMinutes`, quando informado, substitui a menor duração entre
+// os serviços públicos (usada por padrão) — permite que a grade de horários
+// reflita o serviço específico que a cliente já escolheu na página pública.
+async function buildAvailabilityResponse(professional, requestedDays, overrideDurationMinutes) {
+  let duration = overrideDurationMinutes;
+  if (duration == null) {
+    const { rows: shortestService } = await pool.query(
+      'SELECT duration_minutes FROM services WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true ORDER BY duration_minutes ASC LIMIT 1',
+      [professional.id]
+    );
+    duration = shortestService[0]?.duration_minutes || 40;
+  }
 
   // Limita ao horizonte máximo configurado pela profissional
   const horizon = professional.booking_horizon_days ?? 60;
@@ -66,13 +74,32 @@ export async function getPublicInfoBySlug(req, res, next) {
   }
 }
 
-// GET /public/:slug/availability?days=N
+// GET /public/:slug/availability?days=N&serviceId=uuid (serviceId opcional)
+// Sem serviceId: comportamento inalterado (menor duração entre os serviços
+// públicos). Com serviceId: valida que o serviço pertence a esta profissional
+// (resolvida pelo slug, nunca aceito diretamente) e está ativo/visível no
+// WhatsApp, e usa a duração dele para calcular a grade de horários.
 export async function getPublicAvailabilityBySlug(req, res, next) {
   try {
     const professional = await getProfessionalBySlug(req.params.slug);
     if (!professional) return res.status(404).json({ error: 'Profissional não encontrada.' });
+
+    let overrideDuration;
+    const { serviceId } = req.query;
+    if (serviceId) {
+      if (typeof serviceId !== 'string' || !UUID_RE.test(serviceId)) {
+        return res.status(400).json({ error: 'Serviço inválido.' });
+      }
+      const { rows: serviceRows } = await pool.query(
+        'SELECT duration_minutes FROM services WHERE id = $1 AND professional_id = $2 AND active = true AND available_on_whatsapp = true',
+        [serviceId, professional.id]
+      );
+      if (!serviceRows[0]) return res.status(400).json({ error: 'Serviço inválido.' });
+      overrideDuration = serviceRows[0].duration_minutes;
+    }
+
     const requestedDays = Number(req.query.days) || (professional.booking_horizon_days ?? 60);
-    res.json(await buildAvailabilityResponse(professional, requestedDays));
+    res.json(await buildAvailabilityResponse(professional, requestedDays, overrideDuration));
   } catch (err) {
     next(err);
   }
