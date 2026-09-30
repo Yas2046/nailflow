@@ -1,12 +1,12 @@
-# NailFlow — Status Atual (2026-09-29)
+# NailFlow — Status Atual (2026-09-30)
 
 ## Git
 
 - **Repositório:** https://github.com/Yas2046/nailflow
 - **Branch de trabalho:** `feat/phase5-register`
-- **Último commit:** `c49189b` — feat(admin): registrar audit log de bloqueio, desbloqueio, edicao e exclusao
+- **Último commit:** `adf5164` — feat(public): filtrar disponibilidade por serviço
 - **Sincronização:** `feat/phase5-register` = `origin/feat/phase5-register`
-- **Working tree:** limpo após os commits de 2026-09-29 (recorrência por X dias, badge WhatsApp em Serviços, Agenda sem limite de antecedência, Admin bloquear/editar/excluir, audit log)
+- **Working tree:** limpo após os commits de 2026-09-30 (retirada do fluxo público legado sem slug, listagem pública de serviços, criação de agendamento pela página pública, fluxo completo de agendamento no frontend, disponibilidade filtrada por serviço)
 - **Atenção — `main`:** o `main` local e o `origin/main` estão divergentes entre si e **não contêm a V1 nem a V2**. A integração ao `main` ainda não foi feita.
 
 ### Histórico recente
@@ -134,6 +134,70 @@ Nada do trabalho de hoje envolveu WhatsApp/n8n/Evolution além da chamada de exc
 1. Validação prática do WhatsApp (C1–C3 em [`PENDENCIAS.md`](./PENDENCIAS.md)) — segue dependendo de autorização e reconexão do `chip2`
 2. Decidir se/quando construir uma tela de consulta do `admin_audit_log`
 3. Avaliar o upgrade major do `react-router-dom` como tarefa própria, com sua rodada de testes
+
+---
+
+## Rodada Página Pública — Agendamento Online (2026-09-30)
+
+Trabalho de hoje, em 6 commits sequenciais em `feat/phase5-register`: `648940b` → `7c17440` → `ec5643b` → `1617db5` → `9f88257` → `adf5164`. Precedido de uma auditoria completa do front (sem código alterado) e de um diagnóstico específico da página pública, ambos usados para priorizar o trabalho do dia.
+
+### Correção de segurança nas rotas públicas legadas
+
+- **Rate limit ausente em `/public/info` e `/public/availability`** (sem slug): corrigido aplicando o mesmo `publicRateLimit` já usado nas rotas por slug (`648940b`)
+- **Aposentadoria do fluxo público sem slug** (`7c17440`): as rotas `/public/info` e `/public/availability`, que devolviam sempre os dados da "primeira profissional cadastrada" (vazamento entre contas assim que existisse mais de uma profissional paga), foram **removidas** do backend. `PaginaPublica.tsx` agora exige `:slug`; a rota legada `/agenda-publica` (sem slug) continua existindo mas mostra uma mensagem amigável ("Este link antigo não é mais válido...") em vez de tentar carregar qualquer dado. Confirmado que nenhum workflow n8n ativo dependia dessas rotas (só workflows já documentados como inativos em [`N8N.md`](./N8N.md) as referenciavam)
+
+### Página pública — primeiros passos do agendamento online
+
+Diagnóstico prévio mapeou toda a "engine" já reaproveitável (disponibilidade, timezone, validação de telefone, `EXCLUDE`/`UNIQUE` constraints do Postgres) antes de qualquer implementação. A partir daí, dois endpoints novos, só no backend (frontend não alterado ainda):
+
+- **`GET /public/:slug/services`** (`ec5643b`): lista os serviços `active=true AND available_on_whatsapp=true` da profissional resolvida pelo slug (id, nome, preço, duração) — isolamento por `professional_id` garantido só pela resolução do slug, nunca aceito da requisição
+- **`POST /public/:slug/appointments`** (`1617db5`): cria um agendamento sem autenticação, com:
+  - `professional_id` resolvido exclusivamente pelo slug; `serviceId` validado contra essa profissional e `active=true AND available_on_whatsapp=true`; `clientId`/`professionalId` no corpo são ignorados (nem fazem parte do schema aceito)
+  - status sempre nasce `'pendente'` (não é possível controlar pelo body)
+  - cliente buscado por telefone normalizado (`utils/phone.js`); se existir, reaproveitado sem alterar nome; se não, criado vinculado à profissional do slug
+  - limite de 3 agendamentos futuros (`pendente`/`confirmado`) por telefone+profissional
+  - dois rate limits dedicados, mais restritos que os de leitura: 5 tentativas/10min por IP, 3 tentativas/10min por telefone normalizado+slug (a validação/normalização do telefone roda **antes** do rate limit por telefone, para a chave do limiter já vir normalizada)
+  - `checkSlotAvailability()` como pré-checagem (mesma função da Agenda/bot); a `EXCLUDE` constraint do Postgres em `appointments` é a garantia final contra corrida entre duas requisições simultâneas — validado com um teste real de concorrência (`Promise.all`)
+  - criação de cliente + agendamento dentro de uma única transação; `23P01`/`23505` tratados com `ROLLBACK` e resposta 409 (confirmado por teste que o cliente da requisição perdedora não fica órfão no banco)
+  - sem `alternatives` na resposta de indisponibilidade nesta primeira versão; sem idempotency token; sem notificação/n8n (agendamento criado só aparece na Agenda/Dashboard da profissional)
+- **Nenhuma migration foi necessária** — as constraints usadas já existiam no schema
+- **15 testes novos** para o endpoint de criação (cliente novo, cliente existente sem alteração de nome, isolamento entre profissionais, serviço inativo/oculto, slug inexistente, telefone/nome inválidos, limite de futuros, horário indisponível, concorrência real, `clientId`/`professionalId` ignorados, rate limit por IP e por telefone+slug, rollback) + 3 testes para a listagem de serviços — suíte completa do backend em **107 testes, 91 passando** (16 falhas são a mesma pendência pré-existente de testes antigos de login, ver [`PENDENCIAS.md`](./PENDENCIAS.md), item I14)
+- **Validação manual real** feita antes do commit final: `POST` bem-sucedido (201) contra a profissional de teste `teste-nailflow`, confirmado no banco, seguido de uma segunda tentativa idêntica corretamente rejeitada (409, `appointment_overlap`); dados de teste removidos depois
+
+### Deploy e validação em produção (2026-09-30)
+
+- `pm2 restart nailflow-backend` — sem restart inesperado, sem erro nos logs
+- Smoke tests em produção: `GET /health` (200), `GET /services` sem token (401), `GET /public/teste-nailflow/services` (200), `POST /public/teste-nailflow/appointments` com `serviceId` inexistente (400) — nenhum agendamento real criado
+- n8n e Evolution não foram tocados (uptime contínuo confirmado antes e depois do restart)
+
+### Frontend — fluxo completo de agendamento em `PaginaPublica.tsx` (`9f88257`)
+
+Implementado em etapas, cada uma validada com `tsc -b`/`vite build` antes de avançar:
+
+- **Seleção de serviço**: consome `GET /public/:slug/services`, lista como botões (nome, duração, preço), guarda `selectedServiceId`; erro tratado com mensagem genérica (nunca `e.message` cru)
+- **Disponibilidade por serviço**: a busca de horários passou a incluir `serviceId` na query sempre que um serviço está selecionado (usa o endpoint filtrado descrito abaixo); ao trocar de serviço, a grade antiga é limpa (`setData(null)`) antes da nova chegar, para nunca parecer clicável com a duração errada
+- **Horário clicável**: os `<span>` informativos viraram `<button>`; desabilitados até haver serviço selecionado; horário escolhido guardado em `selectedSlot` e destacado visualmente
+- **Formulário + revisão + confirmação**: campos de nome/telefone (validação só de "preenchido", nunca duplicando a regra de telefone do backend) → tela de revisão (serviço, data/hora, nome, telefone, editar/confirmar) → `POST /public/:slug/appointments` com exatamente os 4 campos esperados (`serviceId`, `startsAt`, `clientName`, `clientPhone` já normalizados/trim), sem enviar `clientId`/`professionalId`/`status`
+- **Tela de sucesso**: deixa claro que é um **pedido pendente** ("Seu pedido foi enviado e está aguardando a confirmação da profissional"), nunca que já está confirmado
+- **Tratamento de todas as respostas do `POST`**: 400/404/429/erro de rede → mensagem amigável genérica; `409 max_future_appointments` → mensagem específica, sem retry automático; `409` de indisponibilidade (`appointment_overlap`, `conflict` e demais reasons) → limpa o horário selecionado, volta ao formulário e recarrega a disponibilidade automaticamente
+- **Correção de corridas de estado** (achada em revisão antes do commit): botões de serviço/horário desabilitados durante o envio (`submitting`); `loadAvailability()` passou a usar um contador de requisição (`useRef`) para descartar respostas antigas fora de ordem — evita que uma troca rápida de serviço, ou um `409` tardio, sobrescreva a disponibilidade do serviço atualmente selecionado
+
+### Backend — disponibilidade filtrada por serviço (`adf5164`)
+
+- **`GET /public/:slug/availability` ganhou `serviceId` opcional**: sem o parâmetro, comportamento 100% inalterado (menor duração entre os serviços públicos); com o parâmetro, valida o serviço contra a profissional do slug (`active=true AND available_on_whatsapp=true`) e usa a duração dele para calcular a grade — mesma `getAvailableSlots()` de sempre, nenhuma regra de disponibilidade duplicada
+- `serviceId` inválido/de outra profissional/inativo/oculto/malformado → `400` genérico, sem detalhe interno
+- **8 testes novos** (`public-availability-serviceid.test.js`): comportamento sem `serviceId` inalterado, duração menor vs. maior gerando grades diferentes de fato, isolamento entre profissionais, serviço inativo/oculto rejeitado, `serviceId` inexistente/malformado
+
+### 🟡 Pendências registradas hoje (não bloqueantes)
+
+- Sem notificação (WhatsApp/n8n) quando uma cliente agenda sozinha pela rota pública — hoje o agendamento só aparece na Agenda/Dashboard; decisão de produto pendente sobre se/como avisar a profissional em tempo real
+- Sem limite configurável de agendamentos futuros por telefone (hoje fixo em 3, hardcoded) — considerar se deve virar configuração por profissional no futuro
+
+### Próximos passos sugeridos
+
+1. Decidir sobre notificação da profissional na criação de agendamento público
+2. Observar os logs de produção nos primeiros dias após uso real da rota nova, dado que é a primeira rota pública de escrita do sistema
+3. Deploy e validação em produção do fluxo de frontend + disponibilidade por serviço (ainda não publicado — só a criação de agendamento e a listagem de serviços, dos commits anteriores, foram implantadas)
 
 ---
 

@@ -1,6 +1,6 @@
 # NailFlow — Pendências e Auditoria
 
-> Atualizado em 2026-09-29.
+> Atualizado em 2026-09-30.
 
 ---
 
@@ -109,6 +109,9 @@
 **M5. Rate limiting nos endpoints administrativos**
 - `block`/`unblock`/`update`/`delete` de profissionais (`/admin/professionals/*`) não têm rate limit próprio, diferente de login/registro. Risco baixo hoje (já exige JWT + `is_admin`), mas seria defesa em profundidade — achado da revisão de segurança de 2026-09-29
 
+**M7. Limite de agendamentos futuros por telefone (rota pública) é fixo, não configurável**
+- `POST /public/:slug/appointments` limita a 3 agendamentos futuros pendentes/confirmados por telefone+profissional, hardcoded no controller. Considerar se deve virar configuração por profissional no futuro — achado da implementação de 2026-09-30
+
 **M6. Migração do número real da profissional**
 1. Criar nova instância Evolution
 2. Parear com o número real (⚠️ uma tentativa de QR, sem loop)
@@ -127,6 +130,7 @@
 **F5. Export de dados (LGPD)**
 **F6. Logs estruturados** (Winston/Pino)
 **F7. Versão pública para portfólio** — repositório separado, com histórico novo e sem infraestrutura/segredos
+**F9. Notificação da profissional ao receber agendamento pela página pública** — hoje o agendamento criado pela rota pública só aparece na Agenda/Dashboard; decisão pendente sobre avisar via WhatsApp/n8n em tempo real
 
 ---
 
@@ -173,3 +177,10 @@
 | Nenhuma ação administrativa (bloquear/editar/excluir) deixava rastro de quem fez o quê | 2026-09-29 | Tabela `admin_audit_log` (migration 019) + `logAdminAction()`, chamada nos 4 fluxos só em caso de sucesso; `actor_email`/`target_business_name` denormalizados para sobreviver à exclusão de qualquer uma das contas |
 | Tela Admin ilegível/espremida no celular (única página do app com `<table>` crua) | 2026-09-29 | Tabela mantida em `md:` e acima; abaixo disso, cards responsivos (mesmo padrão visual de `Servicos.tsx`) |
 | Revisão completa de segurança (auth, isolamento/IDOR, SQLi/XSS/CSRF/CORS, headers, secrets, rate limiting, dependências, migrations 016–019) | 2026-09-29 | Nenhum problema real encontrado; ver [`STATUS_ATUAL.md`](./STATUS_ATUAL.md) para o resumo e os 🟡 acima (M5, I15) para o que ficou registrado como pendência não bloqueante |
+| `/public/info` e `/public/availability` (sem slug) sem rate limit | 2026-09-30 | `publicRateLimit` aplicado às duas rotas legadas |
+| `/public/info` e `/public/availability` (sem slug) devolviam sempre a "primeira profissional cadastrada" — vazamento entre contas | 2026-09-30 | Rotas removidas; `PaginaPublica.tsx` exige `:slug`; `/agenda-publica` (sem slug) mostra mensagem de link antigo em vez de qualquer dado |
+| Página pública não tinha como listar os serviços de uma profissional | 2026-09-30 | `GET /public/:slug/services` — só `active=true AND available_on_whatsapp=true`, isolado por slug |
+| Não existia forma de criar agendamento sem autenticação (fluxo público) | 2026-09-30 | `POST /public/:slug/appointments` — status sempre `pendente`, limite de 3 futuros por telefone, rate limit dedicado (IP e telefone+slug), transação com rollback em `23P01`/`23505`, `EXCLUDE` constraint do Postgres como garantia final de concorrência (15 testes novos, incluindo teste de corrida real) |
+| Frontend do agendamento online pela página pública (antigo F8) | 2026-09-30 | `PaginaPublica.tsx`: seleção de serviço, horário clicável, formulário de nome/telefone, revisão e confirmação, tela de sucesso deixando claro que é um pedido pendente; todos os `409`/`429`/`400`/`404`/erro de rede tratados com mensagens amigáveis (`9f88257`) |
+| Disponibilidade da página pública sempre calculada pela menor duração entre os serviços, mesmo com um serviço específico já escolhido | 2026-09-30 | `GET /public/:slug/availability` ganhou `serviceId` opcional; sem ele, comportamento inalterado; com ele, valida o serviço contra a profissional do slug e usa a duração real dele (`adf5164`, 8 testes novos) |
+| Corridas de estado no frontend do agendamento público (troca de serviço/horário durante um `POST` em andamento; resposta antiga de disponibilidade sobrescrevendo a atual) | 2026-09-30 | Botões de serviço/horário desabilitados durante `submitting`; `loadAvailability()` usa contador de requisição (`useRef`) para descartar respostas fora de ordem (incluído no commit `9f88257`) |
