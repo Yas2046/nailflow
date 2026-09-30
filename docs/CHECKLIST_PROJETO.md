@@ -210,3 +210,83 @@
 - [ ] Export de dados (LGPD)
 - [ ] Versão pública do projeto para portfólio (repositório separado, sem infraestrutura/segredos)
 - [ ] App mobile
+
+
+---
+
+## 14. Produto / UX — evolução para comercialização
+
+> Visão específica das lacunas do **frontend/produto** pensando numa futura comercialização (múltiplas profissionais pagantes, não só uso interno). Complementa as seções 6, 7 e 9 acima — aqui o recorte é "o que falta para virar produto vendável", não "o que já existe tecnicamente".
+
+### 14.1 Dashboard
+
+- [x] Indicadores operacionais (agendamentos de hoje, próximo atendimento, horários livres hoje, total de clientes)
+- [x] Faturamento (realizado no mês, previsto, perdido em não-comparecimento)
+- [x] Atendimentos (contagem por status: concluído/cancelado/não compareceu)
+- [x] Clientes (novos no mês, total)
+- [x] Serviços mais realizados (top 5, com faturamento por serviço)
+- [ ] Horários mais ocupados (heatmap/ranking de horário do dia com mais demanda) — não implementado
+- [x] Cancelamentos (contagem separada no resumo do mês)
+- [~] Comparação entre períodos — hoje só compara mês atual × mês anterior (variação %) e mostra uma janela fixa de 6 meses; não há seletor de período livre (ex.: trimestre, ano, datas customizadas)
+- [x] Dashboard mantido separado da Home operacional (`Dashboard.tsx` e `Inicio.tsx` já são páginas distintas)
+
+### 14.2 Financeiro
+
+- [x] Entradas/faturamento (Dashboard: realizado/previsto/perdido + gráfico de 6 meses)
+- [x] Gastos (tela própria — `Gastos.tsx` — e gráfico no Dashboard)
+- [ ] Lucro (faturamento − gastos) calculado e exibido explicitamente — não existe hoje; o Dashboard mostra os dois lados (barras de faturamento + linha de gastos) mas não subtrai
+- [ ] Separação de despesas fixas e variáveis — `expenses.category` é um campo livre (texto), sem uma classificação fixa/variável estruturada
+- [x] Histórico (lista de despesas por data; faturamento e gastos dos últimos 6 meses)
+- [x] Gráficos (combo chart faturamento × gastos, construído sob medida no Dashboard)
+- [~] Evolução financeira — existe para uma janela fixa de 6 meses; falta um módulo Financeiro dedicado com período configurável e visão de lucro (ver [`PENDENCIAS.md`](./PENDENCIAS.md)/seção 13, "Módulo Financeiro mais completo")
+
+### 14.3 CRM
+
+- [x] Última visita (`ultimoAtendimento` na listagem e na ficha)
+- [x] Frequência (`freq_media_dias` calculada na ficha da cliente)
+- [x] Valor gasto (`valorTotalCents` e ticket médio na ficha)
+- [x] Serviço mais utilizado (calculado por cliente na ficha)
+- [x] Histórico completo (todos os agendamentos da cliente, com status e preço)
+- [x] Observações (`notes` por cliente)
+- [x] Tags pré-definidas + personalizadas (sugestões fixas e tags livres, até 20 por cliente)
+- [x] Clientes inativas (badge e filtro dedicado na listagem)
+- [x] Filtros/segmentação (filtro "Nova / Recorrente / Inativa" já na listagem de Clientes)
+
+> CRM já está com cobertura ampla mesmo antes de pensar em comercialização — a lacuna real aqui é de UX/apresentação (ver 14.6), não de dado ausente.
+
+### 14.4 Perfil e Configurações — organização em sub-abas
+
+Hoje `Configuracoes.tsx` tem 4 abas: **Perfil, WhatsApp, Disponibilidade, Aparência**. Comparando com a organização-alvo de 5 abas ("Meu perfil / Meu negócio / Agenda / WhatsApp / Aparência"):
+
+- [~] **Meu perfil** — existe, mas hoje misturado com dados do negócio na mesma aba "Perfil" (não separado)
+- [ ] **Meu negócio** como aba própria — não existe separada; nome do negócio e afins ficam junto com o perfil pessoal
+- [~] **Agenda** — existe como aba "Disponibilidade" (mesmo conteúdo-alvo: expediente, fechamentos, antecedência), só o nome/enquadramento é diferente do proposto
+- [x] **WhatsApp** — já é uma aba própria
+- [x] **Aparência** — já é uma aba própria
+
+### 14.5 Onboarding
+
+- [x] Configuração inicial guiada (card "Primeiros passos" na Home, com progresso)
+- [x] Cadastro de serviços (etapa do checklist)
+- [x] Horários (etapa do checklist)
+- [x] Conexão WhatsApp (etapa do checklist, valida conexão real na Evolution)
+- [ ] Compartilhamento do link público **dentro do fluxo de onboarding** — não é uma etapa do checklist hoje; existe um botão de copiar link, mas está em Perfil, fora do onboarding
+- [x] Checklist de primeiros passos (o próprio componente `OnboardingChecklist`, com "Ocultar por enquanto")
+
+### 14.6 Experiência geral do produto — itens para revisão futura
+
+Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente está marcado, o resto é trabalho de revisão futuro:
+
+- [~] Responsividade — boa nas páginas mais recentes (Admin, Serviços); não auditada no app inteiro
+- [~] Consistência visual — padrão de cards/badges já reaproveitado entre páginas recentes; não auditada no app inteiro
+- [ ] Navegação (fluxo entre telas, breadcrumbs, atalhos) — não revisado
+- [~] Estados vazios — existem em várias telas (ex.: "Nenhum serviço cadastrado", "Nenhuma profissional encontrada", "Dia de folga"); não revisado de forma sistemática em todas as telas
+- [~] Mensagens de erro/sucesso — padrão de toast e caixas de erro já usado com consistência nas páginas mais recentes; não revisado no app inteiro
+- [~] Loading — existem skeletons (Serviços) e "Carregando…" simples em outras telas; não padronizado
+- [x] Confirmações de ações destrutivas — já é prática recorrente (Admin bloquear/editar/excluir, exclusão de despesa em Gastos); não 100% auditado se toda ação destrutiva do app tem confirmação
+- [ ] Acessibilidade básica (contraste, labels, navegação por teclado, leitores de tela) — não revisado
+- [ ] Experiência de primeira utilização (first-time user experience além do onboarding já existente — ex.: tour guiado, tooltips) — não implementada
+
+### 14.7 Auditoria visual/funcional futura (antes de comercializar)
+
+- [ ] Revisar página por página, nesta ordem, antes de comercializar: **Login → Início → Dashboard → Agenda → Clientes → Serviços → Gastos → Perfil/Configurações → WhatsApp → Admin → página pública**. Esta auditoria ainda não foi feita — este item fica registrado como pendência única, a ser quebrada em itens específicos quando for executada.
