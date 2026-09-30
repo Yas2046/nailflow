@@ -290,3 +290,18 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 ### 14.7 Auditoria visual/funcional futura (antes de comercializar)
 
 - [ ] Revisar página por página, nesta ordem, antes de comercializar: **Login → Início → Dashboard → Agenda → Clientes → Serviços → Gastos → Perfil/Configurações → WhatsApp → Admin → página pública**. Esta auditoria ainda não foi feita — este item fica registrado como pendência única, a ser quebrada em itens específicos quando for executada.
+
+
+### 14.8 Página pública de agendamento / "link de agendamento online"
+
+> A página pública **já existe** hoje (`/p/:slug`, `PaginaPublica.tsx` + `GET /public/:slug/availability`). O que está registrado aqui é a evolução dela para um fluxo comercial completo de autoatendimento — hoje ela é uma vitrine de horários que **encaminha para o WhatsApp**, não fecha o agendamento sozinha.
+
+- [x] Link público existe e é compartilhável (URL por `slug`, uma por profissional)
+- [x] Compartilhamento do link (Instagram, WhatsApp etc.) — o link já é uma URL comum, e existe botão de copiar (em Perfil); não há um card/botão de "compartilhar" dedicado nessa própria página pública
+- [x] Cliente vê a profissional/negócio da página (nome do negócio, horários) — cada link já é dedicado a uma profissional específica (via `slug`), não uma escolha entre várias
+- [ ] Cliente escolher o **serviço** desejado — não existe; a página não lista os serviços da profissional
+- [~] Cliente ver **data e horário disponível** — mostra os dias e horários livres dos próximos 6 dias, mas são só informativos (`<span>`, não clicáveis); não é possível selecionar um horário
+- [ ] Cliente informar os **dados necessários** (nome, telefone) — não existe formulário nessa página
+- [ ] Confirmação **criar o agendamento diretamente** na agenda da profissional — não acontece; a página é explícita sobre isso no rodapé ("Os horários são apenas para consulta. O agendamento é confirmado diretamente pelo WhatsApp"), e o botão principal só abre um link `wa.me` para continuar a conversa com o bot
+- [x] Mobile — layout já é mobile-first (coluna única, `max-w-lg`, boa legibilidade em tela pequena)
+- [ ] Revisão futura de aparência, fluxo, estados de erro/sucesso e experiência da cliente **como fluxo comercial de autoatendimento** — hoje só existem os estados básicos (carregando, não encontrado, erro genérico, sem horários); não há uma revisão pensada para venda/conversão
