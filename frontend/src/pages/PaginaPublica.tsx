@@ -92,6 +92,20 @@ function NotFound() {
   );
 }
 
+function LegacyLink() {
+  return (
+    <div className="min-h-screen bg-cream flex flex-col items-center justify-center px-4 text-center">
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-4 shadow-sm">
+        <LogoMark className="w-7 h-7" />
+      </div>
+      <h1 className="font-display text-2xl text-wine-700 mb-2">Link antigo</h1>
+      <p className="text-ink/50 text-sm max-w-xs">
+        Este link antigo não é mais válido. Peça à sua profissional o link atualizado para agendamento.
+      </p>
+    </div>
+  );
+}
+
 // ─── página ───────────────────────────────────────────────────────────────────
 
 export default function PaginaPublica() {
@@ -102,12 +116,10 @@ export default function PaginaPublica() {
   const today = todayStr();
 
   useEffect(() => {
-    const url = slug
-      ? `/public/${slug}/availability?days=6`
-      : '/public/availability?days=6';
+    if (!slug) return;
 
     api
-      .get<PublicData>(url)
+      .get<PublicData>(`/public/${slug}/availability?days=6`)
       .then(setData)
       .catch((e) => {
         if (e.response?.status === 404) {
@@ -118,6 +130,7 @@ export default function PaginaPublica() {
       });
   }, [slug]);
 
+  if (!slug) return <LegacyLink />;
   if (notFound) return <NotFound />;
 
   return (

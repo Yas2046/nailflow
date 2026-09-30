@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
-  getPublicInfo,
-  getPublicAvailability,
   getPublicInfoBySlug,
   getPublicAvailabilityBySlug,
 } from '../controllers/publicController.js';
@@ -26,9 +24,5 @@ const router = Router();
 // Devem vir antes das rotas genéricas para não conflitar.
 router.get('/:slug/info', publicRateLimit, getPublicInfoBySlug);
 router.get('/:slug/availability', publicRateLimit, getPublicAvailabilityBySlug);
-
-// Rotas legadas (sem slug) — mantidas para compatibilidade com /agenda-publica
-router.get('/info', publicRateLimit, getPublicInfo);
-router.get('/availability', publicRateLimit, getPublicAvailability);
 
 export default router;

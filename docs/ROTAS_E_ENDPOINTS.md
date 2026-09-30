@@ -168,8 +168,6 @@ Toda ação de sucesso em `block`/`unblock`/`update`/`delete` grava 1 linha em `
 |---|---|---|---|
 | GET | `/public/:slug/info` | ✗ | Nome do negócio e link do WhatsApp da profissional (rate limit 60/5min por IP) |
 | GET | `/public/:slug/availability` | ✗ | Dias com horários livres (`?days=N`, limitado por `booking_horizon_days`; rate limit 60/5min por IP) |
-| GET | `/public/info` | ✗ | Compatibilidade: usa a primeira profissional cadastrada |
-| GET | `/public/availability` | ✗ | Compatibilidade: idem |
 
 Página no frontend: `https://nailflow.duckdns.org/p/:slug`.
 

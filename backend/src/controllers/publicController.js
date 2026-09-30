@@ -2,15 +2,6 @@ import { pool } from '../config/db.js';
 import { getAvailableSlots } from '../utils/availability.js';
 import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 
-// Fallback MVP: retorna a única/primeira profissional cadastrada.
-// Mantido para compatibilidade da rota antiga /public/info e /public/availability.
-async function getSingleProfessional() {
-  const { rows } = await pool.query(
-    'SELECT id, business_name, phone_whatsapp, booking_horizon_days FROM professionals ORDER BY created_at ASC LIMIT 1'
-  );
-  return rows[0] || null;
-}
-
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
   const { rows } = await pool.query(
@@ -54,34 +45,6 @@ async function buildAvailabilityResponse(professional, requestedDays) {
     whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
     days: result,
   };
-}
-
-// ─── Rotas antigas (compatibilidade) ─────────────────────────────────────────
-
-// GET /public/info
-export async function getPublicInfo(req, res, next) {
-  try {
-    const professional = await getSingleProfessional();
-    if (!professional) return res.status(404).json({ error: 'Nenhuma profissional cadastrada.' });
-    res.json({
-      businessName: professional.business_name,
-      whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-// GET /public/availability?days=N
-export async function getPublicAvailability(req, res, next) {
-  try {
-    const professional = await getSingleProfessional();
-    if (!professional) return res.status(404).json({ error: 'Nenhuma profissional cadastrada.' });
-    const requestedDays = Number(req.query.days) || (professional.booking_horizon_days ?? 60);
-    res.json(await buildAvailabilityResponse(professional, requestedDays));
-  } catch (err) {
-    next(err);
-  }
 }
 
 // ─── Rotas por slug (Phase 3) ─────────────────────────────────────────────────
