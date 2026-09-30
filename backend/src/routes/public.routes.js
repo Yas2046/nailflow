@@ -28,7 +28,7 @@ router.get('/:slug/info', publicRateLimit, getPublicInfoBySlug);
 router.get('/:slug/availability', publicRateLimit, getPublicAvailabilityBySlug);
 
 // Rotas legadas (sem slug) — mantidas para compatibilidade com /agenda-publica
-router.get('/info', getPublicInfo);
-router.get('/availability', getPublicAvailability);
+router.get('/info', publicRateLimit, getPublicInfo);
+router.get('/availability', publicRateLimit, getPublicAvailability);
 
 export default router;
