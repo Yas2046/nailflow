@@ -51,6 +51,13 @@ export function extractIntent(rawText) {
   return null;
 }
 
+// Nome de serviço "combo" (ex.: "Manicure + Pedicure"). Detectado só pelo
+// separador "+" no nome cadastrado — não depende de nenhuma lista fixa de
+// serviços, então funciona para qualquer combo que a profissional crie.
+function isCompositeServiceName(normalizedName) {
+  return normalizedName.includes('+');
+}
+
 /**
  * Procura o nome de um serviço ativo da profissional dentro do texto,
  * incluindo sinônimos coloquiais. Retorna o registro do serviço ou null.
@@ -62,15 +69,42 @@ export function extractServiceMention(rawText, services) {
   const words = t.split(/\s+/);
 
   const candidates = new Set();
+  const directMatches = new Set();
   for (const service of services) {
     const name = normalize(service.name);
-    if (t.includes(name)) candidates.add(service.id);
+    if (t.includes(name)) {
+      candidates.add(service.id);
+      directMatches.add(service.id);
+    }
+  }
+  // Mesmo problema do sinônimo, mas no match direto: o nome completo de um
+  // combo ("manicure + pedicure") contém o nome de outros serviços como
+  // substring. Se o combo foi encontrado por si só no texto, os serviços
+  // simples cujo nome é só um pedaço dele não contam como candidatos à
+  // parte — sem isso, digitar o nome do combo inteiro virava "ambíguo".
+  for (const service of services) {
+    const name = normalize(service.name);
+    if (!isCompositeServiceName(name) || !directMatches.has(service.id)) continue;
+    for (const other of services) {
+      if (other.id === service.id) continue;
+      const otherName = normalize(other.name);
+      if (!isCompositeServiceName(otherName) && name.includes(otherName)) {
+        candidates.delete(other.id);
+      }
+    }
   }
   for (const word of words) {
     const synonyms = SERVICE_SYNONYMS[word];
     if (!synonyms) continue;
     for (const service of services) {
       const name = normalize(service.name);
+      // Um nome composto (ex.: "Manicure + Pedicure") nunca vira candidato
+      // só por sinônimo — ele contém o nome de outros serviços como
+      // substring ("manicure", "pedicure"), o que faria "unha" ou "pé"
+      // ficarem ambíguos entre o serviço simples e o combo sem necessidade.
+      // O combo continua reconhecível pelo match direto do nome completo
+      // no texto, acima.
+      if (isCompositeServiceName(name)) continue;
       if (synonyms.some((syn) => name.includes(syn))) candidates.add(service.id);
     }
   }

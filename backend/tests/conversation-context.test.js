@@ -42,6 +42,39 @@ test('extractServiceMention: reconhece sinônimo coloquial ("unha" → Manicure)
   assert.equal(s?.id, 'svc-manicure');
 });
 
+// Cenário real que causou o bug em produção (2026-09-30): a profissional
+// tem "Manicure" e "Manicure + Pedicure" cadastrados ao mesmo tempo.
+const SERVICES_WITH_COMBO = [
+  { id: 'svc-manicure', name: 'Manicure', duration_minutes: 40 },
+  { id: 'svc-pedicure', name: 'Pedicure', duration_minutes: 50 },
+  { id: 'svc-combo', name: 'Manicure + Pedicure', duration_minutes: 80 },
+];
+
+test('extractServiceMention: "unha" reconhece Manicure mesmo existindo o combo "Manicure + Pedicure"', () => {
+  const s = extractServiceMention('Quero fazer unha sexta depois das 18', SERVICES_WITH_COMBO);
+  assert.equal(s?.id, 'svc-manicure');
+});
+
+test('extractServiceMention: "pé" reconhece Pedicure mesmo existindo o combo "Manicure + Pedicure"', () => {
+  const s = extractServiceMention('quero fazer o pé sábado', SERVICES_WITH_COMBO);
+  assert.equal(s?.id, 'svc-pedicure');
+});
+
+test('extractServiceMention: nome exato "manicure" continua funcionando com o combo cadastrado', () => {
+  const s = extractServiceMention('quero fazer manicure sexta', SERVICES_WITH_COMBO);
+  assert.equal(s?.id, 'svc-manicure');
+});
+
+test('extractServiceMention: "manicure + pedicure" explícito reconhece o serviço composto', () => {
+  const s = extractServiceMention('quero fazer manicure + pedicure sábado', SERVICES_WITH_COMBO);
+  assert.equal(s?.id, 'svc-combo');
+});
+
+test('extractServiceMention: ambiguidade real (dois serviços distintos mencionados) continua retornando null', () => {
+  const s = extractServiceMention('quero fazer unha e pé sábado', SERVICES_WITH_COMBO);
+  assert.equal(s, null);
+});
+
 test('extractServiceMention: sem menção reconhecida retorna null', () => {
   assert.equal(extractServiceMention('oi, tudo bem?', SERVICES), null);
 });
