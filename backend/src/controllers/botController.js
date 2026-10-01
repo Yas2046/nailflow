@@ -4,7 +4,7 @@ import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
-import { extractSlots, extractDateMention, extractPeriodMention, extractTimeMention } from '../utils/conversationContext.js';
+import { extractSlots, extractDateMention, extractPeriodMention, extractTimeMention, extractActionIntent, extractServiceMention } from '../utils/conversationContext.js';
 
 // ---------- helpers ----------
 
@@ -60,6 +60,28 @@ function isEscapePhrase(normalizedText) {
 
 function isBackCommand(normalizedText) {
   return /^(menu|voltar|inicio|recomecar|recomeço)$/.test(normalizedText);
+}
+
+// Frases claras de desistência durante uma etapa em andamento (ex.:
+// escolhendo serviço/data/horário). Diferente de isBackCommand (que exige
+// a palavra exata "menu"/"voltar"), aqui a cliente está abandonando a
+// conversa, não pedindo o menu — por isso o tratamento é "tudo bem, como
+// posso ajudar" em vez de reimprimir o menu numerado.
+const GIVE_UP_PHRASES = [
+  'desisto',
+  'deixa pra la',
+  'deixa para la',
+  'deixa pra depois',
+  'esquece',
+  'esquece isso',
+  'nao ta dando',
+  'nao da nao',
+  'nao quero mais',
+  'vou deixar pra depois',
+].map(normalizeText);
+
+function isGiveUpPhrase(normalizedText) {
+  return GIVE_UP_PHRASES.some((p) => normalizedText.includes(p));
 }
 
 // ---------- DB helpers ----------
@@ -144,7 +166,7 @@ async function getUpcomingAppointments(professionalId, phone) {
   const client = await findClientByPhone(professionalId, phone);
   if (!client) return [];
   const { rows } = await pool.query(
-    `SELECT a.id, a.starts_at, a.ends_at, a.status, s.name AS service_name
+    `SELECT a.id, a.starts_at, a.ends_at, a.status, s.id AS service_id, s.name AS service_name
      FROM appointments a JOIN services s ON s.id = a.service_id
      WHERE a.client_id = $1
        AND a.professional_id = $2
@@ -173,6 +195,97 @@ async function getLastCompletedService(professionalId, phone) {
     [client.id, professionalId]
   );
   return rows[0] ?? null;
+}
+
+function formatConfirmationMessage(serviceName, startsAtIso, priceCents) {
+  return `Fechado! 💅 *${serviceName}* ${formatDateBR(new Date(startsAtIso))} às ${formatTimeBR(new Date(startsAtIso))}, por ${formatPrice(priceCents)}. Confirma? (sim / não)`;
+}
+
+// Tenta identificar, entre os agendamentos futuros já carregados, qual
+// deles a cliente quis dizer a partir de pistas no texto (data/dia da
+// semana e/ou nome do serviço, ex.: "o de sábado", "a manicure de sexta").
+// Só retorna um agendamento quando a combinação de pistas aponta para
+// EXATAMENTE um — ambiguidade real (nenhuma pista, ou mais de um
+// candidato) retorna null de propósito, para cair no menu numerado em
+// vez de adivinhar qual agendamento cancelar.
+function matchAppointmentFromText(rawText, appointments, services) {
+  const mentionedDate = extractDateMention(rawText);
+  const mentionedService = extractServiceMention(rawText, services);
+  if (!mentionedDate && !mentionedService) return null;
+
+  let candidates = appointments;
+  if (mentionedDate) {
+    const dateStr = mentionedDate.toISOString().split('T')[0];
+    candidates = candidates.filter((a) => {
+      const apptDateStr = new Date(a.starts_at).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      return apptDateStr === dateStr;
+    });
+  }
+  if (mentionedService) {
+    candidates = candidates.filter((a) => a.service_id === mentionedService.id);
+  }
+
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+// Monta a resposta de "ver agendamentos" — sem reimprimir o menu 1-4 em
+// seguida (reduz o "despejo de menu"); os números continuam funcionando
+// se a cliente decidir usá-los na próxima mensagem, porque o estado
+// volta para MENU mesmo assim.
+async function buildViewAppointmentsReply(professionalId, phone) {
+  const appointments = await getUpcomingAppointments(professionalId, phone);
+  if (appointments.length === 0) {
+    return {
+      message: `Você ainda não tem nenhum agendamento marcado. 😊 Quer marcar um horário?`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+  const lines = appointments.map((a) => `• ${a.service_name}: ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`);
+  return {
+    message: `Esses são os seus próximos horários:\n\n${lines.join('\n')}`,
+    botState: 'MENU',
+    context: {},
+  };
+}
+
+// Monta a resposta de cancelamento: se o texto já trouxer uma pista que
+// identifica exatamente um agendamento (data/dia da semana e/ou serviço),
+// pula direto para a confirmação daquele agendamento específico. Senão,
+// cai no menu numerado de sempre — mesmos nomes de estado/contexto
+// (`AGUARDANDO_CANCELAMENTO`/`apptMap`, `AGUARDANDO_CONFIRMACAO_CANCELAMENTO`/
+// `apptIdToCancel`) usados pelos estados já existentes, então nada downstream
+// precisa mudar.
+async function buildCancelReply(professionalId, phone, rawText) {
+  const appointments = await getUpcomingAppointments(professionalId, phone);
+  if (appointments.length === 0) {
+    return {
+      message: `Não encontrei nenhum agendamento ativo pra cancelar. 😊`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+
+  const services = await listActiveServices(professionalId);
+  const match = matchAppointmentFromText(rawText, appointments, services);
+  if (match) {
+    return {
+      message: `Posso cancelar *${match.service_name}* de ${formatDateBR(match.starts_at)} às ${formatTimeBR(match.starts_at)}? (sim / não)`,
+      botState: 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO',
+      context: { apptIdToCancel: match.id, abandonment_notified: false },
+    };
+  }
+
+  const apptMap = {};
+  const lines = appointments.map((a, i) => {
+    apptMap[String(i + 1)] = a.id;
+    return `${i + 1}. ${a.service_name} - ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`;
+  });
+  return {
+    message: `Encontrei estes agendamentos:\n\n${lines.join('\n')}\n\nQual deseja cancelar? (digite o número)`,
+    botState: 'AGUARDANDO_CANCELAMENTO',
+    context: { apptMap, abandonment_notified: false },
+  };
 }
 
 // Returns up to maxDays days that have slots for given service duration.
@@ -233,7 +346,7 @@ async function tryDirectBooking(professionalId, service, dateStr, timeMention) {
   if (!check.available) return null;
 
   return {
-    message: `Perfeito! 😊 Vou confirmar:\n\n📌 Serviço: ${service.name}\n📅 Data: ${formatDateBR(new Date(check.startsAt))}\n⏰ Hora: ${formatTimeBR(new Date(check.startsAt))}\n💰 Valor: ${formatPrice(service.price_cents)}\n\nConfirma? (sim / não)`,
+    message: formatConfirmationMessage(service.name, check.startsAt, service.price_cents),
     botState: 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
     context: {
       serviceId: service.id,
@@ -344,6 +457,13 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     return `Claro! 😊 Vou chamar a profissional para te atender. Um momentinho! 🌸`;
   }
 
+  // Desistência clara ("desisto", "deixa pra lá", "esquece", "não tá
+  // dando"...) em qualquer etapa em andamento — abandona o fluxo atual e
+  // volta para um MENU limpo, sem ficar repetindo a mesma pergunta.
+  if (state.startsWith('AGUARDANDO_') && isGiveUpPhrase(text)) {
+    return reply(`Tudo bem! 😊 Como posso ajudar?`, 'MENU', {});
+  }
+
   // Motor de contexto (Parte 1): tenta reconhecer intenção/serviço/data/
   // período em mensagens livres e acumula em ctx.slots, sem interferir em
   // respostas que já são um número de menu ou um comando de navegação.
@@ -353,6 +473,37 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     const newSlots = extractSlots(rawText, servicesForContext);
     if (Object.keys(newSlots).length > 0) {
       ctx.slots = { ...(ctx.slots || {}), ...newSlots };
+    }
+  }
+
+  // Mudança clara de assunto durante uma etapa de agendamento/cancelamento
+  // em andamento (ex.: cliente escolhendo horário manda "na verdade quero
+  // cancelar meu outro agendamento") — em vez de travar em "não entendi",
+  // reconhece e conduz para a nova intenção, sem perder nada já salvo no
+  // banco (só descarta a escolha parcial que ainda não virou agendamento).
+  const BOOKING_FLOW_STATES = new Set(['AGUARDANDO_SERVICO', 'AGUARDANDO_DATA', 'AGUARDANDO_HORARIO', 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO']);
+  const CANCEL_FLOW_STATES = new Set(['AGUARDANDO_CANCELAMENTO', 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO']);
+  if ((BOOKING_FLOW_STATES.has(state) || CANCEL_FLOW_STATES.has(state)) && !/^\d+$/.test(text) && !isBackCommand(text) && !isEscapePhrase(text)) {
+    const switchAction = extractActionIntent(rawText);
+
+    if (switchAction === 'cancelar' && BOOKING_FLOW_STATES.has(state)) {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(`Sem problema, vamos cancelar. 😊\n\n${built.message}`, built.botState, built.context);
+    }
+
+    if (switchAction === 'ver' && BOOKING_FLOW_STATES.has(state)) {
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(built.message, built.botState, built.context);
+    }
+
+    if (switchAction === 'agendar' && CANCEL_FLOW_STATES.has(state)) {
+      const services = await listActiveServices(professionalId);
+      const freshSlots = extractSlots(rawText, services);
+      const chosen = freshSlots.serviceId ? services.find((s) => s.id === freshSlots.serviceId) : null;
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, freshSlots);
+        return reply(`Combinado, vamos agendar. 😊\n\n${built.message}`, built.botState, built.context);
+      }
     }
   }
 
@@ -381,6 +532,20 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
         const built = await buildDaysReply(professionalId, chosen, ctx.slots);
         return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
       }
+    }
+
+    // Mesma ideia do atalho acima, mas para "ver agendamentos" e
+    // "cancelar" — se a própria primeira mensagem já deixa isso claro
+    // (ex.: "quero ver meus agendamentos", "quero cancelar o de sábado"),
+    // atende direto, sem passar pela saudação genérica + menu.
+    const initialAction = extractActionIntent(rawText);
+    if (initialAction === 'ver') {
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
+    }
+    if (initialAction === 'cancelar') {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
     }
 
     if (existingClient) {
@@ -475,8 +640,9 @@ Como posso ajudar?
       }
     }
 
-    // agendar
-    if (/^1$/.test(text) || /agendar|marcar|horario|quero marcar/.test(text)) {
+    // agendar — \b (word boundary) é essencial aqui: sem ele, "desmarcar"
+    // bate em "marcar" como substring e vira "agendar" por engano.
+    if (/^1$/.test(text) || /\b(agendar|marcar|horario)\b/.test(text)) {
       const services = await listActiveServices(professionalId);
       if (services.length === 0) {
         return reply('No momento não temos serviços disponíveis. Por favor, entre em contato diretamente. 😊', 'MENU', {});
@@ -493,38 +659,21 @@ Como posso ajudar?
       );
     }
 
-    // cancelar
-    if (/^2$/.test(text) || /cancelar|cancela/.test(text)) {
-      const appointments = await getUpcomingAppointments(professionalId, phone);
-      if (appointments.length === 0) {
-        return reply('Não encontrei agendamentos ativos. 😊 Posso ajudar com mais alguma coisa?', 'MENU', {});
-      }
-      const apptMap = {};
-      const lines = appointments.map((a, i) => {
-        apptMap[String(i + 1)] = a.id;
-        return `${i + 1}. ${a.service_name} - ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`;
-      });
-      return reply(
-        `Encontrei seus agendamentos:\n\n${lines.join('\n')}\n\nQual deseja cancelar? (Digite o número)`,
-        'AGUARDANDO_CANCELAMENTO',
-        { apptMap, abandonment_notified: false }
-      );
+    // cancelar — se a mensagem já trouxer uma pista (data/serviço) que
+    // identifica exatamente um agendamento, pula direto pra confirmação
+    // daquele; senão cai no menu numerado de sempre (buildCancelReply).
+    // Inclui "desmarcar/desmarca" (sinônimo comum) — sem isso, uma frase
+    // como "quero desmarcar meu agendamento" cairia no check de "ver"
+    // logo abaixo, só por conter "meu"/"agendamento".
+    if (/^2$/.test(text) || /cancelar|cancela|desmarcar|desmarca/.test(text)) {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(built.message, built.botState, built.context);
     }
 
-    // ver agendamentos
+    // ver agendamentos — sem reimprimir o menu 1-4 em seguida.
     if (/^3$/.test(text) || /ver|meu|agendamento|proximo/.test(text)) {
-      const appointments = await getUpcomingAppointments(professionalId, phone);
-      if (appointments.length === 0) {
-        return reply('Você não possui agendamentos futuros. 😊\n\nPosso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento', 'MENU', {});
-      }
-      const lines = appointments.map(
-        (a) => `• ${a.service_name}: ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`
-      );
-      return reply(
-        `Seus próximos agendamentos:\n\n${lines.join('\n')}\n\nPosso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento`,
-        'MENU',
-        {}
-      );
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(built.message, built.botState, built.context);
     }
 
     // saudação no meio de uma conversa: re-executa INICIO para personalizar
@@ -805,11 +954,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    const dateFormatted = formatDateBR(new Date(slotIso));
-    const timeFormatted = formatTimeBR(new Date(slotIso));
-
     return reply(
-      `Perfeito! 😊 Vou confirmar:\n\n📌 Serviço: ${ctx.serviceName}\n📅 Data: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Valor: ${formatPrice(ctx.servicePrice)}\n\nConfirma? (sim / não)`,
+      formatConfirmationMessage(ctx.serviceName, slotIso, ctx.servicePrice),
       'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
       { ...ctx, selectedSlot: slotIso, abandonment_notified: false }
     );
@@ -873,7 +1019,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       const timeFormatted = formatTimeBR(new Date(ctx.selectedSlot));
 
       return reply(
-        `Prontinho! 💅 Seu horário foi marcado:\n\n📌 ${ctx.serviceName}\n📅 ${dateFormatted}\n⏰ ${timeFormatted}\n\nSe precisar cancelar ou alterar, é só me avisar. Até lá! 😊`,
+        `Prontinho! 💅 *${ctx.serviceName}* confirmado para ${dateFormatted} às ${timeFormatted}. Qualquer coisa, é só chamar! 😊`,
         'MENU',
         {}
       );
@@ -960,7 +1106,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     }
 
     return reply(
-      `Confirma o cancelamento?\n\n📌 ${rows[0].service_name}\n📅 ${formatDateBR(rows[0].starts_at)} às ${formatTimeBR(rows[0].starts_at)}\n\nResponda *sim* para cancelar ou *não* para manter.`,
+      `Posso cancelar *${rows[0].service_name}* de ${formatDateBR(rows[0].starts_at)} às ${formatTimeBR(rows[0].starts_at)}? (sim / não)`,
       'AGUARDANDO_CONFIRMACAO_CANCELAMENTO',
       { ...ctx, apptIdToCancel: apptId, abandonment_notified: false }
     );
@@ -991,7 +1137,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
         return reply('Agendamento não encontrado. 😕', 'MENU', {});
       }
       return reply(
-        `Agendamento cancelado com sucesso! ✅\n\nSe quiser remarcar, é só me avisar. 😊\n\n1️⃣ Agendar horário`,
+        `Prontinho, cancelado! ✅ Se quiser remarcar, é só me chamar. 😊`,
         'MENU',
         {}
       );

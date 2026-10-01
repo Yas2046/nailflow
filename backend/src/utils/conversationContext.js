@@ -51,6 +51,21 @@ export function extractIntent(rawText) {
   return null;
 }
 
+/**
+ * Intenção de ação de alto nível (agendar/cancelar/ver), usada para
+ * decidir atalhos de entrada ("quero ver meus agendamentos", "quero
+ * cancelar o de sábado") e para detectar troca de assunto no meio de um
+ * fluxo em andamento. Checa cancelar/ver primeiro — são verbos mais
+ * específicos — e só cai em extractIntent (agendar) por último.
+ */
+export function extractActionIntent(rawText) {
+  const t = normalize(rawText);
+  if (/\bcancelar\b|\bcancela\b|\bdesmarcar\b|\bdesmarca\b/.test(t)) return 'cancelar';
+  if (/\bver\b.*\bagendamentos?\b|\bmeus?\s+agendamentos?\b|\bproximo agendamento\b/.test(t)) return 'ver';
+  if (extractIntent(rawText)) return 'agendar';
+  return null;
+}
+
 // Nome de serviço "combo" (ex.: "Manicure + Pedicure"). Detectado só pelo
 // separador "+" no nome cadastrado — não depende de nenhuma lista fixa de
 // serviços, então funciona para qualquer combo que a profissional crie.

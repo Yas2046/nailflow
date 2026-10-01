@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractIntent,
+  extractActionIntent,
   extractServiceMention,
   extractDateMention,
   extractPeriodMention,
@@ -218,4 +219,38 @@ test('extractSlots: "sexta à tarde às 14h" reconhece data + período + horári
   assert.equal(slots.date, '2026-10-09');
   assert.deepEqual(slots.period, { afterMinutes: 12 * 60, beforeMinutes: 18 * 60 });
   assert.deepEqual(slots.time, { hour: 14, minute: 0 });
+});
+
+// ---------- extractActionIntent ----------
+
+test('extractActionIntent: reconhece "ver meus agendamentos"', () => {
+  assert.equal(extractActionIntent('Quero ver meus agendamentos'), 'ver');
+  assert.equal(extractActionIntent('meus agendamentos'), 'ver');
+});
+
+test('extractActionIntent: reconhece "cancelar"', () => {
+  assert.equal(extractActionIntent('Quero cancelar o de sábado'), 'cancelar');
+  assert.equal(extractActionIntent('na verdade quero cancelar meu outro agendamento'), 'cancelar');
+});
+
+test('extractActionIntent: reconhece "agendar" (via extractIntent)', () => {
+  assert.equal(extractActionIntent('Quero marcar um horário'), 'agendar');
+});
+
+test('extractActionIntent: cancelar tem prioridade sobre agendar quando ambos aparecem ("cancelar minha manicure")', () => {
+  assert.equal(extractActionIntent('quero cancelar minha manicure'), 'cancelar');
+});
+
+test('extractActionIntent: mensagem neutra retorna null', () => {
+  assert.equal(extractActionIntent('oi'), null);
+  assert.equal(extractActionIntent('obrigada'), null);
+});
+
+test('extractActionIntent: "desmarcar"/"desmarca" são reconhecidos como cancelar, não como agendar', () => {
+  assert.equal(extractActionIntent('Oi quero desmarcar meu agendamentos é sexta feira'), 'cancelar');
+  assert.equal(extractActionIntent('desmarca'), 'cancelar');
+});
+
+test('extractActionIntent: "quero marcar um horário" continua sendo reconhecido como agendar', () => {
+  assert.equal(extractActionIntent('quero marcar um horário'), 'agendar');
 });

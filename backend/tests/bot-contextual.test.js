@@ -23,13 +23,13 @@ let app;
 let server;
 let baseUrl;
 
-const PROF_ID = '99999999-9999-9999-9999-999999999901';
-const OTHER_PROF_ID = '99999999-9999-9999-9999-999999999902';
+const PROF_ID = '88888888-8888-8888-8888-888888888801';
+const OTHER_PROF_ID = '88888888-8888-8888-8888-888888888802';
 const INSTANCE = 'instancia-teste-contexto';
 const OTHER_INSTANCE = 'instancia-teste-contexto-outra';
 
-const SERVICE_MANICURE_ID = '99999999-9999-9999-9999-999999999911';
-const SERVICE_ESCOVA_ID = '99999999-9999-9999-9999-999999999912';
+const SERVICE_MANICURE_ID = '88888888-8888-8888-8888-888888888811';
+const SERVICE_ESCOVA_ID = '88888888-8888-8888-8888-888888888812';
 
 const PHONE = '5531977000001';
 const PHONE_B = '5531977000002';
@@ -276,7 +276,7 @@ test('horário em linguagem natural: "10:30" seleciona o slot sem exigir o núme
   assert.match(dateReply.json.reply, /Horários disponíveis/);
 
   const { json } = await processMessage(phone, '10:30');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
   assert.match(json.reply, /10:30/);
 
   const conv = await getConv(phone);
@@ -291,7 +291,7 @@ test('horário em linguagem natural: "dez e meia" seleciona o mesmo horário que
   const phone = '5531977000010';
   await reachAguardandoHorario(phone);
   const { json } = await processMessage(phone, 'dez e meia');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
 
   const conv = await getConv(phone);
   const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
@@ -330,7 +330,7 @@ test('seleção numérica continua funcionando em AGUARDANDO_HORARIO (sem regres
   const phone = '5531977000013';
   await reachAguardandoHorario(phone);
   const { json } = await processMessage(phone, '1');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
 });
 
 test('horário em linguagem natural preserva serviço, data e período já conhecidos no contexto', async (t) => {
@@ -348,7 +348,7 @@ test('horário em linguagem natural preserva serviço, data e período já conhe
   assert.ok(periodoAntes, 'período deveria ter sido reconhecido antes da seleção de horário');
 
   const { json } = await processMessage(phone, '10h30');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
 
   conv = await getConv(phone);
   assert.equal(conv.context.serviceName, 'Manicure');
@@ -363,7 +363,7 @@ test('"Quero manicure sexta às 14:30" pula direto para a confirmação, sem lis
 
   const phone = '5531977000015';
   const { json } = await processMessage(phone, 'Quero manicure sexta às 14:30');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
   assert.match(json.reply, /14:30/);
   assert.doesNotMatch(json.reply, /Escolha a data/);
   assert.doesNotMatch(json.reply, /Horários disponíveis/);
@@ -383,7 +383,7 @@ test('"sexta às 14:30" dito em AGUARDANDO_DATA também pula direto para a confi
   assert.match(first.json.reply, /Escolha a data/);
 
   const { json } = await processMessage(phone, 'sexta às 14:30');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
 
   const conv = await getConv(phone);
   assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
@@ -395,7 +395,7 @@ test('horário pedido junto com a data, mas indisponível, não inventa nada (ca
   const phone = '5531977000017';
   // 3h da madrugada: fora do expediente (08:00-20:00) em qualquer dia.
   const { json } = await processMessage(phone, 'Quero manicure sexta às 3h');
-  assert.doesNotMatch(json.reply, /Vou confirmar/);
+  assert.doesNotMatch(json.reply, /Fechado!/);
   assert.match(json.reply, /Horários disponíveis/);
 
   const conv = await getConv(phone);
@@ -415,7 +415,7 @@ test('correção de horário dentro de AGUARDANDO_CONFIRMACAO_AGENDAMENTO troca 
   const dataAntes = conv.context.selectedDate;
 
   const { json } = await processMessage(phone, 'Na verdade pode ser 15h');
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
   assert.match(json.reply, /15:00/);
 
   conv = await getConv(phone);
@@ -447,7 +447,7 @@ test('"pode ser 15h" (frase curta, sem "na verdade") também é tratada como cor
   const { json } = await processMessage(phone, 'pode ser 12h');
   // Não pode ter confirmado o agendamento original (11:00) por engano.
   assert.doesNotMatch(json.reply, /Prontinho/);
-  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Fechado!/);
   assert.match(json.reply, /12:00/);
 
   const conv = await getConv(phone);
@@ -484,7 +484,7 @@ test('"10:30 ou 11, qualquer um" em AGUARDANDO_HORARIO pede esclarecimento em ve
   const phone = '5531977000020';
   await reachAguardandoHorario(phone);
   const { json } = await processMessage(phone, '10:30 ou 11, qualquer um serve');
-  assert.doesNotMatch(json.reply, /Vou confirmar/);
+  assert.doesNotMatch(json.reply, /Fechado!/);
   assert.match(json.reply, /Por favor escolha um dos horários/);
 
   const conv = await getConv(phone);
@@ -508,7 +508,7 @@ test('fluxo antigo por números (menu → serviço → data → horário → con
   assert.match(dateReply.json.reply, /Horários disponíveis/);
 
   const timeReply = await processMessage(phone, '1');
-  assert.match(timeReply.json.reply, /Vou confirmar/);
+  assert.match(timeReply.json.reply, /Fechado!/);
 
   const confirmReply = await processMessage(phone, 'sim');
   assert.match(confirmReply.json.reply, /Prontinho/);
@@ -564,10 +564,10 @@ test('fluxo de cancelamento (menu → listar → confirmar) continua funcionando
   assert.match(menuReply.json.reply, /Qual deseja cancelar/);
 
   const listReply = await processMessage(phone, '1');
-  assert.match(listReply.json.reply, /Confirma o cancelamento/);
+  assert.match(listReply.json.reply, /Posso cancelar/);
 
   const cancelReply = await processMessage(phone, 'sim');
-  assert.match(cancelReply.json.reply, /cancelado com sucesso/);
+  assert.match(cancelReply.json.reply, /Prontinho, cancelado/);
 
   const normalizedPhone = phone.replace(/^(\d{4})9(\d{8})$/, '$1$2');
   const { rows } = await pool.query(
@@ -577,4 +577,210 @@ test('fluxo de cancelamento (menu → listar → confirmar) continua funcionando
   );
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, 'cancelado');
+});
+
+// ---------- Entrada mais natural: atalhos de "ver" e "cancelar" ----------
+
+async function createClientAndAppointment(phone, serviceId, startsAtIso, durationMinutes) {
+  const { rows: clientRows } = await pool.query(
+    `INSERT INTO clients (professional_id, name, phone) VALUES ($1,'Cliente Teste',$2)
+     ON CONFLICT (professional_id, phone) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`,
+    [PROF_ID, phone]
+  );
+  const endsAtIso = new Date(new Date(startsAtIso).getTime() + durationMinutes * 60000).toISOString();
+  await pool.query(
+    `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot)
+     VALUES ($1,$2,$3,$4,$5,'pendente',4000)`,
+    [PROF_ID, clientRows[0].id, serviceId, startsAtIso, endsAtIso]
+  );
+}
+
+test('"Quero ver meus agendamentos" como primeira mensagem responde direto, sem menu antes', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000024';
+  await createClientAndAppointment(phone, SERVICE_MANICURE_ID, `${futureWeekdayISO(3)}T11:00:00-03:00`, 40);
+
+  const { json } = await processMessage(phone, 'Quero ver meus agendamentos');
+  assert.match(json.reply, /próximos horários/);
+  assert.doesNotMatch(json.reply, /1️⃣ Agendar horário/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'MENU');
+});
+
+test('"Quero ver meus agendamentos" sem nenhum agendamento responde direto, sem dump de menu', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000025';
+  const { json } = await processMessage(phone, 'Quero ver meus agendamentos');
+  assert.match(json.reply, /não tem nenhum agendamento/);
+  assert.doesNotMatch(json.reply, /1️⃣/);
+});
+
+test('"Quero cancelar o de sábado" como primeira mensagem, com um único agendamento nesse dia, vai direto para a confirmação', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000026';
+  // Próximo sábado a partir de hoje.
+  const now = new Date();
+  const diff = (6 - now.getDay() + 7) % 7 || 7;
+  const saturday = new Date(now);
+  saturday.setDate(now.getDate() + diff);
+  const saturdayIso = `${saturday.toISOString().split('T')[0]}T11:00:00-03:00`;
+  await createClientAndAppointment(phone, SERVICE_MANICURE_ID, saturdayIso, 40);
+
+  const { json } = await processMessage(phone, 'Quero cancelar o de sábado');
+  assert.match(json.reply, /Posso cancelar/);
+  assert.match(json.reply, /Manicure/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO');
+  assert.ok(conv.context.apptIdToCancel);
+});
+
+test('"Quero cancelar" com dois agendamentos (ambiguidade real) cai no menu numerado, não escolhe sozinho', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000027';
+  await createClientAndAppointment(phone, SERVICE_MANICURE_ID, `${futureWeekdayISO(20)}T09:15:00-03:00`, 40);
+  await createClientAndAppointment(phone, SERVICE_ESCOVA_ID, `${futureWeekdayISO(22)}T16:45:00-03:00`, 60);
+
+  const { json } = await processMessage(phone, 'Quero cancelar');
+  assert.match(json.reply, /Encontrei estes agendamentos/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CANCELAMENTO');
+  assert.equal(Object.keys(conv.context.apptMap).length, 2);
+});
+
+test('"Quero marcar um horário" (sem detalhes) ainda mostra a lista de serviços — comportamento preservado', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000028';
+  await processMessage(phone, 'oi'); // INICIO -> MENU
+  const { json } = await processMessage(phone, 'Quero marcar um horário');
+  assert.match(json.reply, /Qual serviço você gostaria/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_SERVICO');
+});
+
+// ---------- Mudança de assunto no meio do fluxo ----------
+
+test('mudar de assunto durante um agendamento em andamento ("na verdade quero cancelar meu outro agendamento") conduz para cancelamento', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000029';
+  await createClientAndAppointment(phone, SERVICE_ESCOVA_ID, `${futureWeekdayISO(18)}T16:15:00-03:00`, 60);
+
+  // Começa um agendamento novo (fica em AGUARDANDO_DATA).
+  const first = await processMessage(phone, 'Quero fazer manicure');
+  assert.match(first.json.reply, /Escolha a data/);
+  let conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_DATA');
+
+  // Muda de assunto no meio do fluxo.
+  const { json } = await processMessage(phone, 'na verdade quero cancelar meu outro agendamento');
+  assert.doesNotMatch(json.reply, /Por favor escolha uma das datas/);
+  assert.match(json.reply, /cancelar/);
+
+  conv = await getConv(phone);
+  assert.ok(conv.bot_state === 'AGUARDANDO_CANCELAMENTO' || conv.bot_state === 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO');
+});
+
+test('mudar de assunto durante o cancelamento ("na verdade quero agendar escova sábado às 11h") conduz para agendamento', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000030';
+  await createClientAndAppointment(phone, SERVICE_MANICURE_ID, `${futureWeekdayISO(25)}T09:30:00-03:00`, 40);
+
+  // Começa um cancelamento (fica em AGUARDANDO_CANCELAMENTO, já que só há 1
+  // agendamento mas a mensagem inicial não dá pista nenhuma).
+  const first = await processMessage(phone, 'cancelar');
+  let conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CANCELAMENTO');
+  void first;
+
+  const { json } = await processMessage(phone, 'na verdade quero agendar escova sábado às 11h');
+  assert.match(json.reply, /vamos agendar/);
+
+  conv = await getConv(phone);
+  assert.ok(['AGUARDANDO_HORARIO', 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO', 'AGUARDANDO_DATA'].includes(conv.bot_state));
+});
+
+// ---------- Desistência clara em qualquer etapa AGUARDANDO_* ----------
+
+test('"desisto" em AGUARDANDO_SERVICO abandona o fluxo e volta pra um MENU limpo', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000031';
+  await processMessage(phone, 'oi'); // INICIO -> MENU
+  const first = await processMessage(phone, '1'); // MENU -> AGUARDANDO_SERVICO
+  assert.match(first.json.reply, /Qual serviço você gostaria/);
+
+  const { json } = await processMessage(phone, 'desisto');
+  assert.doesNotMatch(json.reply, /Qual serviço você gostaria/);
+  assert.doesNotMatch(json.reply, /Não reconheci o serviço/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'MENU');
+  assert.deepEqual(conv.context, {});
+});
+
+test('"deixa pra lá" em AGUARDANDO_DATA abandona o fluxo e volta pra um MENU limpo', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000032';
+  const first = await processMessage(phone, 'Quero fazer manicure');
+  assert.match(first.json.reply, /Escolha a data/);
+  let conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_DATA');
+
+  const { json } = await processMessage(phone, 'deixa pra lá');
+  assert.doesNotMatch(json.reply, /Por favor escolha uma das datas/);
+
+  conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'MENU');
+  assert.deepEqual(conv.context, {});
+});
+
+test('"esquece" e "não tá dando" também saem do fluxo (equivalentes)', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phoneEsquece = '5531977000033';
+  await processMessage(phoneEsquece, 'Quero fazer manicure');
+  const r1 = await processMessage(phoneEsquece, 'esquece');
+  assert.doesNotMatch(r1.json.reply, /Por favor escolha uma das datas/);
+  const conv1 = await getConv(phoneEsquece);
+  assert.equal(conv1.bot_state, 'MENU');
+
+  const phoneNaoTaDando = '5531977000034';
+  await processMessage(phoneNaoTaDando, 'Quero fazer manicure');
+  const r2 = await processMessage(phoneNaoTaDando, 'não tá dando não viu');
+  assert.doesNotMatch(r2.json.reply, /Por favor escolha uma das datas/);
+  const conv2 = await getConv(phoneNaoTaDando);
+  assert.equal(conv2.bot_state, 'MENU');
+});
+
+// ---------- Reprodução da sequência real do WhatsApp (bug investigado) ----------
+
+test('reprodução real: "Oi quero desmarcar meu agendamentos é sexta feira" identifica cancelamento, não agendamento', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000035';
+  await createClientAndAppointment(phone, SERVICE_ESCOVA_ID, `${futureWeekdayISO(27)}T14:00:00-03:00`, 60);
+
+  await processMessage(phone, 'oi'); // INICIO -> MENU
+  const { json } = await processMessage(phone, 'Oi quero desmarcar meu agendamentos é sexta feira');
+
+  assert.doesNotMatch(json.reply, /Qual serviço você gostaria/);
+
+  const conv = await getConv(phone);
+  assert.notEqual(conv.bot_state, 'AGUARDANDO_SERVICO');
+  assert.ok(
+    ['AGUARDANDO_CANCELAMENTO', 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO'].includes(conv.bot_state),
+    `esperava um estado de cancelamento, veio ${conv.bot_state}`
+  );
 });
