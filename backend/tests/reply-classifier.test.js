@@ -22,6 +22,15 @@ test('confirmação de agendamento: frases ambíguas não confirmam nem negam', 
   ]);
 });
 
+test('confirmação de agendamento: "pode ser 15h"/"pode ser 14:30" são correção de horário, não confirmação', () => {
+  expectAll('booking', 'unknown', [
+    'pode ser 15h',
+    'pode ser 14:30',
+    'pode ser as 15h',
+    'pode 15h',
+  ]);
+});
+
 test('confirmação de agendamento: respostas afirmativas confirmam', () => {
   expectAll('booking', 'yes', ['sim', 'Sim!', 'sim, pode', 'SIM', 's', 'ss', 'ok 👍', 'confirmo', 'pode sim', 'isso']);
 });

@@ -210,7 +210,10 @@ export function extractTimeMention(rawText) {
     if (hour <= 23 && minute <= 59) candidates.set(`${hour}:${minute}`, { hour, minute });
   }
 
-  for (const m of t.matchAll(/\b(\d{1,2})h\b/g)) {
+  // Exclui "depois das 14h"/"antes das 14h"/"apos 14h" — esses já são
+  // período (extractPeriodMention), não um horário exato; sem essa
+  // exclusão, "14h" ali seria contado como candidato também.
+  for (const m of t.matchAll(/(?<!das )(?<!apos )\b(\d{1,2})h\b/g)) {
     const hour = Number(m[1]);
     if (hour <= 23) candidates.set(`${hour}:0`, { hour, minute: 0 });
   }
@@ -220,8 +223,27 @@ export function extractTimeMention(rawText) {
     if (hour != null) candidates.set(`${hour}:30`, { hour, minute: 30 });
   }
 
+  // "às 10" (sem "h"/":"/"e meia") — só conta como horário quando vem
+  // logo depois de "às/as", para não confundir um número solto qualquer
+  // (preço, telefone, número de menu) com horário.
+  for (const m of t.matchAll(/\bas\s+(\d{1,2})\b(?!\s*[:h])/g)) {
+    const hour = Number(m[1]);
+    if (hour <= 23) candidates.set(`${hour}:0`, { hour, minute: 0 });
+  }
+
   if (candidates.size !== 1) return null;
-  return [...candidates.values()][0];
+  const only = [...candidates.values()][0];
+
+  // "10:30 ou 11" — uma segunda hora solta ligada por "ou" (sem
+  // separador explícito, então não vira candidato pelos padrões acima)
+  // ainda conta como ambiguidade: não decide sozinho entre as duas.
+  const orMatch = t.match(/\bou\s+(\d{1,2})\b/) || t.match(/\b(\d{1,2})\s+ou\b/);
+  if (orMatch) {
+    const otherHour = Number(orMatch[1]);
+    if (otherHour !== only.hour) return null;
+  }
+
+  return only;
 }
 
 /**
@@ -232,11 +254,24 @@ export function extractTimeMention(rawText) {
  */
 export function extractSlots(rawText, services, now = new Date()) {
   const slots = {};
+  const t = normalize(rawText);
 
-  const intent = extractIntent(rawText);
-  if (intent) slots.intent = intent;
-
+  let intent = extractIntent(rawText);
   const service = extractServiceMention(rawText, services);
+
+  // "Quero manicure sexta às 14:30" — sem verbo explícito ("fazer"/
+  // "marcar"/"agendar"), extractIntent sozinho não reconheceria a
+  // intenção. Mas se um serviço de verdade foi identificado JUNTO com uma
+  // palavra de desejo, e a frase não é sobre cancelar, é seguro inferir
+  // que a intenção é agendar — sem isso, qualquer menção crua ao nome de
+  // um serviço ("cancelar minha manicure") poderia acabar virando um
+  // novo agendamento por engano, que é exatamente o que essa checagem
+  // extra evita.
+  if (!intent && service && /\b(quero|queria|gostaria de|pode ser|da pra|posso)\b/.test(t) && !/\b(cancelar|cancela)\b/.test(t)) {
+    intent = 'agendar';
+  }
+
+  if (intent) slots.intent = intent;
   if (service) slots.serviceId = service.id;
 
   const date = extractDateMention(rawText, now);
@@ -244,6 +279,12 @@ export function extractSlots(rawText, services, now = new Date()) {
 
   const period = extractPeriodMention(rawText);
   if (period) slots.period = period;
+
+  // Horário exato (ex.: "às 14:30") é mais específico que um período —
+  // quem consome os slots trata `time` com prioridade sobre `period`
+  // quando os dois aparecem juntos (ex.: "sexta à tarde às 14h").
+  const time = extractTimeMention(rawText);
+  if (time) slots.time = time;
 
   return slots;
 }

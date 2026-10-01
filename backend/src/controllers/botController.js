@@ -221,11 +221,46 @@ function filterSlotsByPeriod(slots, period) {
   });
 }
 
+// Monta a mensagem de confirmação final (mesmo formato de sempre, usado em
+// AGUARDANDO_HORARIO) direto a partir de um dia + hora exata já conhecidos,
+// revalidando a disponibilidade de verdade (checkSlotAvailability) — nunca
+// confirma nem "inventa" um horário sem essa checagem. Retorna null se o
+// horário pedido não estiver disponível (quem chama decide o fallback).
+async function tryDirectBooking(professionalId, service, dateStr, timeMention) {
+  if (!dateStr || !timeMention) return null;
+  const naive = `${dateStr}T${String(timeMention.hour).padStart(2, '0')}:${String(timeMention.minute).padStart(2, '0')}:00`;
+  const check = await checkSlotAvailability(professionalId, service.id, naive);
+  if (!check.available) return null;
+
+  return {
+    message: `Perfeito! 😊 Vou confirmar:\n\n📌 Serviço: ${service.name}\n📅 Data: ${formatDateBR(new Date(check.startsAt))}\n⏰ Hora: ${formatTimeBR(new Date(check.startsAt))}\n💰 Valor: ${formatPrice(service.price_cents)}\n\nConfirma? (sim / não)`,
+    botState: 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
+    context: {
+      serviceId: service.id,
+      serviceName: service.name,
+      serviceDuration: service.duration_minutes,
+      servicePrice: service.price_cents,
+      selectedDate: dateStr,
+      selectedSlot: check.startsAt,
+      abandonment_notified: false,
+    },
+  };
+}
+
 // Monta a lista de dias disponíveis para um serviço, já formatada como
-// resposta + daysMap (mesmo formato usado em AGUARDANDO_SERVICO). Se um
-// slot de data já foi reconhecido e aquele dia específico tem horários,
-// pula direto para a lista de horários daquele dia (usando buildTimeReply).
+// resposta + daysMap (mesmo formato usado em AGUARDANDO_SERVICO). Se
+// serviço + data + horário exato já foram reconhecidos juntos (ex.:
+// "sexta às 14:30"), tenta ir direto para a confirmação (tryDirectBooking),
+// sem listar nada. Se só a data foi reconhecida, pula para a lista de
+// horários daquele dia (buildTimeReply), já filtrada por período se dito.
 async function buildDaysReply(professionalId, service, slots) {
+  if (slots?.date && slots?.time) {
+    const direct = await tryDirectBooking(professionalId, service, slots.date, slots.time);
+    if (direct) return direct;
+    // Horário pedido não está disponível nesse dia: cai no fluxo normal
+    // abaixo (lista de horários reais daquele dia), sem inventar nada.
+  }
+
   const days = await getAvailableDaysWithSlots(professionalId, service.duration_minutes);
   if (days.length === 0) {
     return {
@@ -562,34 +597,13 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    // Load available days
-    const days = await getAvailableDaysWithSlots(professionalId, chosen.duration_minutes);
-    if (days.length === 0) {
-      return reply(
-        `No momento não há horários disponíveis para ${chosen.name}. Tente novamente mais tarde ou entre em contato diretamente. 😊`,
-        'MENU',
-        {}
-      );
-    }
-
-    const daysMap = {};
-    const lines = days.map((d, i) => {
-      daysMap[String(i + 1)] = d.date.toISOString().split('T')[0];
-      return `${i + 1}. ${formatDateBR(d.date)}`;
-    });
-
-    return reply(
-      `Ótimo! ${chosen.name} 💅\n\nEscolha a data:\n\n${lines.join('\n')}\n\nDigite o número da data.`,
-      'AGUARDANDO_DATA',
-      {
-        serviceId: chosen.id,
-        serviceName: chosen.name,
-        serviceDuration: chosen.duration_minutes,
-        servicePrice: chosen.price_cents,
-        daysMap,
-        abandonment_notified: false,
-      }
-    );
+    // Serviço escolhido (por número, nome ou sinônimo) — reaproveita o
+    // mesmo caminho do atalho contextual: se a mensagem também já trazia
+    // data/período/horário (ex.: cliente digitou "2" e a mensagem anterior
+    // tinha "sexta às 14h" preservado em ctx.slots), pula direto pra lá em
+    // vez de sempre listar os dias de novo.
+    const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+    return reply(built.message, built.botState, built.context);
   }
 
   // ---------- AGUARDANDO_DATA ----------
@@ -610,6 +624,17 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       // a disponibilidade real daquele dia em vez de inventar horário.
       const mentionedDate = extractDateMention(rawText);
       if (mentionedDate) {
+        // Data + horário exato na mesma mensagem (ex.: "sexta às 14:30")
+        // pula direto para a confirmação, sem listar horário nenhum.
+        const mentionedTime = extractTimeMention(rawText);
+        if (mentionedTime) {
+          const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+          const direct = await tryDirectBooking(professionalId, service, mentionedDate.toISOString().split('T')[0], mentionedTime);
+          if (direct) {
+            return reply(direct.message, direct.botState, direct.context);
+          }
+        }
+
         const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
         const period = extractPeriodMention(rawText) || ctx.slots?.period;
         const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, period) : null;
@@ -676,75 +701,89 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     let slotIso = slotsMap[text];
 
     if (!slotIso) {
-      // Correção de período dita em texto livre (ex.: "Pode ser qualquer
-      // horário à tarde") — refiltra os horários do MESMO dia já escolhido,
-      // sem consultar de novo o banco além do necessário.
-      const period = extractPeriodMention(rawText);
-      if (period && ctx.selectedDate) {
-        const d = new Date(ctx.selectedDate + 'T12:00:00-03:00');
-        const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
-        const timeReply = buildTimeReply(d, daySlots, ctx, period);
+      const mentionedDate = extractDateMention(rawText);
+      const mentionedTime = extractTimeMention(rawText);
+
+      // Troca de dia dita nesta etapa (ex.: "sexta às 14h" ou só "sábado é
+      // melhor") — verificada ANTES do período/hora do dia atual, senão
+      // "sexta às 14h" tentaria achar 14h na grade do dia errado.
+      if (mentionedDate) {
+        const mentionedDateStr = mentionedDate.toISOString().split('T')[0];
+        if (mentionedTime) {
+          const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+          const direct = await tryDirectBooking(professionalId, service, mentionedDateStr, mentionedTime);
+          if (direct) {
+            return reply(direct.message, direct.botState, direct.context);
+          }
+        }
+
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
+        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
         if (timeReply) {
           return reply(timeReply.message, timeReply.botState, timeReply.context);
         }
-        return reply(
-          `Não há horários nesse período para essa data. 😕 Escolha um dos horários abaixo:\n\n${Object.entries(slotsMap)
-            .map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`)
-            .join('\n')}`,
-          'AGUARDANDO_HORARIO',
-          ctx
-        );
-      }
+      } else {
+        // Sem troca de dia: período ou horário exato dentro do MESMO dia
+        // já escolhido.
 
-      // Horário exato dito em texto livre (ex.: "10:30", "10h30", "às
-      // 10:30", "10 e meia", "dez e meia") — seleciona direto a opção
-      // correspondente na grade já oferecida, sem exigir o número. Só age
-      // quando o texto não foi reconhecido como período acima (então "18h"
-      // sozinho seleciona o horário das 18h, mas "depois das 18h" continua
-      // sendo tratado como período, igual antes).
-      const timeMention = extractTimeMention(rawText);
-      if (timeMention) {
-        const matches = Object.entries(slotsMap).filter(([, iso]) => {
-          const d = new Date(iso);
-          const [h, m] = d
-            .toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false })
-            .split(':')
-            .map(Number);
-          return h === timeMention.hour && m === timeMention.minute;
-        });
-        if (matches.length === 1) {
-          slotIso = matches[0][1];
-        } else if (matches.length === 0) {
-          // Horário reconhecido, mas fora da grade oferecida — explica e
-          // mostra as opções válidas, sem inventar nenhum horário novo.
-          const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+        // Correção de período dita em texto livre (ex.: "Pode ser qualquer
+        // horário à tarde") — refiltra os horários do MESMO dia já
+        // escolhido, sem consultar de novo o banco além do necessário.
+        const period = extractPeriodMention(rawText);
+        if (period && ctx.selectedDate) {
+          const d = new Date(ctx.selectedDate + 'T12:00:00-03:00');
+          const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
+          const timeReply = buildTimeReply(d, daySlots, ctx, period);
+          if (timeReply) {
+            return reply(timeReply.message, timeReply.botState, timeReply.context);
+          }
           return reply(
-            `Esse horário não está entre os disponíveis. 😕 Escolha um destes:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+            `Não há horários nesse período para essa data. 😕 Escolha um dos horários abaixo:\n\n${Object.entries(slotsMap)
+              .map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`)
+              .join('\n')}`,
             'AGUARDANDO_HORARIO',
             ctx
           );
         }
-        // matches.length > 1 não deveria acontecer numa grade de 30 em 30
-        // minutos, mas por segurança cai no fluxo normal abaixo sem
-        // selecionar nada sozinho.
+
+        // Horário exato dito em texto livre (ex.: "10:30", "10h30", "às
+        // 10:30", "10 e meia", "dez e meia") — seleciona direto a opção
+        // correspondente na grade já oferecida, sem exigir o número. Só
+        // age quando o texto não foi reconhecido como período acima
+        // (então "18h" sozinho seleciona o horário das 18h, mas "depois
+        // das 18h" continua sendo tratado como período, igual antes).
+        if (mentionedTime) {
+          const matches = Object.entries(slotsMap).filter(([, iso]) => {
+            const d = new Date(iso);
+            const [h, m] = d
+              .toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false })
+              .split(':')
+              .map(Number);
+            return h === mentionedTime.hour && m === mentionedTime.minute;
+          });
+          if (matches.length === 1) {
+            slotIso = matches[0][1];
+          } else if (matches.length === 0) {
+            // Horário reconhecido, mas fora da grade oferecida — explica e
+            // mostra as opções válidas, sem inventar nenhum horário novo.
+            const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+            return reply(
+              `Esse horário não está entre os disponíveis. 😕 Escolha um destes:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+              'AGUARDANDO_HORARIO',
+              ctx
+            );
+          }
+          // matches.length > 1 não deveria acontecer numa grade de 30 em
+          // 30 minutos, mas por segurança cai no fallback abaixo sem
+          // selecionar nada sozinho.
+        }
       }
 
       // A partir daqui, só continua se nenhum horário exato foi resolvido
       // acima — se foi, `slotIso` já está preenchido e o fluxo segue
       // direto para a revalidação de disponibilidade logo abaixo.
       if (!slotIso) {
-        // Correção de data dita nesta etapa (ex.: "sábado é melhor" direto
-        // na escolha de horário, sem passar de novo pela lista de datas).
-        const mentionedDate = extractDateMention(rawText);
-        if (mentionedDate) {
-          const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
-          const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
-          const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
-          if (timeReply) {
-            return reply(timeReply.message, timeReply.botState, timeReply.context);
-          }
-        }
-
         const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
         return reply(
           `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
@@ -848,8 +887,37 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
+    // Correção sem precisar responder sim/não primeiro (ex.: "Na verdade
+    // pode ser 15h" ou "prefiro sábado") — mantém serviço e o resto do
+    // contexto, só troca o horário/data proposto. Nunca confirma sozinho:
+    // sempre revalida a disponibilidade e volta a pedir "sim/não".
+    const correctionTime = extractTimeMention(rawText);
+    if (correctionTime && ctx.selectedDate) {
+      const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+      const direct = await tryDirectBooking(professionalId, service, ctx.selectedDate, correctionTime);
+      if (direct) {
+        return reply(direct.message, direct.botState, direct.context);
+      }
+      const horaAtual = formatTimeBR(new Date(ctx.selectedSlot));
+      return reply(
+        `Esse horário não está disponível nesse dia. 😕 Quer tentar outro horário, ou confirmo o que já tínhamos combinado (${horaAtual})? Responda *sim* para confirmar ou me diga outro horário.`,
+        'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
+        ctx
+      );
+    }
+
+    const correctionDate = extractDateMention(rawText);
+    if (correctionDate) {
+      const daySlots = await getAvailableSlots(professionalId, correctionDate, ctx.serviceDuration);
+      const period = extractPeriodMention(rawText) || ctx.slots?.period;
+      const timeReply = daySlots.length > 0 ? buildTimeReply(correctionDate, daySlots, ctx, period) : null;
+      if (timeReply) {
+        return reply(timeReply.message, timeReply.botState, timeReply.context);
+      }
+    }
+
     return reply(
-      `Por favor responda *sim* para confirmar ou *não* para cancelar. 😊`,
+      `Por favor responda *sim* para confirmar, *não* para cancelar, ou me diga outro horário/data se quiser mudar. 😊`,
       'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
       ctx
     );

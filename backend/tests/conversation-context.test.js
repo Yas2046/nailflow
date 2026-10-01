@@ -148,6 +148,14 @@ test('extractTimeMention: mensagem ambígua (dois horários diferentes) não res
   assert.equal(extractTimeMention('10:30 ou 11:00, tanto faz'), null);
 });
 
+test('extractTimeMention: "10:30 ou 11, qualquer um" — segunda hora solta ligada por "ou" também é ambígua', () => {
+  assert.equal(extractTimeMention('10:30 ou 11, qualquer um serve'), null);
+});
+
+test('extractTimeMention: "às 10" (sem "h") reconhece hora cheia', () => {
+  assert.deepEqual(extractTimeMention('amanhã às 10'), { hour: 10, minute: 0 });
+});
+
 test('extractTimeMention: não confunde número de telefone com horário', () => {
   assert.equal(extractTimeMention('meu numero e 5531999999999'), null);
 });
@@ -195,4 +203,19 @@ test('extractSlots: "Quero fazer escova e unha" — ambiguidade não vira servi�
   // recusar escolher por adivinhação (ver comentário da função).
   const slots = extractSlots('Quero fazer escova e unha', SERVICES, MONDAY);
   assert.equal(slots.serviceId, undefined);
+});
+
+test('extractSlots: "Quero manicure sexta às 14:30" reconhece serviço + data + horário exato na mesma mensagem', () => {
+  const slots = extractSlots('Quero manicure sexta às 14:30', SERVICES, MONDAY);
+  assert.equal(slots.intent, 'agendar');
+  assert.equal(slots.serviceId, 'svc-manicure');
+  assert.equal(slots.date, '2026-10-09');
+  assert.deepEqual(slots.time, { hour: 14, minute: 30 });
+});
+
+test('extractSlots: "sexta à tarde às 14h" reconhece data + período + horário juntos (horário é mais específico)', () => {
+  const slots = extractSlots('sexta à tarde às 14h', SERVICES, MONDAY);
+  assert.equal(slots.date, '2026-10-09');
+  assert.deepEqual(slots.period, { afterMinutes: 12 * 60, beforeMinutes: 18 * 60 });
+  assert.deepEqual(slots.time, { hour: 14, minute: 0 });
 });

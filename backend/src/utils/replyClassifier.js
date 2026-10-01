@@ -36,6 +36,12 @@ export function normalizeReply(text) {
     .trim();
 }
 
+// Um horário junto da resposta ("pode ser 15h", "pode ser 14:30") não é
+// confirmação — é correção de horário (ver conversationContext.js). Olha
+// o texto original, antes do normalizeReply tirar os separadores (":"),
+// senão "14:30" viraria "14 30" e perderia o formato de hora.
+const TIME_IN_REPLY = /\d{1,2}\s*(?:h\d{0,2}|:\d{2})\b/i;
+
 /** @returns {'yes' | 'no' | 'unknown'} */
 export function classifyReply(text, kind) {
   const rules = RULES[kind];
@@ -48,6 +54,7 @@ export function classifyReply(text, kind) {
 
   const words = norm.split(' ');
   if (words.length > MAX_WORDS) return 'unknown';
+  if (TIME_IN_REPLY.test(text)) return 'unknown';
   const [first, ...rest] = words;
 
   if (rules.yes.includes(first) && !words.some((w) => NEGATIONS.has(w))) return 'yes';

@@ -356,6 +356,141 @@ test('horário em linguagem natural preserva serviço, data e período já conhe
   assert.deepEqual(conv.context.slots?.period, periodoAntes);
 });
 
+// ---------- Reserva direta: serviço + data + horário numa mensagem só ----------
+
+test('"Quero manicure sexta às 14:30" pula direto para a confirmação, sem listar data nem horário', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000015';
+  const { json } = await processMessage(phone, 'Quero manicure sexta às 14:30');
+  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /14:30/);
+  assert.doesNotMatch(json.reply, /Escolha a data/);
+  assert.doesNotMatch(json.reply, /Horários disponíveis/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+  assert.equal(conv.context.serviceName, 'Manicure');
+  const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(selected, '14:30');
+});
+
+test('"sexta às 14:30" dito em AGUARDANDO_DATA também pula direto para a confirmação', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000016';
+  const first = await processMessage(phone, 'Quero fazer manicure');
+  assert.match(first.json.reply, /Escolha a data/);
+
+  const { json } = await processMessage(phone, 'sexta às 14:30');
+  assert.match(json.reply, /Vou confirmar/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+});
+
+test('horário pedido junto com a data, mas indisponível, não inventa nada (cai na lista real do dia)', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000017';
+  // 3h da madrugada: fora do expediente (08:00-20:00) em qualquer dia.
+  const { json } = await processMessage(phone, 'Quero manicure sexta às 3h');
+  assert.doesNotMatch(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Horários disponíveis/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_HORARIO');
+});
+
+// ---------- Correção dentro da confirmação ("Na verdade pode ser 15h") ----------
+
+test('correção de horário dentro de AGUARDANDO_CONFIRMACAO_AGENDAMENTO troca o horário sem perder o serviço/data', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000018';
+  await processMessage(phone, 'Quero manicure sexta às 14:30');
+  let conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+  const servicoAntes = conv.context.serviceName;
+  const dataAntes = conv.context.selectedDate;
+
+  const { json } = await processMessage(phone, 'Na verdade pode ser 15h');
+  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /15:00/);
+
+  conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+  assert.equal(conv.context.serviceName, servicoAntes);
+  assert.equal(conv.context.selectedDate, dataAntes);
+  const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(selected, '15:00');
+});
+
+test('"sim" continua confirmando normalmente depois da correção de horário', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000019';
+  await processMessage(phone, 'Quero manicure sexta às 14:30');
+  await processMessage(phone, 'Na verdade pode ser 15h');
+  const { json } = await processMessage(phone, 'sim');
+  assert.match(json.reply, /Prontinho/);
+});
+
+test('"pode ser 15h" (frase curta, sem "na verdade") também é tratada como correção, não como confirmação', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  // Usa sábado (em vez de sexta) para não disputar o mesmo horário de
+  // outros testes deste arquivo que já confirmam um agendamento real na
+  // sexta, já que todos compartilham o mesmo profissional/agenda.
+  const phone = '5531977000022';
+  await processMessage(phone, 'Quero manicure sábado às 11:00');
+  const { json } = await processMessage(phone, 'pode ser 12h');
+  // Não pode ter confirmado o agendamento original (11:00) por engano.
+  assert.doesNotMatch(json.reply, /Prontinho/);
+  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /12:00/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+  const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(selected, '12:00');
+});
+
+test('correção de horário com "pode ser 14:30" seguida de "confirmo" cria o agendamento no novo horário', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000023';
+  await processMessage(phone, 'Quero manicure sábado às 13h');
+  await processMessage(phone, 'pode ser 14:30');
+  const { json } = await processMessage(phone, 'confirmo');
+  assert.match(json.reply, /Prontinho/);
+
+  const normalizedPhone = phone.replace(/^(\d{4})9(\d{8})$/, '$1$2');
+  const { rows } = await pool.query(
+    `SELECT starts_at FROM appointments a JOIN clients c ON c.id = a.client_id
+     WHERE c.professional_id = $1 AND c.phone = $2`,
+    [PROF_ID, normalizedPhone]
+  );
+  assert.equal(rows.length, 1);
+  const horario = new Date(rows[0].starts_at).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(horario, '14:30');
+});
+
+// ---------- Ambiguidade explícita não escolhe sozinha ----------
+
+test('"10:30 ou 11, qualquer um" em AGUARDANDO_HORARIO pede esclarecimento em vez de escolher', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000020';
+  await reachAguardandoHorario(phone);
+  const { json } = await processMessage(phone, '10:30 ou 11, qualquer um serve');
+  assert.doesNotMatch(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /Por favor escolha um dos horários/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_HORARIO');
+});
+
 // ---------- 7. Fluxo antigo (100% numérico) continua funcionando ponta a ponta ----------
 
 test('fluxo antigo por números (menu → serviço → data → horário → confirmação) cria o agendamento normalmente', async (t) => {
@@ -407,4 +542,39 @@ test('isolamento: mensagem contextual em uma instância nunca cria contexto/esta
   for (const row of rows) {
     assert.equal(row.professional_id, PROF_ID);
   }
+});
+
+// ---------- 9. Fluxos existentes de cancelamento continuam intactos ----------
+
+test('fluxo de cancelamento (menu → listar → confirmar) continua funcionando, sem interferência do motor de contexto', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000021';
+  // Cria um agendamento real primeiro, pelo fluxo normal.
+  await processMessage(phone, 'oi');
+  await processMessage(phone, '1');
+  await processMessage(phone, '1');
+  await processMessage(phone, '1');
+  await processMessage(phone, '1');
+  const bookReply = await processMessage(phone, 'sim');
+  assert.match(bookReply.json.reply, /Prontinho/);
+
+  // Agora cancela.
+  const menuReply = await processMessage(phone, '2');
+  assert.match(menuReply.json.reply, /Qual deseja cancelar/);
+
+  const listReply = await processMessage(phone, '1');
+  assert.match(listReply.json.reply, /Confirma o cancelamento/);
+
+  const cancelReply = await processMessage(phone, 'sim');
+  assert.match(cancelReply.json.reply, /cancelado com sucesso/);
+
+  const normalizedPhone = phone.replace(/^(\d{4})9(\d{8})$/, '$1$2');
+  const { rows } = await pool.query(
+    `SELECT a.status FROM appointments a JOIN clients c ON c.id = a.client_id
+     WHERE c.professional_id = $1 AND c.phone = $2`,
+    [PROF_ID, normalizedPhone]
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'cancelado');
 });
