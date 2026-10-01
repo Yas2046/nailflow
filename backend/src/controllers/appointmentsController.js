@@ -126,7 +126,7 @@ export async function createAppointment(req, res, next) {
       [req.professionalId, data.clientId, data.serviceId, new Date(check.startsAt), new Date(check.endsAt), data.status, data.notes ?? null, serviceRows[0].price_cents]
     );
 
-    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
+    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
     res.status(201).json(toDto(full[0]));
   } catch (err) {
     if (err instanceof z.ZodError) return next(new HttpError(400, 'Dados de agendamento inválidos.'));
