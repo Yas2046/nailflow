@@ -1,8 +1,40 @@
 # NailFlow — Checklist Geral do Projeto
 
-> Consolida, desde o início do projeto até 2026-09-29, o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
+> Consolida, desde o início do projeto até 2026-10-01, o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
 > Legenda: `[x]` concluído · `[~]` parcialmente concluído · `[ ]` pendente/não feito.
 > Fonte: documentos em `docs/` e histórico de commits. Não repete detalhe técnico já coberto nesses documentos — só aponta para eles.
+
+---
+
+## 0. Auditoria geral de fechamento — 2026-10-01
+
+> Auditoria de ponta a ponta (sem expansão de escopo, sem novas funcionalidades) para identificar o que falta para considerar a versão atual do sistema funcional. Commit das correções: `5fea86c`. Detalhe completo no relatório da sessão; aqui só o resumo por bloco.
+
+- [x] **Autenticação/Profissionais** — login/logout, sessão por cookie `httpOnly`, bloqueio de profissional revoga sessão ativa imediatamente (`token_version`), isolamento por `professional_id` íntegro, nenhum acesso cruzado entre profissionais encontrado
+- [x] **Segurança/isolamento** — nenhum IDOR encontrado (todo update/delete/get-by-id auditado filtra por `professional_id`); middlewares de auth aplicados em todas as rotas que deveriam; nenhum endpoint vaza dado sensível (`password_hash` etc.)
+- [x] **Agenda** — criação/edição/cancelamento, prevenção de conflito em duas camadas (checagem na API + `EXCLUDE` no Postgres), timezone tratado, recorrência ponta a ponta (criação em lote, cancelamento de ocorrência única vs série)
+- [x] **Clientes** — CRUD, histórico, tags, isolamento por profissional, íntegros
+- [x] **Serviços** — CRUD, snapshot de preço correto no momento do agendamento, visibilidade no WhatsApp (`available_on_whatsapp`) respeitada tanto pelo bot quanto pela página pública
+- [x] **Dashboard** — métricas conferem com dados reais, sem valor mockado/hardcoded
+- [x] **Agendamento e cancelamento** (painel + bot) — fluxos íntegros após os últimos deploys, sem regressão encontrada
+- [x] **Bot V1 (WhatsApp)** — considerado funcional e **não alterado** nesta rodada; confirmado que o backend em produção roda o commit correto, `conversation_states` isolado por `professional_id`, nenhuma quebra encontrada após os deploys recentes
+- [x] **WhatsApp/Evolution/n8n** — Evolution API íntegra e alcançável, webhooks do n8n configurados com URLs reais (não placeholder), fluxo de conexão/QR Code coerente no código
+- [x] **Página pública / link de agendamento** — fluxo testado em produção (200 em `/info`, `/services`, `/availability` e na página real), integração com a agenda íntegra
+- [x] **Infraestrutura** — PM2 (`nailflow-backend` e `n8n`) online e estáveis, `/health` 200, build do frontend atualizado, `nginx -t` OK, certificado TLS válido, Evolution/n8n no ar
+- [x] **Correções aplicadas na auditoria de 2026-10-01** (ver seção 3 e 7):
+  - `createBlockedTime` aceitava `endsAt <= startsAt` (bloqueio invertido/vazio) — corrigido, agora rejeita com 400 (`5fea86c`)
+  - `deleteService` retornava erro genérico de FK ao excluir serviço com agendamentos vinculados — corrigido, agora retorna 409 com mensagem clara orientando a desativar em vez de excluir (`5fea86c`)
+- [ ] **Pendências de produto identificadas, deixadas deliberadamente para depois** (decisão do usuário, não bug):
+  - Exclusão de cliente (não existe endpoint `DELETE`, provavelmente exigiria soft-delete)
+  - Registro de nova profissional não faz auto-login (precisa chamar `/login` separadamente depois)
+  - Mover horário/serviço de uma série recorrente inteira (`updateFromNow` só altera status/notes)
+  - Configurações de notificação — endpoint dedicado não encontrado/implementado
+
+### 0.1 Rodadas posteriores à auditoria (2026-10-01, mesma data)
+
+- [x] **F9 — notificação da profissional ao receber agendamento pela página pública** (commits `2d17659` código + workflow do n8n editado manualmente na interface): implementação concluída — evento `appointment.public_created` disparado pelo backend após o `COMMIT` do agendamento (fire-and-forget, falha no envio não desfaz o agendamento), workflow "NailFlow — Notificações" do n8n estendido para reconhecer o evento e chamar a Evolution API. Fluxo backend → n8n → Evolution **validado ponta a ponta em produção** (execução registrada com sucesso até a chamada à Evolution). **Entrega real da mensagem no WhatsApp não foi possível validar**: o `phone_whatsapp` cadastrado da profissional de teste é um número placeholder (`5531999999999`), que a Evolution rejeita com `exists: false` — não é um bug de código, é dado de cadastro. Ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md) para o detalhe completo. **Não considerar validado de ponta a ponta até um teste com número real.**
+- [x] **3 bloqueadores visuais de UX corrigidos** (commit `3f039dd`, auditoria de UX de produção): página pública não mostra mais botão/rodapé do WhatsApp quando o autoatendimento está ativo; bug visual de sobreposição no "R$" grande do Dashboard corrigido (fonte do símbolo trocada para sans-serif); pluralização "1 cliente(s) cadastrada(s)" corrigida em Clientes — ver seção 9
+- [x] **Fechamento técnico — limpeza e consistência** (commit `26ae97f`): ~23 arquivos `.bak*` removidos do disco; `N8N_API_KEY`/`N8N_PROFESSIONAL_ID` removidas do `.env` (não usadas); filtro de `professional_id` adicionado ao SELECT pós-criação em `createAppointment` (defesa em profundidade); rate limiting adicionado em `/admin/professionals/*` — ver seções 3 e 12
 
 ---
 
@@ -60,8 +92,11 @@
 - [x] Exclusão segura de profissional: snapshot pré-exclusão, exclusão sincronizada da instância Evolution, transação SQL (ver seção 4)
 - [x] Audit log de ações administrativas (ver seção 4)
 - [x] Evolution API: exposição pública restrita por IP no Nginx, logs reduzidos, imagem Docker fixada por digest
+- [x] Validação de intervalo em bloqueios de horário (`createBlockedTime` rejeita `endsAt <= startsAt`, corrigido em 2026-10-01, commit `5fea86c`)
+- [x] Mensagem clara (409) ao tentar excluir serviço com agendamentos vinculados, em vez do erro genérico de FK (corrigido em 2026-10-01, commit `5fea86c`)
+- [x] Rate limiting nos endpoints administrativos (`/admin/professionals/*`) — 100 req/5min por IP, mesmo padrão de `/auth/login`/`register` (corrigido em 2026-10-01, commit `26ae97f`)
+- [x] Consistência de isolamento: SELECT pós-criação em `createAppointment` passou a filtrar também por `professional_id` (defesa em profundidade; não era explorável, mas destoava do padrão do resto do arquivo) — corrigido em 2026-10-01, commit `26ae97f`
 - [~] Dependências do frontend: `npm audit` acusa 2 vulnerabilidades **moderadas** em `react-router-dom`; avaliadas como não exploráveis no uso atual do app, correção (bump major) adiada por decisão registrada
-- [ ] Rate limiting nos endpoints administrativos (`/admin/professionals/*`) — não implementado, risco considerado baixo (já exige `is_admin`)
 - [ ] SSH restrito só a chave (hoje aceita senha também) — recomendado, não aplicado
 - [ ] PM2 rodando como usuário dedicado (não-root) — ver seção 1
 
@@ -94,7 +129,9 @@
 - [x] Antecedência máxima de agendamento (`booking_horizon_days`) — hoje controla só o agendamento **externo** (WhatsApp + página pública)
 - [x] Agenda interna sem limite de antecedência (navegação e criação livres — separado do controle externo acima)
 - [x] Edição de agendamento diretamente pela ficha da cliente (histórico)
-- [x] Página pública de agendamento por slug (`/p/:slug`)
+- [x] Página pública de agendamento por slug (`/p/:slug`) — fluxo completo de autoatendimento (serviço → horário → dados → criação), não mais só uma vitrine que direciona pro WhatsApp (ver seção 14.8)
+- [x] Disponibilidade pública filtrada por serviço (`serviceId` opcional em `GET /public/:slug/availability`), com rejeição de `serviceId` inválido/de outro profissional/inativo/oculto (`400` genérico) — validado em produção em 2026-09-30
+- [x] Auditoria de segurança do fluxo de criação de agendamento público (2026-09-30): isolamento por `slug`/`professional_id` confirmado por teste real; backend não confia em preço/duração/`professionalId`/`clientId`/`status` enviados pelo cliente; horário sempre revalidado no backend; proteção contra double-booking em duas camadas (pré-checagem + `EXCLUDE` constraint do Postgres); concorrência e rollback cobertos por teste automatizado — nenhuma vulnerabilidade confirmada (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
 
 ---
 
@@ -135,9 +172,13 @@
 - [x] Regras de serviços/agendamentos oferecidas pelo bot respeitam expediente, fechamentos, antecedência máxima e visibilidade no WhatsApp por serviço
 - [x] Segurança da integração: `instance` obrigatório em todas as rotas do bot (sem fallback), CORS restrito em `/bot`, isolamento de `clientId` por profissional
 - [x] Teste real ponta a ponta (2026-09-18): mensagem → bot → agendamento, validado com números reais
+- [x] Atalhos naturais de entrada para "ver agendamentos" e "cancelar" (com casamento de pista por data/dia da semana/serviço), troca de intenção no meio de um fluxo de agendamento/cancelamento, saída global de desistência ("desisto", "deixa pra lá" etc. reseta qualquer estado `AGUARDANDO_*` para o menu) — commit `dcd5316`
+- [x] Bug real corrigido: regex de "agendar" do estado `MENU` sem limite de palavra interpretava "desmarcar" como "agendar" (travava a conversa); "desmarcar"/"desmarca" agora reconhecidos como sinônimos de cancelar em todos os pontos de reconhecimento — encontrado e corrigido em 2026-10-01, commit `dcd5316` (reprodução do bug real registrada em teste automatizado)
+- [x] F9 — notificação da profissional ao receber agendamento pela página pública: implementação e fluxo backend→n8n→Evolution concluídos e validados; entrega real da mensagem ainda não confirmada (ver seção 0.1 e [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [~] Conexão WhatsApp via painel (QR pelo sistema): implementada em código, mas **não testada completamente em produção** (a instância principal já estava conectada quando a feature ficou pronta)
-- [ ] Validação prática completa após a reconexão mais recente: primeira mensagem com o webhook autenticado, agendamento e cancelamento ponta a ponta pelo WhatsApp — instâncias (`chip2`, `chip2-teste`) desconectadas intencionalmente, aguardando autorização para reconectar
-- [ ] Envio real de lembrete e de aviso de abandono após a correção dos crons de 2026-09-27 — corrigidos e validados sem itens, mas nenhum envio real ainda aconteceu (instâncias desconectadas)
+- [x] `chip2` (Camila) reconectado e primeira mensagem real após a reconexão validada (2026-09-30): webhook autenticado (`X-NailFlow-Webhook-Secret`, sem 403), workflow "WhatsApp NailFlow — Definitivo" executado com sucesso, mensagem registrada em `message_history` sem vazamento cross-tenant; envio de teste controlado para a cliente Simone também validado, sem erro
+- [x] Validação prática completa do WhatsApp pós-reconexão (01/10/2026, C2/C3 concluídas): agendamento por linguagem natural (serviço + data + horário em uma mensagem), confirmação e criação do agendamento, cancelamento por data + horário, confirmação e cancelamento real, e retorno ao menu/início após o cancelamento — todos validados com cliente real no WhatsApp
+- [ ] Envio real de lembrete e de aviso de abandono após a correção dos crons de 2026-09-27 — corrigidos e validados sem itens, mas nenhum envio real ainda aconteceu
 
 ---
 
@@ -153,6 +194,10 @@
 - [x] Página pública de agendamento (`/p/:slug`)
 - [x] Tema/Aparência (claro/escuro) e toasts
 - [x] Padrão visual consistente de cards/badges reaproveitado entre páginas (Serviços, Clientes, Admin)
+- [x] Auditoria de UX em produção (2026-10-01, como usuária real: login/Home/Dashboard/Agenda/Clientes/Serviços/Perfil/WhatsApp/página pública/mobile) — 3 bloqueadores visuais encontrados e corrigidos (commit `3f039dd`):
+  - Página pública mostrava botão "Agendar pelo WhatsApp" e rodapé "confirmado diretamente pelo WhatsApp" mesmo com o fluxo de autoatendimento ativo — agora só aparecem quando o autoatendimento não está disponível
+  - "R$" do Faturamento Realizado (Dashboard) renderizava com o glifo do cifrão sobreposto ao "R" na fonte decorativa, em desktop e mobile — corrigido com fonte sans-serif só no símbolo
+  - Pluralização "1 clientes cadastradas" no topo da lista de Clientes, inconsistente com o rodapé da mesma tela — corrigida
 
 ---
 
@@ -173,33 +218,36 @@
 ## 11. Documentação / Git / deploy
 
 - [x] Documentação organizada em `docs/` (arquitetura, infraestrutura, banco, rotas, bot, WhatsApp, n8n, testes, pendências, próximos passos, instalação)
-- [x] Branch de trabalho única: `feat/phase5-register`, sincronizada com `origin`
+- [x] Branch de trabalho única: `feat/phase5-register` — em 2026-10-01 está **8 commits à frente de `origin/feat/phase5-register`** (ainda não enviados, aguardando decisão); 0 commits atrás da origin
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
-- [ ] Integração de `feat/phase5-register` ao `main` — `main` local e `origin/main` divergentes, não contêm V1 nem V2
+- [ ] Integração de `feat/phase5-register` ao `main` — divergência real de histórico confirmada em 2026-10-01: `feat/phase5-register` tem 59 commits que `main` não tem, e `main` tem 1 commit próprio (`985c1f1`, um "phase 0" antigo e abrangente de bot/WhatsApp/multi-tenancy) que não existe em `feat/phase5-register`. Um merge direto não é trivial — exige decisão de como tratar esse commit divergente antes de prosseguir
 - [ ] GitBook — não utilizado neste fluxo de trabalho; nenhuma publicação/sincronização feita
 
 ---
 
 ## 12. Pendências atuais
 
-- [ ] Validação prática completa do WhatsApp (primeira mensagem pós-reconexão, agendamento e cancelamento ponta a ponta) — depende de autorização para reconectar `chip2`
-- [ ] Rate limiting nos endpoints `/admin/professionals/*`
+- [ ] Exclusão de cliente (não existe endpoint `DELETE` em `/clients/:id`; decisão de produto pendente — provável soft-delete, já que `appointments.client_id` é `ON DELETE RESTRICT`) — identificado na auditoria de 2026-10-01
+- [ ] Registro de nova profissional não autentica automaticamente após criar a conta (precisa `/login` separado) — confirmar se é a UX pretendida — identificado na auditoria de 2026-10-01
+- [ ] Mover horário/serviço de uma série recorrente inteira (`updateFromNow` só altera status/notes) — limitação conhecida de v1, documentar para o usuário final
+- [ ] Configurações de notificação (endpoint dedicado) — não localizado/implementado
 - [ ] Advisories moderados do `react-router-dom` (correção adiada — bump major)
-- [ ] Limpeza dos arquivos `.bak*` acumulados em `backend/src/controllers/` (gitignorados, não expostos, mas poluindo o disco)
 - [ ] Retenção dos snapshots de exclusão de profissional depende de haver uma nova exclusão para autopodar (sem cron dedicado) — funcional, mas não 100% automática
 - [ ] Tela de consulta do `admin_audit_log`
 - [ ] Publicar recuperação/troca de senha (depende de conta Brevo/SMTP configurada e autorização)
 - [ ] Migração do PM2 para usuário não-root (backend e n8n)
 - [ ] SSH restrito só a chave
-- [ ] Integração de `feat/phase5-register` ao `main`
-- [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados)
-- [ ] Remover `N8N_API_KEY`/`N8N_PROFESSIONAL_ID` do `.env` (não usadas pelo código)
+- [ ] Integração de `feat/phase5-register` ao `main` — ver divergência de histórico registrada na seção 11
+- [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados) — o workflow "Notificações" também foi editado manualmente na interface em 2026-10-01 (F9) e ainda não foi re-exportado para o repositório
+- [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder que a Evolution rejeita (`exists: false`); falta um teste com número de WhatsApp real para considerar a F9 100% validada
+- [ ] **8 commits locais em `feat/phase5-register` não enviados para `origin`** — identificado em 2026-10-01, aguardando decisão de quando/como fazer push (ver seção 11)
 
 ---
 
 ## 13. Futuro do projeto
 
+- [ ] Sugestão de horários alternativos (`suggestAlternatives`) buscar também em dias seguintes, não só no mesmo dia pedido — identificado na auditoria de 2026-10-01
 - [ ] CRM avançado (segmentação por tag, histórico de conversas exposto na ficha da cliente)
 - [ ] Campanhas de WhatsApp (envio em massa / reativação de clientes inativas)
 - [ ] Módulo Financeiro mais completo (além de Gastos já existente)
@@ -294,14 +342,15 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 
 ### 14.8 Página pública de agendamento / "link de agendamento online"
 
-> A página pública **já existe** hoje (`/p/:slug`, `PaginaPublica.tsx` + `GET /public/:slug/availability`). O que está registrado aqui é a evolução dela para um fluxo comercial completo de autoatendimento — hoje ela é uma vitrine de horários que **encaminha para o WhatsApp**, não fecha o agendamento sozinha.
+> **Atualizado em 2026-09-30 — descrição anterior desta seção estava desatualizada e foi corrigida aqui, não apagada silenciosamente** (ver conflito sinalizado no relatório da sessão). Até 2026-09-29 a página era só uma vitrine de horários que **encaminhava para o WhatsApp**; desde 2026-09-30 ela **fecha o agendamento sozinha**, sem depender do WhatsApp (commits `ec5643b`, `1617db5`, `9f88257`, `adf5164`).
 
 - [x] Link público existe e é compartilhável (URL por `slug`, uma por profissional)
 - [x] Compartilhamento do link (Instagram, WhatsApp etc.) — o link já é uma URL comum, e existe botão de copiar (em Perfil); não há um card/botão de "compartilhar" dedicado nessa própria página pública
 - [x] Cliente vê a profissional/negócio da página (nome do negócio, horários) — cada link já é dedicado a uma profissional específica (via `slug`), não uma escolha entre várias
-- [ ] Cliente escolher o **serviço** desejado — não existe; a página não lista os serviços da profissional
-- [~] Cliente ver **data e horário disponível** — mostra os dias e horários livres dos próximos 6 dias, mas são só informativos (`<span>`, não clicáveis); não é possível selecionar um horário
-- [ ] Cliente informar os **dados necessários** (nome, telefone) — não existe formulário nessa página
-- [ ] Confirmação **criar o agendamento diretamente** na agenda da profissional — não acontece; a página é explícita sobre isso no rodapé ("Os horários são apenas para consulta. O agendamento é confirmado diretamente pelo WhatsApp"), e o botão principal só abre um link `wa.me` para continuar a conversa com o bot
-- [x] Mobile — layout já é mobile-first (coluna única, `max-w-lg`, boa legibilidade em tela pequena)
-- [ ] Revisão futura de aparência, fluxo, estados de erro/sucesso e experiência da cliente **como fluxo comercial de autoatendimento** — hoje só existem os estados básicos (carregando, não encontrado, erro genérico, sem horários); não há uma revisão pensada para venda/conversão
+- [x] Cliente escolher o **serviço** desejado — implementado em 2026-09-30 (`GET /public/:slug/services` + Etapa 1 de `PaginaPublica.tsx`)
+- [x] Cliente ver e **selecionar** data e horário disponível — horários agora clicáveis, filtrados pela duração do serviço escolhido (`serviceId` opcional em `GET /public/:slug/availability`)
+- [x] Cliente informar os **dados necessários** (nome, telefone) — formulário implementado (Etapa 3, commit `9f88257`)
+- [x] Confirmação **cria o agendamento diretamente** — `POST /public/:slug/appointments`, status inicial `pendente`; a página já não depende do WhatsApp para fechar o agendamento (o rodapé antigo mencionando "confirmado diretamente pelo WhatsApp" não reflete mais o fluxo atual)
+- [x] Mobile — layout já é mobile-first (coluna única, `max-w-lg`, boa legibilidade em tela pequena), validado visualmente em produção em 2026-09-30
+- [~] Notificação automática à profissional quando um agendamento público é criado — **implementação concluída em 2026-10-01** (commit `2d17659` + workflow do n8n), fluxo backend→n8n→Evolution validado em produção; **entrega real da mensagem no WhatsApp ainda não confirmada** porque o número de WhatsApp cadastrado da profissional de teste é um placeholder inválido — não considerar validado de ponta a ponta até um teste com número real (ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md))
+- [ ] Revisão futura de aparência, fluxo, estados de erro/sucesso e experiência da cliente **como fluxo comercial de autoatendimento** — agora já existem os estados de seleção/confirmação/sucesso/erro do fluxo novo; ainda não há uma revisão pensada especificamente para venda/conversão

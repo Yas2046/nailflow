@@ -1,14 +1,15 @@
 # NailFlow — Pendências e Auditoria
 
-> Atualizado em 2026-09-30.
+> Atualizado em 2026-10-01 (C2/C3 validadas com cliente real, correções de hardening/API, F9 implementada com entrega real ainda pendente, organização final do projeto).
 
 ---
 
-## Atenção antes de reconectar o `chip2`
+## `chip2` reconectado e validado (2026-09-30)
 
-- O webhook `whatsapp-nailflow` passou a exigir o cabeçalho `X-NailFlow-Webhook-Secret` em 2026-09-27 e **ainda não recebeu nenhuma mensagem real** com essa configuração
-- Ao reconectar, acompanhar a primeira mensagem: se o n8n responder 403, o bot fica mudo. Rollback em [`N8N.md`](./N8N.md)
-- A reconexão é feita pela responsável; `chip2` e `chip2-teste` estão desconectados intencionalmente
+- `chip2` (Camila) foi reconectado via QR pela responsável e confirmado `state: "open"` na Evolution
+- Primeira mensagem real após a reconexão **validada com sucesso**: cliente Simone Teles (`553185108190`) enviou mensagem, processada pelo webhook `whatsapp-nailflow` com `X-NailFlow-Webhook-Secret` (sem 403), workflow **"WhatsApp NailFlow — Definitivo"** executou com `status: success`, e a mensagem foi registrada em `message_history` (`professional_id` correto, sem cross-tenant) — ver C1 em Resolvido
+- Envio de teste controlado para a mesma cliente (Simone) também validado, sem erro e sem disparo para qualquer outro contato
+- `chip2-teste` segue desconectada; nenhuma alteração feita nela
 
 ---
 
@@ -26,15 +27,15 @@
 
 ### 🔴 Crítico
 
-**C1. Validar a primeira mensagem real após reconectar o `chip2`** (webhook com Header Auth, bot, classificador sim/não)
+~~**C1. Validar a primeira mensagem real após reconectar o `chip2`**~~ — validado em 2026-09-30 (ver "Resolvido")
 
-**C2. Testar agendamento completo pelo WhatsApp com uma cliente real**
-- O fluxo foi validado via `/bot/process` com telefone de teste após a correção do `$1`; falta um teste ponta a ponta pelo WhatsApp (mensagem → serviço → data → horário → confirmação)
+~~**C2. Testar agendamento completo pelo WhatsApp com uma cliente real**~~ — validado em 2026-10-01 (ver "Resolvido"): agendamento por linguagem natural (serviço + data + horário em uma mensagem), confirmação e criação do agendamento, com cliente real no WhatsApp
 
-**C3. Testar cancelamento pelo WhatsApp**
+~~**C3. Testar cancelamento pelo WhatsApp**~~ — validado em 2026-10-01 (ver "Resolvido"): cancelamento por data + horário, confirmação e cancelamento real, retorno ao menu/início
 
 **C4. Integrar V1/V2 ao `main`**
-- `main` local e `origin/main` estão divergentes e não contêm V1 nem V2; todo o trabalho está em `feat/phase5-register`
+- Confirmado em 2026-10-01: `feat/phase5-register` tem 59 commits que `main` não tem; `main` tem 1 commit próprio (`985c1f1`, "phase 0" antigo de bot/WhatsApp/multi-tenancy) que não existe em `feat/phase5-register` — histórico realmente divergente, não é só "branch desatualizada". Um merge direto exige decidir antes como tratar esse commit divergente (não decidido nesta sessão — fica para quando a integração for priorizada)
+- `feat/phase5-register` está também 8 commits à frente de `origin/feat/phase5-register` (local), ainda sem push — ver seção de pendências abaixo
 
 ~~**C5. Revisão final e commit/push das mudanças de 2026-09-27**~~ — feito em 2026-09-28 (commit da rodada de segurança V6–V17). Os 2 exports do n8n regenerados (Abandono/Lembretes) e o restante ainda pendente (Definitivo/Notificações) seguem em I9.
 
@@ -60,11 +61,12 @@
 
 **I7. 3 tentativas inválidas → ATENDIMENTO_HUMANO** — validar
 
-**I8. Variável `N8N_API_KEY`** — não é usada no código e já não consta do `.env.example`; falta removê-la do `.env` do servidor (o mesmo vale para `N8N_PROFESSIONAL_ID`, também não lida pelo código)
+~~**I8. Variável `N8N_API_KEY`**~~ — resolvido em 2026-10-01 (ver "Resolvido"): `N8N_API_KEY` e `N8N_PROFESSIONAL_ID` removidas do `.env` do servidor
 
 **I9. Regenerar os exports do "Definitivo" e do "Notificações"**
 - Os exports de Abandono e Lembretes já foram regenerados das versões publicadas (2026-09-27) e podem ser versionados
 - Falta gerar, do mesmo jeito e sem credenciais, os do "WhatsApp NailFlow — Definitivo" e do "NailFlow — Notificações"; os arquivos antigos na pasta não refletem as versões publicadas
+- **Atualizado em 2026-10-01**: o workflow "NailFlow — Notificações" também foi editado manualmente na interface do n8n nesta data (node "Montar mensagem" estendido para a F9) — o export está ainda mais desatualizado em relação à versão publicada agora
 
 **I10. Validar envio real de lembrete e de abandono** após a correção dos crons (os loops internos ainda não rodaram com itens)
 
@@ -106,8 +108,7 @@
 **M4. Numeração das migrations**
 - A 002 é aplicada antes da 001 e há dois "003" no histórico. Não causa erro, mas exige seguir a ordem documentada em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md)
 
-**M5. Rate limiting nos endpoints administrativos**
-- `block`/`unblock`/`update`/`delete` de profissionais (`/admin/professionals/*`) não têm rate limit próprio, diferente de login/registro. Risco baixo hoje (já exige JWT + `is_admin`), mas seria defesa em profundidade — achado da revisão de segurança de 2026-09-29
+~~**M5. Rate limiting nos endpoints administrativos**~~ — resolvido em 2026-10-01 (ver "Resolvido"): `/admin/professionals/*` agora tem rate limit próprio (100 req/5min por IP)
 
 **M7. Limite de agendamentos futuros por telefone (rota pública) é fixo, não configurável**
 - `POST /public/:slug/appointments` limita a 3 agendamentos futuros pendentes/confirmados por telefone+profissional, hardcoded no controller. Considerar se deve virar configuração por profissional no futuro — achado da implementação de 2026-09-30
@@ -130,7 +131,38 @@
 **F5. Export de dados (LGPD)**
 **F6. Logs estruturados** (Winston/Pino)
 **F7. Versão pública para portfólio** — repositório separado, com histórico novo e sem infraestrutura/segredos
-**F9. Notificação da profissional ao receber agendamento pela página pública** — hoje o agendamento criado pela rota pública só aparece na Agenda/Dashboard; decisão pendente sobre avisar via WhatsApp/n8n em tempo real
+~~**F9. Notificação da profissional ao receber agendamento pela página pública**~~ — **implementação concluída em 2026-10-01** (ver "Resolvido" para o detalhe técnico). Resumo do status real:
+- [x] Backend dispara o evento `appointment.public_created` via `notifyN8n` após o `COMMIT` do agendamento (fire-and-forget, falha no envio não desfaz o agendamento)
+- [x] Workflow "NailFlow — Notificações" do n8n estendido (editado manualmente na interface) para reconhecer o evento e montar a mensagem para a profissional (não para a cliente)
+- [x] Fluxo backend → n8n → Evolution **validado em produção**: execução do workflow registrada com sucesso até a chamada à Evolution API, com o payload correto (profissional certa, dados corretos)
+- [ ] **Entrega real da mensagem no WhatsApp NÃO confirmada**: a Evolution rejeitou o envio com `exists: false` porque o `phone_whatsapp` cadastrado da profissional de teste (`camila-nails-studio`) é um número placeholder (`5531999999999`), que não existe no WhatsApp — não é falha de código, é dado de cadastro de teste. **Não tratar F9 como validada de ponta a ponta até um teste com um número de WhatsApp real.**
+
+---
+
+### 🔵 Requisitos futuros — nova direção do WhatsApp (registrados em 2026-09-30)
+
+> Decisões de produto/arquitetura ainda **não definidas**. Nada abaixo deve ser implementado sem uma definição prévia de escopo e arquitetura. Não confundir com a seção 🟢 Futuro acima (itens mais pontuais); estes são mudanças estruturais na forma como o bot conversa.
+
+**F10. Atendimento mais natural / contextual (substituir o fluxo de menus)**
+- Objetivo: o bot entender, dentro do contexto da conversa, intenção do cliente, serviço desejado, data, período/horário, alterações de preferência, dúvidas, cancelamento, reagendamento e continuidade de uma conversa anterior — sem reiniciar o fluxo a cada mensagem
+- Exemplos de comportamento esperado (fornecidos pela responsável): "Quero fazer unha sexta depois das 18h" (serviço + data + período), "Não consigo sexta, tem sábado?" (troca de preferência sem reiniciar), "Pode ser qualquer horário à tarde" (período), "Quero fazer escova e unha" (múltiplos serviços)
+- **Decisão ainda não definida**: arquitetura (regras vs. LLM/NLU), escopo exato, como isso convive com a máquina de estados atual (`FLUXOS_DO_BOT.md`)
+
+**F11. Consulta de datas fora da semana exibida**
+- O bot deve aceitar uma data específica fora das opções inicialmente mostradas e consultar a disponibilidade real (API/site do NailFlow) para aquela data
+- Restrição explícita da responsável: **não inventar horários nem manter disponibilidade só com base em dados anteriores da conversa**
+
+**F12. Perfil/tom de atendimento configurável**
+- Permitir configurar, por profissional, características do público/atendimento para adequar o tom das mensagens do bot
+- **Decisão ainda não definida**: quais opções de configuração existirão
+
+**F13. Lembretes relacionados a agendamentos**
+- Registrado como requisito futuro pela responsável em 2026-09-30, comportamento exato ainda a definir
+- ⚠️ **Possível sobreposição a verificar**: já existe um workflow n8n "Lembretes"/"Lembretes de Agendamento" com os crons corrigidos em 2026-09-27 (ver I10), mas **nenhum envio real de lembrete foi validado até hoje**. Antes de desenhar algo novo, confirmar com a responsável se F13 é uma evolução desse recurso já existente (não validado) ou um conceito diferente
+
+**F14. Pré-agendamento via WhatsApp**
+- Fluxo proposto: cliente solicita serviço/data/horário → bot consulta disponibilidade → sistema cria uma solicitação/pré-agendamento → profissional recebe a solicitação → profissional confirma ou recusa no NailFlow → cliente recebe a confirmação ou uma alternativa
+- **Decisão ainda não definida**: status e arquitetura exatos (ex.: novo status de agendamento, tabela separada, etc.)
 
 ---
 
@@ -184,3 +216,17 @@
 | Frontend do agendamento online pela página pública (antigo F8) | 2026-09-30 | `PaginaPublica.tsx`: seleção de serviço, horário clicável, formulário de nome/telefone, revisão e confirmação, tela de sucesso deixando claro que é um pedido pendente; todos os `409`/`429`/`400`/`404`/erro de rede tratados com mensagens amigáveis (`9f88257`) |
 | Disponibilidade da página pública sempre calculada pela menor duração entre os serviços, mesmo com um serviço específico já escolhido | 2026-09-30 | `GET /public/:slug/availability` ganhou `serviceId` opcional; sem ele, comportamento inalterado; com ele, valida o serviço contra a profissional do slug e usa a duração real dele (`adf5164`, 8 testes novos) |
 | Corridas de estado no frontend do agendamento público (troca de serviço/horário durante um `POST` em andamento; resposta antiga de disponibilidade sobrescrevendo a atual) | 2026-09-30 | Botões de serviço/horário desabilitados durante `submitting`; `loadAvailability()` usa contador de requisição (`useRef`) para descartar respostas fora de ordem (incluído no commit `9f88257`) |
+| Auditoria de segurança do fluxo de criação de agendamento público (`serviço → horário → dados → criação`) | 2026-09-30 | Isolamento por `slug`/`professional_id` confirmado por teste real (serviço de outro profissional rejeitado com 400); backend não confia em preço/duração/`professionalId`/`clientId`/`status` enviados pelo cliente (schema Zod não os declara); horário sempre revalidado (`checkSlotAvailability`); double-booking protegido em duas camadas (pré-checagem + `EXCLUDE` constraint do Postgres); concorrência e rollback já cobertos por teste automatizado — nenhuma vulnerabilidade confirmada |
+| C1 — primeira mensagem real após reconectar o `chip2` (webhook com `X-NailFlow-Webhook-Secret`) | 2026-09-30 | Mensagem da cliente Simone Teles (`553185108190`) processada sem erro pelo workflow "WhatsApp NailFlow — Definitivo" (execuções `11720`/`11721`, `status: success`) e registrada em `message_history` (`id 2256`), sem 403 e sem cross-tenant |
+| Envio de mensagem de teste controlado para validar o `chip2` reconectado | 2026-09-30 | Mensagem enviada exclusivamente para a cliente Simone Teles, com `client_id`/telefone/`professional_id` confirmados no banco antes do envio; Evolution confirmou `remoteJid` correto, sem erro |
+| Atalhos naturais de entrada para "ver agendamentos"/"cancelar", troca de intenção em meio de fluxo, saída global de desistência ("desisto" etc.) | 2026-10-01 | Commit `dcd5316`: casamento de pista por data/dia da semana/serviço, fallback para menu numerado em ambiguidade real, preserva toda a lógica de serviço+data+horário já existente |
+| Bug real: regex de "agendar" do estado `MENU` sem `\b` interpretava "desmarcar" como "agendar", travando a conversa em `AGUARDANDO_SERVICO` sem saída | 2026-10-01 | Commit `dcd5316`: regex corrigido com limite de palavra; "desmarcar"/"desmarca" reconhecidos como sinônimos de cancelar em todos os pontos (incl. `extractActionIntent` e regex inline do `MENU`); reprodução do bug real coberta por teste automatizado |
+| `createBlockedTime` aceitava `endsAt <= startsAt` (bloqueio invertido/vazio corrompendo o cálculo de disponibilidade) | 2026-10-01 | Commit `5fea86c`: `.refine()` no schema Zod rejeitando `endsAt <= startsAt` com 400 |
+| `deleteService` retornava erro genérico de FK (23503) ao excluir serviço com agendamentos vinculados | 2026-10-01 | Commit `5fea86c`: captura `23503` e retorna 409 com mensagem orientando a desativar o serviço em vez de excluir |
+| C2/C3 — agendamento e cancelamento completos pelo WhatsApp com cliente real | 2026-10-01 | Validados no WhatsApp real: agendamento por linguagem natural (serviço + data + horário em uma mensagem), confirmação e criação do agendamento, cancelamento por data + horário, confirmação e cancelamento real, retorno ao menu/início após o cancelamento |
+| F9 — notificação da profissional ao receber agendamento pela página pública (implementação) | 2026-10-01 | Commit `2d17659` (backend) + workflow "NailFlow — Notificações" do n8n estendido manualmente na interface: evento `appointment.public_created` reconhecido, mensagem montada para a profissional (`payload.professionalPhone`), reaproveitando o mesmo webhook/credencial/node de envio Evolution já usados por `appointment.confirmed`/`appointment.cancelled`. Fluxo backend→n8n→Evolution validado em produção (execução com sucesso até a chamada à Evolution); entrega real da mensagem não confirmada por número de teste placeholder — ver F9 acima |
+| I8 — `N8N_API_KEY`/`N8N_PROFESSIONAL_ID` não usadas no `.env` | 2026-10-01 | Removidas do `.env` do servidor (commit de código não aplicável, `.env` não é versionado; backup do arquivo feito antes da alteração) |
+| M5 — rate limiting ausente em `/admin/professionals/*` | 2026-10-01 | Commit `26ae97f`: `express-rate-limit` aplicado a todas as rotas de `/admin/professionals/*` (100 req/5min por IP), mesmo padrão já usado em `/auth/login`/`register` |
+| `createAppointment`: SELECT pós-criação não filtrava por `professional_id` (único ponto do arquivo nesse padrão, não explorável mas inconsistente) | 2026-10-01 | Commit `26ae97f`: filtro adicionado por defesa em profundidade, sem mudança de comportamento |
+| ~23 arquivos `.bak*`/temporários acumulados em `backend/src/controllers`, `backend/src/routes`, `backend/src/server.js` e `frontend/src` | 2026-10-01 | Removidos do disco (já estavam no `.gitignore`, não rastreados, não referenciados por nenhum import) |
+| 3 bloqueadores visuais de UX encontrados em auditoria de produção (página pública com mensagem contraditória do WhatsApp durante o fluxo novo; "R$" sobreposto no Dashboard; pluralização errada em Clientes) | 2026-10-01 | Commit `3f039dd` — ver detalhe na seção 9 do [`CHECKLIST_PROJETO.md`](./CHECKLIST_PROJETO.md) |
