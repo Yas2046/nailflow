@@ -77,11 +77,16 @@ export async function listBlockedTimes(req, res, next) {
   }
 }
 
-const blockSchema = z.object({
-  startsAt: z.string().min(1),
-  endsAt: z.string().min(1),
-  reason: z.string().optional().nullable(),
-});
+const blockSchema = z
+  .object({
+    startsAt: z.string().min(1),
+    endsAt: z.string().min(1),
+    reason: z.string().optional().nullable(),
+  })
+  .refine((data) => new Date(data.endsAt) > new Date(data.startsAt), {
+    message: 'endsAt deve ser posterior a startsAt.',
+    path: ['endsAt'],
+  });
 
 export async function createBlockedTime(req, res, next) {
   try {

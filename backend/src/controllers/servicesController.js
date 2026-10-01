@@ -82,6 +82,9 @@ export async function deleteService(req, res, next) {
     if (!rowCount) throw new HttpError(404, 'Serviço não encontrado.');
     res.status(204).end();
   } catch (err) {
+    if (err.code === '23503') {
+      return next(new HttpError(409, 'Este serviço possui agendamentos vinculados e não pode ser excluído. Desative-o em vez de excluir.'));
+    }
     next(err);
   }
 }
