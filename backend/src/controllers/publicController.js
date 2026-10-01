@@ -4,11 +4,12 @@ import { getAvailableSlots, checkSlotAvailability } from '../utils/availability.
 import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { notifyN8n } from '../utils/notifyN8n.js';
 
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
   const { rows } = await pool.query(
-    'SELECT id, business_name, phone_whatsapp, booking_horizon_days FROM professionals WHERE slug = $1',
+    'SELECT id, business_name, phone_whatsapp, booking_horizon_days, wa_instance_name FROM professionals WHERE slug = $1',
     [slug]
   );
   return rows[0] || null;
@@ -247,6 +248,19 @@ export async function createPublicAppointment(req, res, next) {
       );
 
       await txClient.query('COMMIT');
+
+      // Notifica a profissional pelo WhatsApp (fire-and-forget: uma falha
+      // aqui nunca desfaz nem atrasa a resposta do agendamento já criado).
+      notifyN8n('appointment.public_created', {
+        professionalId: professional.id,
+        professionalPhone: professional.phone_whatsapp,
+        waInstance: professional.wa_instance_name,
+        clientName: data.clientName,
+        clientPhone: phone,
+        serviceName: service.name,
+        startsAt: apptRows[0].starts_at,
+        endsAt: apptRows[0].ends_at,
+      });
 
       return res.status(201).json({
         id: apptRows[0].id,

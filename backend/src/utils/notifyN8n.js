@@ -4,8 +4,10 @@
  * de confirmação e o de cancelamento sejam acionados independentemente.
  *
  * Variáveis de ambiente:
- *   N8N_WEBHOOK_CONFIRMED_URL  → workflow 3 (appointment.confirmed)
- *   N8N_WEBHOOK_CANCELLED_URL  → workflow 5 (appointment.cancelled)
+ *   N8N_WEBHOOK_CONFIRMED_URL       → workflow 3 (appointment.confirmed)
+ *   N8N_WEBHOOK_CANCELLED_URL       → workflow 5 (appointment.cancelled)
+ *   N8N_WEBHOOK_PUBLIC_CREATED_URL  → notifica a profissional (WhatsApp) quando
+ *                                     um agendamento é criado pela página pública
  *
  * Se a URL correspondente não estiver configurada, a chamada é um no-op
  * silencioso — o backend continua funcionando normalmente.
@@ -16,6 +18,7 @@
 const EVENT_URL_VARS = {
   'appointment.confirmed': 'N8N_WEBHOOK_CONFIRMED_URL',
   'appointment.cancelled': 'N8N_WEBHOOK_CANCELLED_URL',
+  'appointment.public_created': 'N8N_WEBHOOK_PUBLIC_CREATED_URL',
 };
 
 export function notifyN8n(event, payload) {
