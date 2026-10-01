@@ -562,8 +562,11 @@ export default function PaginaPublica() {
           </div>
         )}
 
-        {/* ── botão WhatsApp ─────────────────────────────────────────────── */}
-        {data && (
+        {/* ── botão WhatsApp — só exibido quando o agendamento direto não está
+             disponível (sem serviços cadastrados/visíveis ou erro ao carregar);
+             quando o fluxo de autoatendimento está ativo, o agendamento é
+             confirmado pelo próprio formulário acima, sem precisar do WhatsApp ── */}
+        {data && !(services && services.length > 0) && (
           <a
             href={data.whatsappLink}
             target="_blank"
@@ -578,10 +581,12 @@ export default function PaginaPublica() {
         )}
 
         {/* ── rodapé ─────────────────────────────────────────────────────── */}
-        <p className="text-center text-xs text-ink/30 mt-8 leading-relaxed">
-          Os horários são apenas para consulta.<br />
-          O agendamento é confirmado diretamente pelo WhatsApp.
-        </p>
+        {!bookingResult && !(services && services.length > 0) && (
+          <p className="text-center text-xs text-ink/30 mt-8 leading-relaxed">
+            Os horários são apenas para consulta.<br />
+            O agendamento é confirmado diretamente pelo WhatsApp.
+          </p>
+        )}
 
         <p className="text-center text-[10px] text-ink/20 mt-5">
           Desenvolvido com NailFlow

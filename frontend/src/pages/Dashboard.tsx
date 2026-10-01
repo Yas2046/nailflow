@@ -280,7 +280,12 @@ export default function Dashboard() {
             <p className="text-wine-300 text-xs uppercase tracking-widest font-semibold">Faturamento realizado</p>
             <VariacaoBadge variacao={variacao} />
           </div>
-          <p className="font-display text-5xl sm:text-6xl leading-none tabular-nums mt-2">{formatMoney(faturado)}</p>
+          <p className="font-display text-5xl sm:text-6xl leading-none tabular-nums mt-2">
+            {/* "R$" renderizado em fonte sem serifa: o glifo "$" da Playfair
+               Display sobrepõe o "R" em tamanhos grandes (bug visual real) */}
+            <span className="font-sans mr-1.5">R$</span>
+            {(faturado / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
           {variacao !== null && (
             <p className="text-wine-400 text-xs mt-1.5 flex items-center gap-1">
               <IconTrending /> vs mês anterior

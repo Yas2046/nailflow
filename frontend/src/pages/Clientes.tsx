@@ -464,7 +464,9 @@ export default function Clientes() {
         <div>
           <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Clientes</h1>
           {clients != null && (
-            <p className="text-sm text-ink/40 mt-1">{clients.length} clientes cadastradas</p>
+            <p className="text-sm text-ink/40 mt-1">
+              {clients.length} cliente{clients.length !== 1 ? 's' : ''} cadastrada{clients.length !== 1 ? 's' : ''}
+            </p>
           )}
         </div>
         <button onClick={openNew} className="btn-primary">
