@@ -169,6 +169,61 @@ export function extractPeriodMention(rawText) {
   return null;
 }
 
+// Hora por extenso (só os valores plausíveis para expediente de salão:
+// 0–20h). Não cobre todo o 0–23 de propósito — "vinte e duas e meia" é
+// raríssimo nesse domínio e aumentaria o risco de falso positivo.
+const HOUR_WORDS = {
+  zero: 0, uma: 1, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7,
+  oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13, catorze: 14,
+  quatorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18,
+  dezenove: 19, vinte: 20,
+};
+
+function resolveHourToken(token) {
+  if (/^\d{1,2}$/.test(token)) {
+    const n = Number(token);
+    return n <= 23 ? n : null;
+  }
+  return Object.prototype.hasOwnProperty.call(HOUR_WORDS, token) ? HOUR_WORDS[token] : null;
+}
+
+/**
+ * Horário exato mencionado em texto livre: "10:30", "10h30", "10h",
+ * "às 10:30", "10 e meia", "dez e meia". Retorna { hour, minute } só
+ * quando existe EXATAMENTE uma leitura possível no texto — se a mensagem
+ * menciona mais de um horário diferente (ex.: "10:30 ou 11:00"), ou
+ * nenhum, retorna null de propósito: melhor não selecionar nada do que
+ * adivinhar errado (quem chama decide o que fazer com null).
+ *
+ * Propositalmente restrito a padrões com separador explícito (":", "h",
+ * "e meia") — um número solto como "3" ou "35" nunca é tratado como
+ * horário aqui, para não confundir com número de menu, preço ou parte de
+ * um telefone/data.
+ */
+export function extractTimeMention(rawText) {
+  const t = normalize(rawText);
+  const candidates = new Map();
+
+  for (const m of t.matchAll(/\b(\d{1,2})\s*(?:h\s*(\d{2})|:(\d{2}))\b/g)) {
+    const hour = Number(m[1]);
+    const minute = Number(m[2] ?? m[3]);
+    if (hour <= 23 && minute <= 59) candidates.set(`${hour}:${minute}`, { hour, minute });
+  }
+
+  for (const m of t.matchAll(/\b(\d{1,2})h\b/g)) {
+    const hour = Number(m[1]);
+    if (hour <= 23) candidates.set(`${hour}:0`, { hour, minute: 0 });
+  }
+
+  for (const m of t.matchAll(/\b(\d{1,2}|[a-z]+)\s+e\s+meia\b/g)) {
+    const hour = resolveHourToken(m[1]);
+    if (hour != null) candidates.set(`${hour}:30`, { hour, minute: 30 });
+  }
+
+  if (candidates.size !== 1) return null;
+  return [...candidates.values()][0];
+}
+
 /**
  * Roda todos os extratores sobre uma mensagem e devolve só os slots que
  * de fato foram reconhecidos (chaves ausentes = nada dito sobre aquilo

@@ -5,6 +5,7 @@ import {
   extractServiceMention,
   extractDateMention,
   extractPeriodMention,
+  extractTimeMention,
   extractSlots,
 } from '../src/utils/conversationContext.js';
 
@@ -124,6 +125,47 @@ test('extractPeriodMention: "qualquer horário" cobre o dia todo', () => {
 
 test('extractPeriodMention: sem período retorna null', () => {
   assert.equal(extractPeriodMention('quero fazer unha sexta'), null);
+});
+
+// ---------- extractTimeMention ----------
+
+test('extractTimeMention: "10:30", "10h30" e "às 10:30" reconhecem o mesmo horário', () => {
+  assert.deepEqual(extractTimeMention('10:30'), { hour: 10, minute: 30 });
+  assert.deepEqual(extractTimeMention('10h30'), { hour: 10, minute: 30 });
+  assert.deepEqual(extractTimeMention('às 10:30'), { hour: 10, minute: 30 });
+});
+
+test('extractTimeMention: "10 e meia" e "dez e meia" reconhecem 10:30', () => {
+  assert.deepEqual(extractTimeMention('10 e meia'), { hour: 10, minute: 30 });
+  assert.deepEqual(extractTimeMention('dez e meia'), { hour: 10, minute: 30 });
+});
+
+test('extractTimeMention: "10h" sozinho é hora cheia (10:00)', () => {
+  assert.deepEqual(extractTimeMention('10h'), { hour: 10, minute: 0 });
+});
+
+test('extractTimeMention: mensagem ambígua (dois horários diferentes) não resolve nenhum', () => {
+  assert.equal(extractTimeMention('10:30 ou 11:00, tanto faz'), null);
+});
+
+test('extractTimeMention: não confunde número de telefone com horário', () => {
+  assert.equal(extractTimeMention('meu numero e 5531999999999'), null);
+});
+
+test('extractTimeMention: não confunde preço com horário', () => {
+  assert.equal(extractTimeMention('ta R$ 35,00 bom'), null);
+});
+
+test('extractTimeMention: não confunde data (dd/mm) com horário', () => {
+  assert.equal(extractTimeMention('pode ser dia 01/10'), null);
+});
+
+test('extractTimeMention: número solto de menu ("3") não vira horário', () => {
+  assert.equal(extractTimeMention('3'), null);
+});
+
+test('extractTimeMention: sem nenhuma menção de horário retorna null', () => {
+  assert.equal(extractTimeMention('qualquer horário serve'), null);
 });
 
 test('extractSlots: combina intenção + serviço + data + período numa mensagem só', () => {

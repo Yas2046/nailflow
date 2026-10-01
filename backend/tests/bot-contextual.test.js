@@ -260,6 +260,102 @@ test('slot parcial (ex.: período sem serviço) não influencia a tentativa segu
   assert.equal(conv.context.slots, undefined);
 });
 
+// ---------- Reconhecimento de horário em linguagem natural ----------
+
+async function reachAguardandoHorario(phone) {
+  await processMessage(phone, 'Quero fazer manicure');
+  const dateReply = await processMessage(phone, 'sexta');
+  return dateReply;
+}
+
+test('horário em linguagem natural: "10:30" seleciona o slot sem exigir o número', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000009';
+  const dateReply = await reachAguardandoHorario(phone);
+  assert.match(dateReply.json.reply, /Horários disponíveis/);
+
+  const { json } = await processMessage(phone, '10:30');
+  assert.match(json.reply, /Vou confirmar/);
+  assert.match(json.reply, /10:30/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO');
+  const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(selected, '10:30');
+});
+
+test('horário em linguagem natural: "dez e meia" seleciona o mesmo horário que "10:30"', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000010';
+  await reachAguardandoHorario(phone);
+  const { json } = await processMessage(phone, 'dez e meia');
+  assert.match(json.reply, /Vou confirmar/);
+
+  const conv = await getConv(phone);
+  const selected = new Date(conv.context.selectedSlot).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  assert.equal(selected, '10:30');
+});
+
+test('horário em linguagem natural: horário fora da grade não é selecionado nem inventado', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000011';
+  await reachAguardandoHorario(phone);
+  // 3h da madrugada: fora do expediente (08:00-20:00), nunca apareceria na grade.
+  const { json } = await processMessage(phone, '3h');
+  assert.match(json.reply, /não está entre os disponíveis/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_HORARIO');
+  assert.ok(conv.context.slotsMap, 'a grade original de horários deve continuar disponível');
+});
+
+test('horário em linguagem natural: mensagem ambígua ("10:30 ou 11:00") não seleciona nada por engano', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000012';
+  await reachAguardandoHorario(phone);
+  const { json } = await processMessage(phone, '10:30 ou 11:00, qualquer um serve');
+  assert.match(json.reply, /Por favor escolha um dos horários/);
+
+  const conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_HORARIO');
+});
+
+test('seleção numérica continua funcionando em AGUARDANDO_HORARIO (sem regressão)', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000013';
+  await reachAguardandoHorario(phone);
+  const { json } = await processMessage(phone, '1');
+  assert.match(json.reply, /Vou confirmar/);
+});
+
+test('horário em linguagem natural preserva serviço, data e período já conhecidos no contexto', async (t) => {
+  if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
+
+  const phone = '5531977000014';
+  // Mensagem única já traz serviço + data + período (Parte 1) — pula direto
+  // para AGUARDANDO_HORARIO já com ctx.slots.period preenchido.
+  await processMessage(phone, 'Quero fazer manicure sexta depois das 10h');
+  let conv = await getConv(phone);
+  assert.equal(conv.bot_state, 'AGUARDANDO_HORARIO');
+  assert.equal(conv.context.serviceName, 'Manicure');
+  const dataAntes = conv.context.selectedDate;
+  const periodoAntes = conv.context.slots?.period;
+  assert.ok(periodoAntes, 'período deveria ter sido reconhecido antes da seleção de horário');
+
+  const { json } = await processMessage(phone, '10h30');
+  assert.match(json.reply, /Vou confirmar/);
+
+  conv = await getConv(phone);
+  assert.equal(conv.context.serviceName, 'Manicure');
+  assert.equal(conv.context.selectedDate, dataAntes);
+  assert.deepEqual(conv.context.slots?.period, periodoAntes);
+});
+
 // ---------- 7. Fluxo antigo (100% numérico) continua funcionando ponta a ponta ----------
 
 test('fluxo antigo por números (menu → serviço → data → horário → confirmação) cria o agendamento normalmente', async (t) => {

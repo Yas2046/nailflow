@@ -4,7 +4,7 @@ import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
-import { extractSlots, extractDateMention, extractPeriodMention } from '../utils/conversationContext.js';
+import { extractSlots, extractDateMention, extractPeriodMention, extractTimeMention } from '../utils/conversationContext.js';
 
 // ---------- helpers ----------
 
@@ -673,7 +673,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     }
 
     const slotsMap = ctx.slotsMap || {};
-    const slotIso = slotsMap[text];
+    let slotIso = slotsMap[text];
 
     if (!slotIso) {
       // Correção de período dita em texto livre (ex.: "Pode ser qualquer
@@ -696,24 +696,62 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
         );
       }
 
-      // Correção de data dita nesta etapa (ex.: "sábado é melhor" direto
-      // na escolha de horário, sem passar de novo pela lista de datas).
-      const mentionedDate = extractDateMention(rawText);
-      if (mentionedDate) {
-        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
-        const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
-        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
-        if (timeReply) {
-          return reply(timeReply.message, timeReply.botState, timeReply.context);
+      // Horário exato dito em texto livre (ex.: "10:30", "10h30", "às
+      // 10:30", "10 e meia", "dez e meia") — seleciona direto a opção
+      // correspondente na grade já oferecida, sem exigir o número. Só age
+      // quando o texto não foi reconhecido como período acima (então "18h"
+      // sozinho seleciona o horário das 18h, mas "depois das 18h" continua
+      // sendo tratado como período, igual antes).
+      const timeMention = extractTimeMention(rawText);
+      if (timeMention) {
+        const matches = Object.entries(slotsMap).filter(([, iso]) => {
+          const d = new Date(iso);
+          const [h, m] = d
+            .toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false })
+            .split(':')
+            .map(Number);
+          return h === timeMention.hour && m === timeMention.minute;
+        });
+        if (matches.length === 1) {
+          slotIso = matches[0][1];
+        } else if (matches.length === 0) {
+          // Horário reconhecido, mas fora da grade oferecida — explica e
+          // mostra as opções válidas, sem inventar nenhum horário novo.
+          const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+          return reply(
+            `Esse horário não está entre os disponíveis. 😕 Escolha um destes:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+            'AGUARDANDO_HORARIO',
+            ctx
+          );
         }
+        // matches.length > 1 não deveria acontecer numa grade de 30 em 30
+        // minutos, mas por segurança cai no fluxo normal abaixo sem
+        // selecionar nada sozinho.
       }
 
-      const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
-      return reply(
-        `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
-        'AGUARDANDO_HORARIO',
-        ctx
-      );
+      // A partir daqui, só continua se nenhum horário exato foi resolvido
+      // acima — se foi, `slotIso` já está preenchido e o fluxo segue
+      // direto para a revalidação de disponibilidade logo abaixo.
+      if (!slotIso) {
+        // Correção de data dita nesta etapa (ex.: "sábado é melhor" direto
+        // na escolha de horário, sem passar de novo pela lista de datas).
+        const mentionedDate = extractDateMention(rawText);
+        if (mentionedDate) {
+          const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+          const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
+          const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
+          if (timeReply) {
+            return reply(timeReply.message, timeReply.botState, timeReply.context);
+          }
+        }
+
+        const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+        return reply(
+          `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+          'AGUARDANDO_HORARIO',
+          ctx
+        );
+      }
     }
 
     // Validate availability one more time
