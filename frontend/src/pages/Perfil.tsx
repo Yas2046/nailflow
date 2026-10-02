@@ -461,12 +461,8 @@ export default function Perfil() {
     setSavingPublic(true);
     try {
       const updated = await api.put<ProfileData>('/auth/me', {
-        name:           profile.name,
-        business_name:  profile.business_name,
-        phone_whatsapp: profile.phone_whatsapp,
-        email:          profile.email,
-        bio:            bioDraft,
-        public_theme:   themeDraft,
+        bio:          bioDraft,
+        public_theme: themeDraft,
       });
       setProfile(updated);
       setBioDraft(updated.bio ?? '');

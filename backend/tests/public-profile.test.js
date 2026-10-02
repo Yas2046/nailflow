@@ -179,12 +179,18 @@ test('PUT /auth/me rejeita foto que não seja data URL jpeg/png/webp', async (t)
   assert.equal((await putMe({ avatar_b64: 'data:image/webp;base64,UklGRg==' })).status, 200);
 });
 
-test('PUT /auth/me rejeita foto acima do limite de tamanho', async (t) => {
+test('limite da foto: até 90.000 caracteres passa; acima disso 400 com mensagem; corpo > 100KB é 413', async (t) => {
   if (!dbAvailable) { t.skip('banco não disponível'); return; }
-  const big = 'data:image/jpeg;base64,' + 'A'.repeat(400_001);
-  // O corpo é rejeitado pelo limite padrão do express.json (413) antes do Zod.
-  const status = (await putMe({ avatar_b64: big })).status;
-  assert.ok(status === 400 || status === 413, `status inesperado: ${status}`);
+  const prefix = 'data:image/jpeg;base64,';
+  const ok = prefix + 'A'.repeat(90_000 - prefix.length);
+  assert.equal((await putMe({ avatar_b64: ok })).status, 200);
+
+  const tooBig = await putMe({ avatar_b64: prefix + 'A'.repeat(90_001 - prefix.length + 1000) });
+  assert.equal(tooBig.status, 400);
+  assert.match(tooBig.body.error, /Imagem muito grande/);
+
+  // acima do limite do express.json() (100KB) o corpo é recusado antes da validação
+  assert.equal((await putMe({ avatar_b64: prefix + 'A'.repeat(110_000) })).status, 413);
 });
 
 test('PUT /auth/me sem bio/tema/foto preserva os valores existentes; bio vazia limpa', async (t) => {
@@ -212,4 +218,55 @@ test('slug com texto malicioso não retorna dados de ninguém', async (t) => {
   if (!dbAvailable) { t.skip('banco não disponível'); return; }
   const { status } = await getInfo(encodeURIComponent(`${SLUG_A}' OR '1'='1`));
   assert.equal(status, 404);
+});
+
+async function putRaw(body) {
+  const res = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieA },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+test('salvar só bio/tema funciona sem WhatsApp cadastrado e não altera a identidade', async (t) => {
+  if (!dbAvailable) { t.skip('banco não disponível'); return; }
+  const { pool } = await import('../src/config/db.js');
+  await pool.query('UPDATE professionals SET phone_whatsapp = NULL WHERE id = $1', [idA]);
+
+  const res = await putRaw({ bio: 'Sem telefone ainda', public_theme: 'verde' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.bio, 'Sem telefone ainda');
+  assert.equal(res.body.public_theme, 'verde');
+  assert.equal(res.body.phone_whatsapp, null);
+  assert.equal(res.body.email, EMAIL_A);
+  assert.equal(res.body.business_name, 'Studio Publico A');
+});
+
+test('identidade continua tudo-ou-nada: telefone ausente/curto/nulo ainda é rejeitado', async (t) => {
+  if (!dbAvailable) { t.skip('banco não disponível'); return; }
+  const base = { name: 'Perfil Publico A', business_name: 'Studio Publico A', email: EMAIL_A };
+  assert.equal((await putRaw({ ...base })).status, 400);
+  assert.equal((await putRaw({ ...base, phone_whatsapp: '123' })).status, 400);
+  assert.equal((await putRaw({ ...base, phone_whatsapp: null })).status, 400);
+  assert.equal((await putRaw({ name: 'Só o nome' })).status, 400);
+  assert.equal((await putRaw({ ...base, phone_whatsapp: '5531000000030', bio: 'ok' })).status, 200);
+});
+
+test('corpo sem nenhum campo atualizável é rejeitado; valores inválidos continuam rejeitados sem identidade', async (t) => {
+  if (!dbAvailable) { t.skip('banco não disponível'); return; }
+  assert.equal((await putRaw({})).status, 400);
+  assert.equal((await putRaw({ slug: 'tentando-mudar' })).status, 400);
+  assert.equal((await putRaw({ public_theme: 'rosa' })).status, 400);
+  assert.equal((await putRaw({ bio: 'x'.repeat(281) })).status, 400);
+  assert.equal((await putRaw({ avatar_b64: 'javascript:alert(1)' })).status, 400);
+});
+
+test('salvar só bio/tema não afeta outra profissional', async (t) => {
+  if (!dbAvailable) { t.skip('banco não disponível'); return; }
+  const { pool } = await import('../src/config/db.js');
+  await putRaw({ bio: 'Bio exclusiva da A', public_theme: 'azul' });
+  const { rows } = await pool.query('SELECT bio, public_theme FROM professionals WHERE id = $1', [idB]);
+  assert.equal(rows[0].bio, null);
+  assert.equal(rows[0].public_theme, 'vinho');
 });

@@ -74,7 +74,10 @@ export async function me(req, res, next) {
   }
 }
 
-export const MAX_AVATAR_B64_BYTES = 400_000;
+// Abaixo do limite de corpo do express.json() (100KB), com folga para os demais
+// campos: assim o limite da foto é alcançável (400 com mensagem) em vez de o
+// corpo ser cortado antes com 413.
+export const MAX_AVATAR_B64_BYTES = 90_000;
 export const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
 export const PUBLIC_THEMES = ['vinho', 'verde', 'azul'];
 export const MAX_BIO_LENGTH = 280;
@@ -94,20 +97,37 @@ export const updateMeSchema = z.object({
   public_theme:    z.enum(PUBLIC_THEMES, { errorMap: () => ({ message: 'Cor da página inválida.' }) }).optional(),
 });
 
+const IDENTITY_KEYS = ['name', 'business_name', 'phone_whatsapp', 'email'];
+const OPTIONAL_KEYS = ['avatar_b64', 'bio', 'public_theme'];
+const optionalOnlySchema = updateMeSchema.pick({ avatar_b64: true, bio: true, public_theme: true });
+
 export async function updateMe(req, res, next) {
   try {
-    const { name, business_name, phone_whatsapp, email, avatar_b64, bio, public_theme } = updateMeSchema.parse(req.body);
-    const has = (key) => Object.prototype.hasOwnProperty.call(req.body, key);
+    const body = req.body ?? {};
+    const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
 
-    const { rows: conflict } = await pool.query(
-      'SELECT id FROM professionals WHERE email = $1 AND id != $2',
-      [email, req.professionalId]
-    );
-    if (conflict.length > 0) throw new HttpError(409, 'Este e-mail já está em uso por outra conta.');
+    // Os dados de identidade continuam tudo-ou-nada (mesma validação de sempre).
+    // Sem nenhum deles no corpo, só bio/tema/foto são atualizados -- assim a
+    // profissional pode salvar a página pública antes de informar o WhatsApp.
+    const touchesIdentity = IDENTITY_KEYS.some(has);
+    if (!touchesIdentity && !OPTIONAL_KEYS.some(has)) {
+      throw new HttpError(400, 'Nenhum campo para atualizar.');
+    }
+    const { name, business_name, phone_whatsapp, email, avatar_b64, bio, public_theme } =
+      touchesIdentity ? updateMeSchema.parse(body) : optionalOnlySchema.parse(body);
 
+    const sets = [];
+    const values = [];
+    if (touchesIdentity) {
+      const { rows: conflict } = await pool.query(
+        'SELECT id FROM professionals WHERE email = $1 AND id != $2',
+        [email, req.professionalId]
+      );
+      if (conflict.length > 0) throw new HttpError(409, 'Este e-mail já está em uso por outra conta.');
+      values.push(name, business_name, phone_whatsapp, email);
+      sets.push('name = $1', 'business_name = $2', 'phone_whatsapp = $3', 'email = $4');
+    }
     // Campos opcionais só são alterados quando enviados no corpo.
-    const sets = ['name = $1', 'business_name = $2', 'phone_whatsapp = $3', 'email = $4'];
-    const values = [name, business_name, phone_whatsapp, email];
     const addOptional = (column, value) => {
       values.push(value);
       sets.push(`${column} = $${values.length}`);
