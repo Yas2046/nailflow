@@ -1,6 +1,6 @@
 # NailFlow — Pendências e Auditoria
 
-> Atualizado em 2026-10-01 (C2/C3 validadas com cliente real, correções de hardening/API, F9 implementada com entrega real ainda pendente, organização final do projeto).
+> Atualizado em 2026-10-02 (V1 integrado à `main` e publicado; onboarding com etapa "Seu link" e hero de boas-vindas; página pública personalizável — migration 020 aplicada; antecedência mínima de 30 min para clientes; Fase 1A do pré-agendamento — confirmar/recusar solicitações — concluída e validada em produção; código em produção até `47c2886`). Anteriormente, em 2026-10-01: C2/C3 validadas com cliente real, correções de hardening/API, F9 implementada com entrega real ainda pendente.
 
 ---
 
@@ -64,11 +64,12 @@
 **I9. Regenerar os exports do "Definitivo" e do "Notificações"**
 - Os exports de Abandono e Lembretes já foram regenerados das versões publicadas (2026-09-27) e podem ser versionados
 - Falta gerar, do mesmo jeito e sem credenciais, os do "WhatsApp NailFlow — Definitivo" e do "NailFlow — Notificações"; os arquivos antigos na pasta não refletem as versões publicadas
+- **Atualizado em 2026-10-02**: o workflow novo "NailFlow — Solicitação Recusada" **já tem export versionado** em `n8n/workflows/nailflow_solicitacao_recusada.json`. O "Notificações" **não foi alterado** nesta data e continua sem export atualizado
 - **Atualizado em 2026-10-01**: o workflow "NailFlow — Notificações" também foi editado manualmente na interface do n8n nesta data (node "Montar mensagem" estendido para a F9) — o export está ainda mais desatualizado em relação à versão publicada agora
 
-**I10. Validar envio real de lembrete e de abandono** após a correção dos crons (os loops internos ainda não rodaram com itens)
+**I10. Validar envio real de lembrete e de abandono** após a correção dos crons (os loops internos ainda não rodaram com itens). Desde a Fase 1A (2026-10-02) o lembrete de amanhã inclui **somente agendamentos `confirmado`**; solicitações `pendente` não recebem lembrete
 
-**I11. Notificação de confirmação/cancelamento pelo painel** — validar com o cabeçalho novo
+**I11. Notificação de confirmação/cancelamento pelo painel** — a **confirmação** foi validada em produção em 2026-10-02 (Agenda → WhatsApp recebido). Resta validar com WhatsApp real o **cancelamento** pelo painel (`appointment.cancelled`)
 
 ---
 
@@ -81,6 +82,7 @@
 - Migração para usuários dedicados desenhada mas **não implementada** — depende de mover o `database.sqlite` do n8n para fora de `/root` (operação sensível, precisa de janela de manutenção e testes)
 
 **I14. 9 testes antigos esperando `body.token` no login**
+- **Atualizado em 2026-10-02**: a suíte (226 de 238 passando) tem **12 falhas conhecidas e estáveis**: estas 9 do `body.token` (`auth-flow`, `availability-check`, `price-snapshot`) mais 3 testes do bot (`bot-contextual`) que dependem do dia da semana atual (o teste espera "sexta" como dia futuro). Nenhuma é regressão de produção; não foram corrigidas de propósito
 - `auth-flow.test.js`, `price-snapshot.test.js`, `availability-check.test.js` — quebraram quando o `token` foi removido do corpo da resposta de login (a sessão passou a ser só via cookie JWT), mudança já aprovada e aplicada
 - Os testes precisam ser atualizados para usar o cookie em vez de `body.token`; não é uma regressão de produção, é a suíte que ficou desatualizada
 
@@ -110,6 +112,24 @@
 
 **M7. Limite de agendamentos futuros por telefone (rota pública) é fixo, não configurável**
 - `POST /public/:slug/appointments` limita a 3 agendamentos futuros pendentes/confirmados por telefone+profissional, hardcoded no controller. Considerar se deve virar configuração por profissional no futuro — achado da implementação de 2026-09-30
+
+**M8. Antecedência mínima de 30 min (clientes) é fixa**
+- `CUSTOMER_MIN_NOTICE_MINUTES = 30` em `backend/src/utils/availability.js`; vale para página pública, bot e KPI "disponíveis hoje". Se virar configuração por profissional, precisará de coluna/migration — achado da implementação de 2026-10-02
+
+**M9. Página pública de conta bloqueada continua acessível**
+- `getProfessionalBySlug` (`publicController.js`) não verifica `blocked_at`. Decisão adiada em 2026-10-02 (fora do escopo da personalização); decidir se a página deve responder 404 para contas bloqueadas
+
+**M10. Perfil: "Salvar foto" falha sem WhatsApp cadastrado**
+- O frontend (`handleSaveAvatar` em `Perfil.tsx`) envia a identidade completa, e o `PUT /auth/me` exige `phone_whatsapp` quando recebe qualquer campo de identidade. Desde 2026-10-02 o backend aceita `avatar_b64`, `bio` e `public_theme` sozinhos (bio/tema já usam isso); falta só o frontend enviar apenas `avatar_b64`
+
+**M11. Agendamentos anteriores à migration 021 não avisam a cliente na recusa**
+- `appointments.source` é nulo para os agendamentos criados antes de 2026-10-02 21:04; o backend só dispara `appointment.rejected` quando `source` é `public` ou `bot`. Recusar um deles funciona (fica `cancelado`, `cancel_reason='rejected'`), mas sem WhatsApp. É por desenho (nulo = painel/legado); só solicitações novas avisam. Achado no diagnóstico de 2026-10-02
+
+**M12. Documentação técnica sem a Fase 1A**
+- `BANCO_DE_DADOS.md` não lista a migration 021 e `N8N.md` não descreve o workflow "Solicitação Recusada", seu webhook e a variável `N8N_WEBHOOK_REJECTED_URL`; além disso, o log de inicialização do n8n (2026-10-02) mostra ativos também "WhatsApp Principal" e "WhatsApp Teste — oi/olá", que o `N8N.md` lista como inativos — conferir e corrigir a tabela
+
+**M13. Recusa sem motivo e sem aviso de "solicitação recebida"**
+- "Recusar" não pede motivo (o texto ao cliente é fixo) e a cliente não recebe WhatsApp ao *solicitar* o horário pela página pública — ambos previstos para a Fase 1B (ver `CHECKLIST_PROJETO.md`, seção 14.9)
 
 **M6. Migração do número real da profissional**
 1. Criar nova instância Evolution
@@ -156,11 +176,13 @@
 
 **F13. Lembretes relacionados a agendamentos**
 - Registrado como requisito futuro pela responsável em 2026-09-30, comportamento exato ainda a definir
+- **Atualizado em 2026-10-02**: o lembrete de amanhã agora só considera agendamentos `confirmado`
 - ⚠️ **Possível sobreposição a verificar**: já existe um workflow n8n "Lembretes"/"Lembretes de Agendamento" com os crons corrigidos em 2026-09-27 (ver I10), mas **nenhum envio real de lembrete foi validado até hoje**. Antes de desenhar algo novo, confirmar com a responsável se F13 é uma evolução desse recurso já existente (não validado) ou um conceito diferente
 
 **F14. Pré-agendamento via WhatsApp**
 - Fluxo proposto: cliente solicita serviço/data/horário → bot consulta disponibilidade → sistema cria uma solicitação/pré-agendamento → profissional recebe a solicitação → profissional confirma ou recusa no NailFlow → cliente recebe a confirmação ou uma alternativa
-- **Decisão ainda não definida**: status e arquitetura exatos (ex.: novo status de agendamento, tabela separada, etc.)
+- **Atualizado em 2026-10-02 — Fase 1A concluída**: decidido e implementado que o pré-agendamento reutiliza o status `pendente` (exibido como "Aguardando confirmação"); a profissional confirma ou recusa pela Agenda e a cliente recebe WhatsApp de confirmação ou de recusa (validado em produção). Origem registrada em `appointments.source` (`public`/`bot`)
+- **Ainda pendente**: o fluxo equivalente iniciado *pelo bot* só foi coberto na parte de texto e de origem (`source='bot'`); falta a mensagem de "recebemos sua solicitação", modos de confirmação, expiração da reserva e sinal Pix — ver seção 14.9 do `CHECKLIST_PROJETO.md`
 
 ---
 
@@ -230,3 +252,7 @@
 | 3 bloqueadores visuais de UX encontrados em auditoria de produção (página pública com mensagem contraditória do WhatsApp durante o fluxo novo; "R$" sobreposto no Dashboard; pluralização errada em Clientes) | 2026-10-01 | Commit `3f039dd` — ver detalhe na seção 9 do [`CHECKLIST_PROJETO.md`](./CHECKLIST_PROJETO.md) |
 | C4 — integração de `feat/phase5-register` (V1) ao `main` | 2026-10-02 | `main` mesclado com a feature (commit divergente `985c1f1` resolvido a favor da feature, superado), `origin/main` incluído para permitir push, histórico publicado (`1f0216a`); build frontend e suíte de testes backend validados pós-merge sem regressão nova (ver I14/I16) |
 | I16 — confirmar que o `nailflow-backend` roda exatamente o commit publicado pós-merge do V1 | 2026-10-02 | `pm2 restart nailflow-backend` executado com autorização explícita; novo pid, uptime zerado, `/health` 200, rota pública real 200, rota `/admin` 401 (protegida), sem erros novos nos logs pós-restart |
+| Onboarding: etapa "Seu link" e hero de boas-vindas | 2026-10-02 | Commits `63a7a58` e `7a2a14e`: `GET /auth/me` devolve `slug`; Perfil mostra "Seu link de agendamento" (copiar e "Ver página"); `OnboardingChecklist` com 5ª etapa (sempre concluída, `slug` é `NOT NULL`); hero "Vamos configurar sua agenda" na Início quando o onboarding está incompleto e não há próximo atendimento. O status do onboarding é buscado uma única vez em `Inicio.tsx` e repassado ao checklist. Validado em desktop e 375px; publicado em produção |
+| Personalização da página pública (foto, apresentação, cor) | 2026-10-02 | Commits `c7cacaa` e `cc1b3ce`. Migration 020 (`bio` varchar 280, `public_theme` com CHECK vinho/verde/azul) aplicada em produção após backup `/var/backups/nailflow/nailflow_pre-migration-020_2026-10-02_191104.dump` (como `postgres`, dono da tabela; os dados das 4 contas ficaram íntegros). `GET /public/:slug/info` expõe só `businessName`, `whatsappLink`, `bio`, `theme`, `photo`; `PUT /auth/me` valida bio (trim, máx. 280), tema e foto (data URL jpeg/png/webp, máx. 90.000 caracteres, abaixo do limite de corpo de 100KB) e aceita bio/tema/foto sem os dados de identidade (não exige WhatsApp). A página busca `/info` uma vez e aplica o tema próprio, independente do `localStorage` do painel. Backend reiniciado e frontend publicado; `dist` anterior preservado em `frontend/dist.bak_20261002-pre-public-profile`. Nenhuma profissional usou ainda |
+| Horários já passados de hoje eram oferecidos pela página pública (e podiam ser aceitos) | 2026-10-02 | Commit `6122abc`: `getAvailableSlots`/`checkSlotAvailability` ganharam `notBefore` opcional e `customerNotBefore()` (agora + 30 min, comparação por instante em `America/Sao_Paulo`), aplicados à página pública (`availability` e `POST`), ao bot e ao KPI "disponíveis hoje"; novo motivo `past_time`. A Agenda interna, `/availability/slots` e `/availability/check` não mudaram (retroativo continua permitido). 16 testes novos (`customer-min-notice.test.js`); em produção desde o restart do `nailflow-backend` (PID 1198013, 2026-10-02 18:08 UTC). Mensagem do bot ajustada para `past_time` ("não está mais disponível para reserva neste momento") |
+| Fase 1A — pré-agendamento e confirmação/recusa manual de solicitações | 2026-10-02 | Commits `a36626b` (backend, bot, rótulos, testes) e `47c2886` (botões Confirmar/Recusar na Agenda), enviados com push (`6122abc..47c2886`). Migration 021 (`cancel_reason`, `source`) aplicada em produção após backup `/var/backups/nailflow/nailflow_pre-migration-021_2026-10-02_210443.dump`; `N8N_WEBHOOK_REJECTED_URL` configurada e backend reiniciado; workflow n8n "NailFlow — Solicitação Recusada" (`NfSolRecusada0001`, webhook `nailflow/solicitacao-recusada`) publicado após backup do banco do n8n (`/var/backups/nailflow/n8n_database_pre-solicitacao-recusada_*.sqlite`); frontend publicado (`dist` anterior em `frontend/dist.bak_20261002-pre-fase1a`). Testes: 10 novos, suíte 236/248 com as 12 falhas conhecidas (I14 e 3 do bot). Testes sintéticos do webhook (403 sem segredo; 200 sem envio para evento errado ou sem telefone; Evolution recusa instância inexistente) e **validação real com WhatsApp**: confirmação, nova solicitação pública como "Aguardando confirmação" e recusa com mensagem recebida. Um primeiro teste de recusa não avisou a cliente por ser agendamento anterior à migration (`source` nulo) — comportamento esperado, ver M11 |

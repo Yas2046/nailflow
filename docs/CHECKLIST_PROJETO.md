@@ -1,6 +1,6 @@
 # NailFlow — Checklist Geral do Projeto
 
-> Consolida, desde o início do projeto até 2026-10-01, o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
+> Consolida, desde o início do projeto até 2026-10-02, o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
 > Legenda: `[x]` concluído · `[~]` parcialmente concluído · `[ ]` pendente/não feito.
 > Fonte: documentos em `docs/` e histórico de commits. Não repete detalhe técnico já coberto nesses documentos — só aponta para eles.
 
@@ -129,6 +129,7 @@
 - [x] Antecedência máxima de agendamento (`booking_horizon_days`) — hoje controla só o agendamento **externo** (WhatsApp + página pública)
 - [x] Agenda interna sem limite de antecedência (navegação e criação livres — separado do controle externo acima)
 - [x] Edição de agendamento diretamente pela ficha da cliente (histórico)
+- [x] **Fase 1A — pré-agendamento e confirmação manual** (2026-10-02, commits `a36626b` e `47c2886`; **em produção e validada com WhatsApp real**): ver seção 14.9
 - [x] Página pública de agendamento por slug (`/p/:slug`) — fluxo completo de autoatendimento (serviço → horário → dados → criação), não mais só uma vitrine que direciona pro WhatsApp (ver seção 14.8)
 - [x] Disponibilidade pública filtrada por serviço (`serviceId` opcional em `GET /public/:slug/availability`), com rejeição de `serviceId` inválido/de outro profissional/inativo/oculto (`400` genérico) — validado em produção em 2026-09-30
 - [x] Auditoria de segurança do fluxo de criação de agendamento público (2026-09-30): isolamento por `slug`/`professional_id` confirmado por teste real; backend não confia em preço/duração/`professionalId`/`clientId`/`status` enviados pelo cliente; horário sempre revalidado no backend; proteção contra double-booking em duas camadas (pré-checagem + `EXCLUDE` constraint do Postgres); concorrência e rollback cobertos por teste automatizado — nenhuma vulnerabilidade confirmada (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
@@ -163,12 +164,15 @@
 - [x] Evolution API rodando (Docker), autenticação por `apikey`
 - [x] Gestão de instância WhatsApp pelo painel (criar/remover instância, QR via canvas, status)
 - [x] Integração backend ↔ Evolution (status, criação/exclusão de instância)
-- [x] n8n com 4 workflows ativos: WhatsApp Definitivo, Notificações, Abandono de Conversa, Lembretes
+- [x] n8n com 5 workflows de produção ativos: WhatsApp Definitivo, Notificações, Abandono de Conversa, Lembretes e **Solicitação Recusada** (novo em 2026-10-02, id `NfSolRecusada0001`)
 - [x] Webhooks do n8n autenticados por cabeçalho (`X-NailFlow-Webhook-Secret`)
 - [x] Bot conversacional (máquina de estados completa: agendar, cancelar, consultar, atendimento humano) — ver [`FLUXOS_DO_BOT.md`](./FLUXOS_DO_BOT.md)
 - [x] `conversation_states` e `message_history` implementados e em uso (estado da conversa e log de mensagens)
 - [x] Classificador de respostas sim/não (`classifyReply`) para reduzir falsos positivos de confirmação
 - [x] Notificações de confirmação/cancelamento de agendamento via n8n
+- [x] **Aviso de recusa de solicitação** (2026-10-02): workflow separado "NailFlow — Solicitação Recusada" (webhook `POST nailflow/solicitacao-recusada`, mesma credencial Header Auth do "Notificações", envio pela Evolution com `waInstance` dinâmica); o backend dispara `appointment.rejected` com o texto pronto em `message`, e o n8n só entrega; ignora evento diferente, sem telefone (10–15 dígitos) ou sem instância válida; export versionado em `n8n/workflows/nailflow_solicitacao_recusada.json`. **Validado em produção com WhatsApp real** (recusa pela Agenda → mensagem recebida pela cliente)
+- [x] Lembrete de agendamento (`/bot/appointments-tomorrow`) passa a incluir **somente `confirmado`** — uma solicitação ainda `pendente` não recebe lembrete de atendimento confirmado (envio real do lembrete continua não validado, ver abaixo)
+- [x] Texto do bot corrigido: ao criar a solicitação (`pendente`) diz "Recebi sua solicitação… aguardando a confirmação da profissional", em vez de "confirmado"
 - [x] Regras de serviços/agendamentos oferecidas pelo bot respeitam expediente, fechamentos, antecedência máxima e visibilidade no WhatsApp por serviço
 - [x] Segurança da integração: `instance` obrigatório em todas as rotas do bot (sem fallback), CORS restrito em `/bot`, isolamento de `clientId` por profissional
 - [x] Teste real ponta a ponta (2026-09-18): mensagem → bot → agendamento, validado com números reais
@@ -184,7 +188,7 @@
 
 ## 9. Frontend / UX
 
-- [x] Tela **Início** com Dashboard (KPIs) e onboarding "Primeiros passos"
+- [x] Tela **Início** com Dashboard (KPIs) e onboarding "Primeiros passos" (5 etapas, com hero de boas-vindas enquanto o onboarding está incompleto e não há próximo atendimento)
 - [x] Tela **Agenda** (dia/semana/mês, criação/edição/bloqueio, recorrência)
 - [x] Tela **Clientes** (listagem, ficha, histórico, tags/notas)
 - [x] Tela **Serviços** (cadastro, badge WhatsApp/Agenda)
@@ -207,8 +211,10 @@
 - [x] Isolamento por `professional_id` em todas as tabelas de domínio (`NOT NULL`, sem exceção)
 - [x] Foreign keys compostas `(id, professional_id)` para impedir referência cross-tenant (migration 017)
 - [x] Constraints de negócio relevantes (preço/duração positivos, e-mail/slug/telefone únicos, `wa_instance_name` único, etc.)
-- [x] Migrations organizadas e (na maioria) idempotentes — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md) para a lista completa (001–019)
+- [x] Migrations organizadas e (na maioria) idempotentes — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md) para a lista completa (001–020)
 - [x] `admin_audit_log` (migration 019) — sem FK obrigatória para `professionals`, de propósito (sobrevive à exclusão do ator/alvo)
+- [x] Migration 020 (`professionals.bio` e `public_theme`, com CHECK em vinho/verde/azul) — **aplicada em produção em 2026-10-02** (backup prévio `/var/backups/nailflow/nailflow_pre-migration-020_2026-10-02_191104.dump`; aplicada como `postgres`, dono da tabela)
+- [x] Migration 021 (`appointments.cancel_reason` varchar(20) e `appointments.source` varchar(10), esta com CHECK `public`/`bot`/nulo; aditiva, colunas nulas) — **aplicada em produção em 2026-10-02** (backup prévio `/var/backups/nailflow/nailflow_pre-migration-021_2026-10-02_210443.dump`; aplicada como `postgres`). Agendamentos criados antes dela ficam com `source` nulo (tratados como painel/legado)
 - [x] Backup diário automatizado (`pg_dump`, retenção 7 dias)
 - [x] Snapshot dedicado por exclusão de profissional (`/var/backups/nailflow/deleted-professionals/`, retenção 90 dias autopodada)
 - [~] Migrations 007–019 são majoritariamente **retroativas** (estrutura já existia em produção, versionada depois) — ver `BANCO_DE_DADOS.md` para o detalhe de quais
@@ -218,7 +224,7 @@
 ## 11. Documentação / Git / deploy
 
 - [x] Documentação organizada em `docs/` (arquitetura, infraestrutura, banco, rotas, bot, WhatsApp, n8n, testes, pendências, próximos passos, instalação)
-- [x] Branch de trabalho única: `feat/phase5-register` — em 2026-10-01 está **8 commits à frente de `origin/feat/phase5-register`** (ainda não enviados, aguardando decisão); 0 commits atrás da origin
+- [x] Branch de trabalho: `main` — em 2026-10-02 `main` = `origin/main`, publicada e em produção (código em produção até `47c2886`, Fase 1A). `feat/phase5-register` foi integrada à `main` e fica apenas como histórico
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). Restart confirmado em 2026-10-02 (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
@@ -241,7 +247,14 @@
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02 (ver seção 11)
 - [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados) — o workflow "Notificações" também foi editado manualmente na interface em 2026-10-01 (F9) e ainda não foi re-exportado para o repositório
 - [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder que a Evolution rejeita (`exists: false`); falta um teste com número de WhatsApp real para considerar a F9 100% validada
-- [ ] **8 commits locais em `feat/phase5-register` não enviados para `origin`** — identificado em 2026-10-01, aguardando decisão de quando/como fazer push (ver seção 11)
+- [ ] A branch `feat/phase5-register` local continua à frente de `origin/feat/phase5-register`, mas todo o conteúdo já está na `main` publicada; decidir só se vale enviar ou remover a branch antiga (não afeta produção)
+- [ ] A página pública de uma conta **bloqueada** (`blocked_at`) continua acessível: `getProfessionalBySlug` não checa o bloqueio — decisão adiada em 2026-10-02 (não é bloqueador do V1)
+- [ ] Perfil: "Salvar foto" ainda envia a identidade completa e falha sem WhatsApp cadastrado; o backend já aceita foto sozinha desde 2026-10-02, falta só o frontend enviar apenas `avatar_b64`
+- [ ] A antecedência mínima de 30 min para clientes é uma constante (`CUSTOMER_MIN_NOTICE_MINUTES`), não configurável por profissional
+- [ ] Nenhuma profissional configurou foto, apresentação ou cor da página pública em produção ainda; a página mostra o cabeçalho padrão (LogoMark, tema vinho)
+- [ ] **Fase 1A — agendamentos anteriores à migration 021 têm `source` nulo**: recusar um deles funciona, mas a cliente **não** recebe WhatsApp (por desenho: só `public`/`bot` avisam). Só solicitações novas, feitas depois de 2026-10-02 21:04, avisam a cliente
+- [ ] **Fase 1A — documentação técnica de apoio** ainda sem a Fase 1A: `BANCO_DE_DADOS.md` (migration 021) e `N8N.md` (workflow "Solicitação Recusada", webhook novo e variável `N8N_WEBHOOK_REJECTED_URL`)
+- [ ] **Fase 1A — a cliente não recebe mensagem ao *solicitar* o horário pela página pública** ("recebemos sua solicitação"): a página já mostra o aviso na tela, mas não há WhatsApp de recebimento (previsto para a Fase 1B)
 
 ---
 
@@ -318,7 +331,8 @@ Hoje `Configuracoes.tsx` tem 4 abas: **Perfil, WhatsApp, Disponibilidade, Aparê
 - [x] Cadastro de serviços (etapa do checklist)
 - [x] Horários (etapa do checklist)
 - [x] Conexão WhatsApp (etapa do checklist, valida conexão real na Evolution)
-- [ ] Compartilhamento do link público **dentro do fluxo de onboarding** — não é uma etapa do checklist hoje; existe um botão de copiar link, mas está em Perfil, fora do onboarding
+- [x] Compartilhamento do link público **dentro do fluxo de onboarding** — 5ª etapa "Seu link" do checklist (concluída quando o slug existe, o que hoje vale para toda conta, pois `slug` é `NOT NULL`); o link, o botão copiar e "Ver página" ficam em Perfil (commit `63a7a58`)
+- [x] Hero de boas-vindas ("Vamos configurar sua agenda") na Início enquanto o onboarding está incompleto e não há próximo atendimento, com um único botão para a próxima etapa pendente; continua aparecendo mesmo se o checklist for ocultado (commit `7a2a14e`)
 - [x] Checklist de primeiros passos (o próprio componente `OnboardingChecklist`, com "Ocultar por enquanto")
 
 ### 14.6 Experiência geral do produto — itens para revisão futura
@@ -352,5 +366,33 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] Cliente informar os **dados necessários** (nome, telefone) — formulário implementado (Etapa 3, commit `9f88257`)
 - [x] Confirmação **cria o agendamento diretamente** — `POST /public/:slug/appointments`, status inicial `pendente`; a página já não depende do WhatsApp para fechar o agendamento (o rodapé antigo mencionando "confirmado diretamente pelo WhatsApp" não reflete mais o fluxo atual)
 - [x] Mobile — layout já é mobile-first (coluna única, `max-w-lg`, boa legibilidade em tela pequena), validado visualmente em produção em 2026-09-30
+- [x] Personalização da página pública (2026-10-02, commits `c7cacaa` e `cc1b3ce`): foto (a mesma do Perfil), apresentação de até 280 caracteres e cor da página (vinho, verde ou azul, independente do tema do painel), configuradas em Perfil > "Página pública"; `GET /public/:slug/info` expõe só campos públicos e a página o busca uma vez. Em produção, mas ainda sem uso (ver seção 12)
+- [x] Antecedência mínima de 30 minutos para clientes (commit `6122abc`, 2026-10-02): a página pública, o bot/WhatsApp e o KPI "disponíveis hoje" não oferecem nem aceitam horário que comece antes de agora + 30 min (`past_time`); corrige o bug de horários já passados de hoje aparecerem. A Agenda interna continua aceitando datas passadas (atendimentos retroativos)
 - [~] Notificação automática à profissional quando um agendamento público é criado — **implementação concluída em 2026-10-01** (commit `2d17659` + workflow do n8n), fluxo backend→n8n→Evolution validado em produção; **entrega real da mensagem no WhatsApp ainda não confirmada** porque o número de WhatsApp cadastrado da profissional de teste é um placeholder inválido — não considerar validado de ponta a ponta até um teste com número real (ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [ ] Revisão futura de aparência, fluxo, estados de erro/sucesso e experiência da cliente **como fluxo comercial de autoatendimento** — agora já existem os estados de seleção/confirmação/sucesso/erro do fluxo novo; ainda não há uma revisão pensada especificamente para venda/conversão
+
+### 14.9 Evolução do agendamento — pré-agendamento, confirmação e sinal
+
+> Plano em fases, definido em 2026-10-02. `pendente` continua sendo o valor no banco e é exibido como **"Aguardando confirmação"**. Máquina de estados definida: `pendente`/`aguardando_pagamento` → `confirmado` → `concluido`/`nao_compareceu`; `cancelado` é terminal.
+
+**Fase 1A — concluída, em produção e validada (2026-10-02)**
+- [x] `pendente` exibido como "Aguardando confirmação" na Agenda, Início, Clientes e no modal (valor no banco inalterado; agendamentos existentes preservados)
+- [x] Página pública: continua criando `pendente`, com a tela de sucesso "Agendamento solicitado!" e o texto "aguardando a confirmação da profissional"; ignora qualquer `status` enviado no corpo
+- [x] Bot: ao criar a solicitação responde que ela foi recebida e aguarda confirmação (não diz mais "confirmado")
+- [x] `POST /appointments/:id/confirm`: só a partir de `pendente`; repetir é idempotente (`changed:false`) e **não** reenvia mensagem
+- [x] `PUT /appointments/:id` com `status: 'confirmado'`: só vale a partir de `pendente` (409 a partir de cancelado/concluído/não compareceu); notifica somente na mudança real
+- [x] `POST /appointments/:id/reject`: só a partir de `pendente` → `cancelado` com `cancel_reason = 'rejected'`; avisa a cliente apenas quando `source` é `public` ou `bot`; repetir é idempotente
+- [x] Mapa central mínimo de transições (`backend/src/utils/appointmentStatus.js`), usado só por confirmar/recusar; cancelamento pela cliente (bot) preservado; a cliente não consegue confirmar nem alterar status
+- [x] Agenda: bloco "Aguardando confirmação" no modal com **Confirmar** e **Recusar** (Recusar pede confirmação; feedback por aviso; botões empilhados no celular); não aparece para confirmado/concluído/cancelado/não compareceu
+- [x] Migration 021 (`cancel_reason`, `source`) e variável `N8N_WEBHOOK_REJECTED_URL` em produção; workflow de recusa publicado
+- [x] Testes: `appointment-confirmation.test.js` (10 testes: criação pública, confirmação, repetição sem mensagem duplicada, rejeição, rejeição de já confirmado, isolamento entre profissionais, cliente sem login, lembrete só para confirmado); suíte backend 236/248, com as mesmas 12 falhas conhecidas (I14 e 3 testes do bot dependentes de data); build do frontend OK
+- [x] **Validação real em produção**: confirmação pela Agenda → WhatsApp recebido; nova solicitação pela página pública aparece como "Aguardando confirmação"; recusa pela Agenda → solicitação cancelada → WhatsApp de recusa recebido
+- Publicação: push `6122abc..47c2886`; `frontend/dist` anterior preservado em `dist.bak_20261002-pre-fase1a`
+
+**Próximas fases — não iniciadas**
+- [ ] Fase 1B: mensagem de "recebemos sua solicitação" à cliente; canal genérico de mensagens (`message.send`) a definir; contador de "aguardando" na Início
+- [ ] Fase 2: modo de confirmação (manual/automático) e reserva temporária com expiração (`expires_at`, `hold_minutes`, varredura periódica; expirar = `cancelado` + `cancel_reason='expired'`)
+- [ ] Fase 3: sinal por Pix manual (`aguardando_pagamento`, chave Pix, 30%/50%/100%/valor fixo, "pagamento recebido" pela profissional)
+- [ ] Fase 4: bot durante o pagamento (estado fora do prefixo `AGUARDANDO_`)
+- [ ] Fase 5: lembretes e mensagens pós-atendimento
+- [ ] Futuro: Pix automático/cartão (tabela `payments` e gateway)
