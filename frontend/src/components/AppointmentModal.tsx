@@ -38,7 +38,7 @@ function addDaysToYmd(base: Date, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'result';
+type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'confirm-reject' | 'result';
 
 export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId }: Props) {
   const [clients, setClients]       = useState<Client[]>([]);
@@ -178,6 +178,38 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
     }
   }
 
+  // ── Confirmar / recusar solicitação (somente status pendente) ──────────────
+
+  async function doConfirm() {
+    if (!appointment) return;
+    clearError();
+    setSaving(true);
+    try {
+      await api.post(`/appointments/${appointment.id}/confirm`);
+      toast('Agendamento confirmado');
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível confirmar o agendamento.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doReject() {
+    if (!appointment) return;
+    setSaving(true);
+    try {
+      await api.post(`/appointments/${appointment.id}/reject`);
+      toast('Solicitação recusada', 'info');
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível recusar a solicitação.');
+      setStep('form');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // ── Labels ─────────────────────────────────────────────────────────────────
 
   const dateLabel = date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
@@ -199,6 +231,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 : step === 'scope-edit' ? 'Editar recorrente'
                 : step === 'scope-cancel' ? 'Cancelar recorrente'
                 : step === 'confirm-cancel' ? 'Cancelar agendamento'
+                : step === 'confirm-reject' ? 'Recusar solicitação'
                 : isEditing ? 'Editar agendamento' : 'Novo agendamento'}
             </h3>
             <p className="text-sm text-ink/50 mt-0.5 capitalize">{dateLabel}</p>
@@ -306,6 +339,29 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
           </div>
         )}
 
+        {/* ── step: confirmar recusa da solicitação ────────────────────────── */}
+        {step === 'confirm-reject' && (
+          <div className="p-6 space-y-4 overflow-y-auto">
+            <p className="text-sm text-ink/70">
+              A solicitação será cancelada, o horário voltará a ficar disponível e, se ela veio da página pública ou do WhatsApp, a cliente poderá ser avisada. Confirma a recusa?
+            </p>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={doReject}
+                disabled={saving}
+                className="w-full px-4 py-3 text-sm rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 transition-colors text-left font-medium disabled:opacity-60"
+              >
+                {saving ? 'Recusando…' : 'Sim, recusar solicitação'}
+              </button>
+            </div>
+            <div className="flex justify-end pt-1">
+              <button onClick={() => setStep('form')} className="text-sm text-ink/50 hover:text-ink/70">
+                Voltar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── step: escopo de cancelamento ─────────────────────────────────── */}
         {step === 'scope-cancel' && (
           <div className="p-6 space-y-4 overflow-y-auto">
@@ -337,6 +393,29 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
         {/* ── step: formulário principal ────────────────────────────────────── */}
         {step === 'form' && (
           <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+
+            {/* solicitação aguardando confirmação: confirmar ou recusar */}
+            {isEditing && appointment?.status === 'pendente' && (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                <p className="text-sm font-medium text-amber-800">Aguardando confirmação</p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                  <button
+                    onClick={doConfirm}
+                    disabled={saving}
+                    className="flex-1 px-4 py-2.5 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700 disabled:opacity-60 transition-colors font-medium"
+                  >
+                    {saving ? 'Confirmando…' : 'Confirmar'}
+                  </button>
+                  <button
+                    onClick={() => { clearError(); setStep('confirm-reject'); }}
+                    disabled={saving}
+                    className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 disabled:opacity-60 transition-colors font-medium"
+                  >
+                    Recusar
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* badge série recorrente */}
             {isRecurringAppt && (
