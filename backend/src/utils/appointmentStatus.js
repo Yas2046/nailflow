@@ -6,6 +6,7 @@
  */
 export const TRANSITIONS = {
   confirm: { from: ['pendente'], to: 'confirmado' },
+  markPaid: { from: ['aguardando_pagamento'], to: 'confirmado' },
   reject: { from: ['pendente'], to: 'cancelado', cancelReason: 'rejected' },
 };
 

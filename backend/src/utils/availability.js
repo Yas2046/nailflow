@@ -1,6 +1,9 @@
 import { pool } from '../config/db.js';
 import { getZonedParts, timeStringToUtcOnDate, parseZonedDateTime } from './timezone.js';
 
+import { expiredHoldSql } from './bookingRules.js';
+
+const EXPIRED_HOLD = expiredHoldSql();
 const SLOT_STEP_MINUTES = 30; // granularidade dos horários sugeridos
 
 // Antecedência mínima para horários oferecidos/aceitos em fluxos de CLIENTE
@@ -121,7 +124,7 @@ export async function getAvailableSlots(professionalId, date, serviceDurationMin
 
   const { rows: appts } = await pool.query(
     `SELECT starts_at, ends_at FROM appointments
-     WHERE professional_id = $1 AND status <> 'cancelado'
+     WHERE professional_id = $1 AND status <> 'cancelado' AND NOT ${EXPIRED_HOLD}
        AND starts_at < $3 AND ends_at > $2`,
     [professionalId, startOfDay, endOfDay]
   );
@@ -252,7 +255,7 @@ export async function checkSlotAvailability(professionalId, serviceId, startsAtI
 
   const { rows: overlapRows } = await pool.query(
     `SELECT id FROM appointments
-     WHERE professional_id = $1 AND status <> 'cancelado'
+     WHERE professional_id = $1 AND status <> 'cancelado' AND NOT ${EXPIRED_HOLD}
        AND starts_at < $3 AND ends_at > $2
        ${excludeAppointmentId ? 'AND id <> $4' : ''}
      LIMIT 1`,

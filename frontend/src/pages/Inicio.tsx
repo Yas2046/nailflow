@@ -38,6 +38,7 @@ function durationMinutes(startsAt: string, endsAt: string) {
 
 const statusConfig: Record<string, { label: string; cls: string; dot: string }> = {
   pendente:       { label: 'Aguardando confirmação',      cls: 'bg-amber-50 text-amber-700 border border-amber-200',     dot: 'bg-amber-400' },
+  aguardando_pagamento: { label: 'Aguardando pagamento', cls: 'bg-sky-50 text-sky-700 border border-sky-200', dot: 'bg-sky-400' },
   confirmado:     { label: 'Confirmado',      cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' },
   concluido:      { label: 'Concluído',       cls: 'bg-green-50 text-green-700 border border-green-200',     dot: 'bg-green-500' },
   cancelado:      { label: 'Cancelado',       cls: 'bg-rose-50 text-rose-600 border border-rose-200',        dot: 'bg-rose-400' },

@@ -16,6 +16,7 @@ import whatsappRoutes from './routes/whatsapp.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import onboardingRoutes from './routes/onboarding.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { startHoldSweeper } from './utils/bookingRules.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -59,6 +60,8 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`NailFlow API rodando em http://localhost:${PORT}`);
   });
+  // Cancela (cancel_reason='expired') as reservas vencidas, liberando o horário.
+  startHoldSweeper();
 }
 
 export default app;

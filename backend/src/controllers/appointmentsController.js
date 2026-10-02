@@ -4,13 +4,14 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
 import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.js';
 import { TRANSITIONS, CLIENT_ORIGINATED_SOURCES } from '../utils/appointmentStatus.js';
+import { expireDueHolds, formatWhen } from '../utils/bookingRules.js';
 
 const createSchema = z.object({
   clientId: z.string().uuid(),
   serviceId: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }).or(z.string().min(1)), // ISO string
   notes: z.string().optional().nullable(),
-  status: z.enum(['pendente', 'confirmado', 'cancelado', 'concluido', 'nao_compareceu']).optional(),
+  status: z.enum(['pendente', 'aguardando_pagamento', 'confirmado', 'cancelado', 'concluido', 'nao_compareceu']).optional(),
 });
 
 const updateSchema = createSchema.partial();
@@ -38,6 +39,9 @@ function toDto(row) {
     notes: row.notes,
     priceCentsSnapshot: row.price_cents_snapshot,
     recurringGroupId: row.recurring_group_id ?? null,
+    expiresAt: row.expires_at ?? null,
+    depositCents: row.deposit_cents ?? null,
+    paidAt: row.paid_at ?? null,
   };
 }
 
@@ -112,6 +116,7 @@ export async function createAppointment(req, res, next) {
     if (!serviceRows[0]) throw new HttpError(400, 'Serviço inválido.');
     await assertOwnClient(data.clientId, req.professionalId);
 
+    await expireDueHolds({ professionalId: req.professionalId });
     const check = await checkSlotAvailability(req.professionalId, data.serviceId, data.startsAt);
     if (!check.available) {
       const alternatives = check.reason !== 'invalid_datetime'
@@ -167,6 +172,7 @@ export async function updateAppointment(req, res, next) {
         newSnapshot = serviceRows[0].price_cents;
       }
 
+      await expireDueHolds({ professionalId: req.professionalId });
       const check = await checkSlotAvailability(req.professionalId, serviceId, newStartsAt, req.params.id);
       if (!check.available) {
         const alternatives = check.reason !== 'invalid_datetime'
@@ -183,20 +189,22 @@ export async function updateAppointment(req, res, next) {
          starts_at = COALESCE($3, starts_at),
          ends_at = COALESCE($4, ends_at),
          status = COALESCE($5::text, appointments.status),
+         expires_at = CASE WHEN $5::text = 'confirmado' THEN NULL ELSE appointments.expires_at END,
          notes = COALESCE($6, notes),
          price_cents_snapshot = COALESCE($9, price_cents_snapshot)
        FROM (SELECT id, status AS prev_status FROM appointments
              WHERE id = $7 AND professional_id = $8 FOR UPDATE) old
        WHERE appointments.id = old.id
-         AND ($5::text IS DISTINCT FROM 'confirmado' OR appointments.status = ANY($10::text[]))
+         AND ($5::text IS DISTINCT FROM 'confirmado' OR appointments.status = 'confirmado'
+              OR (appointments.status = ANY($10::text[]) AND (appointments.expires_at IS NULL OR appointments.expires_at > now())))
        RETURNING appointments.*, old.prev_status`,
       [data.clientId, data.serviceId, newStartsAt, newEndsAt, data.status, data.notes, req.params.id, req.professionalId, newSnapshot ?? null,
-       [...TRANSITIONS.confirm.from, 'confirmado']]
+       TRANSITIONS.confirm.from]
     );
     if (!rows[0]) {
-      const { rows: exists } = await pool.query('SELECT 1 FROM appointments WHERE id = $1 AND professional_id = $2', [req.params.id, req.professionalId]);
-      if (!exists[0]) throw new HttpError(404, 'Agendamento não encontrado.');
-      return res.status(409).json({ error: 'Só é possível confirmar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
+      const failure = await confirmFailure(req.params.id, req.professionalId);
+      if (!failure) throw new HttpError(404, 'Agendamento não encontrado.');
+      return res.status(409).json(failure);
     }
 
     const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
@@ -239,6 +247,7 @@ export async function cancelAppointment(req, res, next) {
 export async function createRecurring(req, res, next) {
   try {
     const data = createRecurringSchema.parse(req.body);
+    await expireDueHolds({ professionalId: req.professionalId });
 
     const { rows: serviceRows } = await pool.query(
       'SELECT duration_minutes, price_cents FROM services WHERE id = $1 AND professional_id = $2',
@@ -348,7 +357,7 @@ export async function cancelFromNow(req, res, next) {
 export async function updateFromNow(req, res, next) {
   try {
     const schema = z.object({
-      status: z.enum(['pendente', 'confirmado', 'cancelado', 'concluido', 'nao_compareceu']).optional(),
+      status: z.enum(['pendente', 'aguardando_pagamento', 'confirmado', 'cancelado', 'concluido', 'nao_compareceu']).optional(),
       notes: z.string().optional().nullable(),
     });
     const data = schema.parse(req.body);
@@ -378,11 +387,23 @@ export async function updateFromNow(req, res, next) {
   }
 }
 
-function formatWhen(startsAt) {
-  const d = new Date(startsAt);
-  const date = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-  const time = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-  return `${date} às ${time}`;
+// Motivo do 409 quando a confirmação não aconteceu. Reserva vencida (ainda que
+// não varrida) vira expirada na hora, liberando o horário. null = não existe.
+async function confirmFailure(id, professionalId, invalidMsg = 'Só é possível confirmar um agendamento aguardando confirmação.') {
+  const { rows } = await pool.query(
+    `SELECT status, cancel_reason, (expires_at IS NOT NULL AND expires_at <= now()) AS due
+     FROM appointments WHERE id = $1 AND professional_id = $2`,
+    [id, professionalId]
+  );
+  const cur = rows[0];
+  if (!cur) return null;
+  const expiredMsg = 'A reserva deste horário expirou. Peça para a cliente solicitar novamente.';
+  if (cur.status === 'cancelado' && cur.cancel_reason === 'expired') return { error: expiredMsg, reason: 'hold_expired' };
+  if (['pendente', 'aguardando_pagamento'].includes(cur.status) && cur.due) {
+    await expireDueHolds({ professionalId });
+    return { error: expiredMsg, reason: 'hold_expired' };
+  }
+  return { error: invalidMsg, reason: 'invalid_transition' };
 }
 
 async function loadFullDto(id, professionalId) {
@@ -396,8 +417,9 @@ export async function confirmAppointment(req, res, next) {
   try {
     const t = TRANSITIONS.confirm;
     const { rows } = await pool.query(
-      `UPDATE appointments SET status = $3
-       WHERE id = $1 AND professional_id = $2 AND status = ANY($4::text[]) RETURNING id`,
+      `UPDATE appointments SET status = $3, expires_at = NULL
+       WHERE id = $1 AND professional_id = $2 AND status = ANY($4::text[])
+         AND (expires_at IS NULL OR expires_at > now()) RETURNING id`,
       [req.params.id, req.professionalId, t.to, t.from]
     );
     const full = await loadFullDto(req.params.id, req.professionalId);
@@ -409,7 +431,36 @@ export async function confirmAppointment(req, res, next) {
       return res.json({ ...full.dto, changed: true });
     }
     if (full.row.status === t.to) return res.json({ ...full.dto, changed: false });
-    return res.status(409).json({ error: 'Só é possível confirmar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
+    return res.status(409).json(await confirmFailure(req.params.id, req.professionalId));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /appointments/:id/mark-paid — aguardando_pagamento → confirmado (sinal Pix
+// recebido). Atômico e idempotente; recusa reserva vencida (hold_expired) e
+// qualquer outro estado. Só então a cliente recebe a mensagem de confirmação.
+export async function markPaidAppointment(req, res, next) {
+  try {
+    const t = TRANSITIONS.markPaid;
+    const { rows } = await pool.query(
+      `UPDATE appointments SET status = $3, expires_at = NULL, paid_at = now()
+       WHERE id = $1 AND professional_id = $2 AND status = ANY($4::text[])
+         AND (expires_at IS NULL OR expires_at > now()) RETURNING id`,
+      [req.params.id, req.professionalId, t.to, t.from]
+    );
+    const full = await loadFullDto(req.params.id, req.professionalId);
+    if (!full) throw new HttpError(404, 'Agendamento não encontrado.');
+
+    if (rows[0]) {
+      const { rows: inst } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+      notifyN8n('appointment.confirmed', { ...full.dto, waInstance: inst[0]?.wa_instance_name ?? null });
+      return res.json({ ...full.dto, changed: true });
+    }
+    if (full.row.status === t.to && full.row.paid_at) return res.json({ ...full.dto, changed: false });
+    return res.status(409).json(
+      await confirmFailure(req.params.id, req.professionalId, 'Só é possível marcar o pagamento de um agendamento aguardando pagamento.')
+    );
   } catch (err) {
     next(err);
   }
@@ -442,6 +493,9 @@ export async function rejectAppointment(req, res, next) {
     }
     if (full.row.status === t.to && full.row.cancel_reason === t.cancelReason) {
       return res.json({ ...full.dto, changed: false });
+    }
+    if (full.row.status === 'cancelado' && full.row.cancel_reason === 'expired') {
+      return res.status(409).json({ error: 'A reserva deste horário já expirou.', reason: 'hold_expired' });
     }
     return res.status(409).json({ error: 'Só é possível recusar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
   } catch (err) {

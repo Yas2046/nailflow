@@ -1,4 +1,4 @@
-export type AppointmentStatus = 'pendente' | 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+export type AppointmentStatus = 'pendente' | 'aguardando_pagamento' | 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
 
 export type RecurringFrequency = 'weekly' | 'biweekly';
 
@@ -15,6 +15,9 @@ export interface Appointment {
   notes: string | null;
   tags?: string[];
   recurringGroupId: string | null;
+  expiresAt?: string | null;
+  depositCents?: number | null;
+  paidAt?: string | null;
 }
 
 export interface RecurringResult {

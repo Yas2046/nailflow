@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '../context/ToastContext';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
@@ -15,6 +15,7 @@ interface Props {
 
 const statusOptions: { value: AppointmentStatus; label: string }[] = [
   { value: 'pendente',        label: 'Aguardando confirmação' },
+  { value: 'aguardando_pagamento', label: 'Aguardando pagamento' },
   { value: 'confirmado',      label: 'Confirmado' },
   { value: 'concluido',       label: 'Concluído' },
   { value: 'nao_compareceu',  label: 'Não compareceu' },
@@ -38,7 +39,9 @@ function addDaysToYmd(base: Date, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'confirm-reject' | 'result';
+const brlCents = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'confirm-reject' | 'confirm-paid' | 'result';
 
 export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId }: Props) {
   const [clients, setClients]       = useState<Client[]>([]);
@@ -210,6 +213,29 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
     }
   }
 
+  // ── Pagamento recebido (somente status aguardando_pagamento) ───────────────
+
+  async function doMarkPaid() {
+    if (!appointment) return;
+    setSaving(true);
+    try {
+      await api.post(`/appointments/${appointment.id}/mark-paid`);
+      toast('Pagamento registrado — agendamento confirmado');
+      onSaved();
+    } catch (err) {
+      if (err instanceof ApiError && err.reason === 'hold_expired') {
+        // a reserva venceu: o horário já foi liberado, então atualiza a Agenda
+        toast(err.message, 'error');
+        onSaved();
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Não foi possível registrar o pagamento.');
+      setStep('form');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // ── Labels ─────────────────────────────────────────────────────────────────
 
   const dateLabel = date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
@@ -232,6 +258,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 : step === 'scope-cancel' ? 'Cancelar recorrente'
                 : step === 'confirm-cancel' ? 'Cancelar agendamento'
                 : step === 'confirm-reject' ? 'Recusar solicitação'
+                : step === 'confirm-paid' ? 'Pagamento recebido'
                 : isEditing ? 'Editar agendamento' : 'Novo agendamento'}
             </h3>
             <p className="text-sm text-ink/50 mt-0.5 capitalize">{dateLabel}</p>
@@ -362,6 +389,30 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
           </div>
         )}
 
+        {/* ── step: confirmar pagamento recebido ───────────────────────────── */}
+        {step === 'confirm-paid' && (
+          <div className="p-6 space-y-4 overflow-y-auto">
+            <p className="text-sm text-ink/70">
+              Confirma que o sinal{appointment?.depositCents != null ? ` de ${brlCents(appointment.depositCents)}` : ''} foi
+              recebido? O agendamento será confirmado e a cliente será avisada.
+            </p>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={doMarkPaid}
+                disabled={saving}
+                className="w-full px-4 py-3 text-sm rounded-xl bg-wine-600 text-white hover:bg-wine-700 transition-colors text-left font-medium disabled:opacity-60"
+              >
+                {saving ? 'Confirmando…' : 'Sim, pagamento recebido'}
+              </button>
+            </div>
+            <div className="flex justify-end pt-1">
+              <button onClick={() => setStep('form')} className="text-sm text-ink/50 hover:text-ink/70">
+                Voltar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── step: escopo de cancelamento ─────────────────────────────────── */}
         {step === 'scope-cancel' && (
           <div className="p-6 space-y-4 overflow-y-auto">
@@ -412,6 +463,31 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                     className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 disabled:opacity-60 transition-colors font-medium"
                   >
                     Recusar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* sinal aguardando pagamento: marcar como recebido */}
+            {isEditing && appointment?.status === 'aguardando_pagamento' && (
+              <div className="rounded-xl bg-sky-50 border border-sky-200 p-3">
+                <p className="text-sm font-medium text-sky-800">Aguardando pagamento</p>
+                {(appointment.depositCents != null || appointment.expiresAt) && (
+                  <p className="text-xs text-sky-700 mt-0.5">
+                    {appointment.depositCents != null && <>Sinal: {brlCents(appointment.depositCents)}</>}
+                    {appointment.depositCents != null && appointment.expiresAt && ' · '}
+                    {appointment.expiresAt && (
+                      <>reserva vale até {new Date(appointment.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</>
+                    )}
+                  </p>
+                )}
+                <div className="mt-2">
+                  <button
+                    onClick={() => { clearError(); setStep('confirm-paid'); }}
+                    disabled={saving}
+                    className="w-full px-4 py-2.5 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700 disabled:opacity-60 transition-colors font-medium"
+                  >
+                    Pagamento recebido
                   </button>
                 </div>
               </div>
@@ -471,7 +547,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
             {isEditing && (
               <Field label="Status">
                 <select className="input" value={status} onChange={(e) => setStatus(e.target.value as AppointmentStatus)}>
-                  {statusOptions.map((s) => (
+                  {statusOptions.filter((o) => o.value !== 'aguardando_pagamento' || appointment?.status === 'aguardando_pagamento').map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>

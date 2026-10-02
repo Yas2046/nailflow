@@ -5,12 +5,13 @@ import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
+import { expireDueHolds, initialBookingState, formatWhen, calculateDepositCents, paymentInstructionsText } from '../utils/bookingRules.js';
 import { AVATAR_DATA_URL_RE, PUBLIC_THEMES } from './authController.js';
 
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
   const { rows } = await pool.query(
-    'SELECT id, business_name, phone_whatsapp, booking_horizon_days, wa_instance_name FROM professionals WHERE slug = $1',
+    'SELECT id, business_name, phone_whatsapp, booking_horizon_days, wa_instance_name, confirmation_mode, deposit_required, deposit_type, deposit_value, pix_key FROM professionals WHERE slug = $1',
     [slug]
   );
   return rows[0] || null;
@@ -197,6 +198,9 @@ export async function createPublicAppointment(req, res, next) {
     const service = serviceRows[0];
     if (!service) throw new HttpError(400, 'Serviço inválido.');
 
+    // Libera reservas vencidas antes de contar/checar (a EXCLUDE ainda as enxerga).
+    await expireDueHolds({ professionalId: professional.id });
+
     // Limite de agendamentos futuros pendentes/confirmados para este telefone
     // com esta profissional — funciona mesmo se a cliente ainda não tiver
     // ficha (COUNT dá 0 nesse caso).
@@ -205,7 +209,7 @@ export async function createPublicAppointment(req, res, next) {
        FROM appointments a
        JOIN clients c ON c.id = a.client_id
        WHERE c.professional_id = $1 AND c.phone = $2
-         AND a.status IN ('pendente','confirmado') AND a.starts_at > now()`,
+         AND a.status IN ('pendente','aguardando_pagamento','confirmado') AND a.starts_at > now()`,
       [professional.id, phone]
     );
     if (futureRows[0].total >= MAX_FUTURE_APPOINTMENTS_PER_PHONE) {
@@ -229,6 +233,10 @@ export async function createPublicAppointment(req, res, next) {
     // são sobrescritos por este formulário público.
     const existingClient = await findClientByPhone(professional.id, phone);
 
+    // Estado inicial conforme a configuração da profissional (manual/automático/sinal).
+    const depositCents = calculateDepositCents(professional, service.price_cents);
+    const initial = initialBookingState(professional, clock.now(), depositCents);
+
     const txClient = await pool.connect();
     try {
       await txClient.query('BEGIN');
@@ -245,9 +253,9 @@ export async function createPublicAppointment(req, res, next) {
       }
 
       const { rows: apptRows } = await txClient.query(
-        `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes, price_cents_snapshot, source)
-         VALUES ($1,$2,$3,$4,$5,'pendente',$6,$7,'public')
-         RETURNING id, starts_at, ends_at, status`,
+        `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes, price_cents_snapshot, source, expires_at, deposit_cents)
+         VALUES ($1,$2,$3,$4,$5,$8,$6,$7,'public',$9,$10)
+         RETURNING id, starts_at, ends_at, status, expires_at, deposit_cents`,
         [
           professional.id,
           clientId,
@@ -256,6 +264,9 @@ export async function createPublicAppointment(req, res, next) {
           new Date(check.endsAt),
           data.notes ?? null,
           service.price_cents,
+          initial.status,
+          initial.expiresAt,
+          initial.status === 'aguardando_pagamento' ? depositCents : null,
         ]
       );
 
@@ -274,12 +285,56 @@ export async function createPublicAppointment(req, res, next) {
         endsAt: apptRows[0].ends_at,
       });
 
+      // Mensagem à cliente (o backend decide o texto; o n8n só entrega):
+      //   pendente    → "recebemos sua solicitação, aguardando confirmação"
+      //   confirmado  → confirmação imediata (modo automático)
+      const firstName = String(data.clientName).trim().split(/\s+/)[0];
+      if (apptRows[0].status === 'pendente') {
+        notifyN8n('message.send', {
+          kind: 'appointment_requested',
+          waInstance: professional.wa_instance_name,
+          clientPhone: phone,
+          clientName: data.clientName,
+          text: `Olá, ${firstName}! Recebemos sua solicitação de *${service.name}* para ${formatWhen(apptRows[0].starts_at)}. 💅 Ela está aguardando a confirmação da profissional — assim que for confirmada, te aviso por aqui.`,
+        });
+      } else if (apptRows[0].status === 'aguardando_pagamento') {
+        notifyN8n('message.send', {
+          kind: 'payment_instructions',
+          waInstance: professional.wa_instance_name,
+          clientPhone: phone,
+          clientName: data.clientName,
+          text: `Olá, ${firstName}! ${paymentInstructionsText({
+            serviceName: service.name,
+            startsAt: apptRows[0].starts_at,
+            amountCents: apptRows[0].deposit_cents,
+            pixKey: professional.pix_key,
+            expiresAt: apptRows[0].expires_at,
+          })}`,
+        });
+      } else if (apptRows[0].status === 'confirmado') {
+        notifyN8n('appointment.confirmed', {
+          professionalId: professional.id,
+          waInstance: professional.wa_instance_name,
+          clientName: data.clientName,
+          clientPhone: phone,
+          serviceName: service.name,
+          startsAt: apptRows[0].starts_at,
+          endsAt: apptRows[0].ends_at,
+          status: 'confirmado',
+        });
+      }
+
       return res.status(201).json({
         id: apptRows[0].id,
         startsAt: apptRows[0].starts_at,
         endsAt: apptRows[0].ends_at,
         serviceName: service.name,
         status: apptRows[0].status,
+        expiresAt: apptRows[0].expires_at,
+        // A chave Pix só é revelada aqui, depois que a reserva foi criada.
+        ...(apptRows[0].status === 'aguardando_pagamento'
+          ? { deposit: { amountCents: apptRows[0].deposit_cents, pixKey: professional.pix_key, expiresAt: apptRows[0].expires_at } }
+          : {}),
       });
     } catch (err) {
       await txClient.query('ROLLBACK');

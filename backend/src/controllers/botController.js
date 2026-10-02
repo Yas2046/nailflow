@@ -1,6 +1,7 @@
 import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { checkSlotAvailability, getAvailableSlots, customerNotBefore } from '../utils/availability.js';
+import { checkSlotAvailability, getAvailableSlots, customerNotBefore, clock } from '../utils/availability.js';
+import { expireDueHolds, initialBookingState, calculateDepositCents, paymentInstructionsText } from '../utils/bookingRules.js';
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
@@ -170,7 +171,7 @@ async function getUpcomingAppointments(professionalId, phone) {
      FROM appointments a JOIN services s ON s.id = a.service_id
      WHERE a.client_id = $1
        AND a.professional_id = $2
-       AND a.status IN ('pendente','confirmado')
+       AND a.status IN ('pendente','aguardando_pagamento','confirmado')
        AND a.starts_at > now()
      ORDER BY a.starts_at ASC`,
     [client.id, professionalId]
@@ -976,6 +977,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       // Find or create client
       const client = await findOrCreateClient(professionalId, phone, pushName || 'Cliente WhatsApp');
 
+      await expireDueHolds({ professionalId });
+
       // Validate one last time
       const check = await checkSlotAvailability(professionalId, ctx.serviceId, ctx.selectedSlot, null, { notBefore: customerNotBefore() });
       if (!check.available) {
@@ -1002,10 +1005,17 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
         'SELECT price_cents FROM services WHERE id = $1 AND professional_id = $2',
         [ctx.serviceId, professionalId]
       );
+      const { rows: profRows } = await pool.query(
+        'SELECT confirmation_mode, deposit_required, deposit_type, deposit_value, pix_key FROM professionals WHERE id = $1',
+        [professionalId]
+      );
+      const bookedPrice = svcRows[0]?.price_cents ?? ctx.servicePrice;
+      const depositCents = calculateDepositCents(profRows[0], bookedPrice);
+      const initial = initialBookingState(profRows[0], clock.now(), depositCents);
       const { rows: apptRows } = await pool.query(
         `INSERT INTO appointments
-           (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot, source)
-         VALUES ($1,$2,$3,$4,$5,'pendente',$6,'bot')
+           (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot, source, expires_at, deposit_cents)
+         VALUES ($1,$2,$3,$4,$5,$7,$6,'bot',$8,$9)
          RETURNING *`,
         [
           professionalId,
@@ -1014,14 +1024,30 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
           new Date(check.startsAt),
           new Date(check.endsAt),
           svcRows[0]?.price_cents ?? ctx.servicePrice,
+          initial.status,
+          initial.expiresAt,
+          initial.status === 'aguardando_pagamento' ? depositCents : null,
         ]
       );
 
       const dateFormatted = formatDateBR(new Date(ctx.selectedSlot));
       const timeFormatted = formatTimeBR(new Date(ctx.selectedSlot));
 
+      // O texto de resposta já é a mensagem à cliente (sem evento extra).
+      const bookedText = initial.status === 'confirmado'
+        ? `Prontinho! 💅 *${ctx.serviceName}* confirmado para ${dateFormatted} às ${timeFormatted}. Qualquer coisa, é só chamar! 😊`
+        : initial.status === 'aguardando_pagamento'
+          ? paymentInstructionsText({
+              serviceName: ctx.serviceName,
+              startsAt: ctx.selectedSlot,
+              amountCents: depositCents,
+              pixKey: profRows[0].pix_key,
+              expiresAt: initial.expiresAt,
+            })
+          : `Recebi sua solicitação! 💅 *${ctx.serviceName}* em ${dateFormatted} às ${timeFormatted} está aguardando a confirmação da profissional. Assim que ela confirmar, eu te aviso por aqui. 😊`;
+
       return reply(
-        `Recebi sua solicitação! 💅 *${ctx.serviceName}* em ${dateFormatted} às ${timeFormatted} está aguardando a confirmação da profissional. Assim que ela confirmar, eu te aviso por aqui. 😊`,
+        bookedText,
         'MENU',
         {}
       );

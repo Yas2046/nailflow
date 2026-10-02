@@ -61,6 +61,7 @@ function IconPencil() {
 const STATUS_CFG: Record<string, { label: string; dot: string; badge: string; border: string; bg: string }> = {
   confirmado:     { label: 'Confirmado',      dot: 'bg-wine-500',    badge: 'bg-wine-50 text-wine-700 border border-wine-200',       border: 'border-wine-500',  bg: 'bg-wine-500/5' },
   pendente:       { label: 'Aguardando confirmação',      dot: 'bg-gold-500',    badge: 'bg-amber-50 text-amber-700 border border-amber-200',    border: 'border-gold-500',  bg: 'bg-gold-500/5' },
+  aguardando_pagamento: { label: 'Aguardando pagamento', dot: 'bg-sky-400', badge: 'bg-sky-50 text-sky-700 border border-sky-200', border: 'border-sky-400', bg: 'bg-sky-400/5' },
   concluido:      { label: 'Concluído',       dot: 'bg-sage-500',    badge: 'bg-green-50 text-green-700 border border-green-200',    border: 'border-sage-500',  bg: 'bg-sage-500/5' },
   cancelado:      { label: 'Cancelado',       dot: 'bg-rose-400',    badge: 'bg-rose-50 text-rose-600 border border-rose-200',       border: 'border-rose-300',  bg: 'bg-rose-50/40' },
   nao_compareceu: { label: 'Não compareceu',  dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500 border border-gray-200',     border: 'border-gray-300',  bg: 'bg-gray-50/40' },

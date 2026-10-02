@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { login, logout, me, updateMe, register } from '../controllers/authController.js';
+import { login, logout, me, updateMe, register, getBookingSettings, updateBookingSettings } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const loginRateLimit = rateLimit({
@@ -34,5 +34,7 @@ router.post('/logout', logout);
 router.post('/register', registerRateLimit, register);
 router.get('/me', requireAuth, me);
 router.put('/me', requireAuth, updateMe);
+router.get('/booking-settings', requireAuth, getBookingSettings);
+router.put('/booking-settings', requireAuth, updateBookingSettings);
 
 export default router;

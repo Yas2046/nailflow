@@ -205,3 +205,91 @@ export async function register(req, res, next) {
     next(err);
   }
 }
+
+// ── Regras de confirmação e sinal (por profissional) ───────────────────────
+// Sinal por Pix manual: só com confirmação automática (o horário é confirmado
+// quando a profissional marca o pagamento como recebido). O prazo de pagamento
+// é fixo (2 horas) e não é configurável. Os valores são validados aqui; o
+// frontend nunca define quanto será cobrado de cada cliente.
+const DEPOSIT_PERCENTAGES = [30, 50, 100];
+const MIN_FIXED_DEPOSIT_CENTS = 100;       // R$ 1,00
+const MAX_FIXED_DEPOSIT_CENTS = 1_000_000; // R$ 10.000,00
+const PIX_KEY_RE = /^[A-Za-z0-9@.+_-]{5,77}$/;
+
+const bookingSettingsSchema = z.object({
+  confirmation_mode: z.enum(['manual', 'automatic'], { errorMap: () => ({ message: 'Modo de confirmação inválido.' }) }).optional(),
+  deposit_required: z.boolean({ invalid_type_error: 'Valor inválido para cobrança de sinal.' }).optional(),
+  deposit_type: z.enum(['percentage', 'fixed'], { errorMap: () => ({ message: 'Tipo de sinal inválido.' }) }).optional(),
+  deposit_value: z.number({ invalid_type_error: 'Valor do sinal inválido.' }).int('Valor do sinal inválido.').optional(),
+  pix_key: z.union([z.string().trim().max(120, 'Chave Pix inválida.'), z.null()]).optional(),
+}).strict();
+
+const BOOKING_SETTINGS_COLUMNS = 'confirmation_mode, deposit_required, deposit_type, deposit_value, pix_key';
+
+export async function getBookingSettings(req, res, next) {
+  try {
+    const { rows } = await pool.query(`SELECT ${BOOKING_SETTINGS_COLUMNS} FROM professionals WHERE id = $1`, [req.professionalId]);
+    if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+}
+
+function validateDepositSettings(s) {
+  if (s.deposit_type != null || s.deposit_value != null) {
+    if (s.deposit_type == null || s.deposit_value == null) {
+      throw new HttpError(400, 'Informe o tipo e o valor do sinal.');
+    }
+    if (s.deposit_type === 'percentage' && !DEPOSIT_PERCENTAGES.includes(s.deposit_value)) {
+      throw new HttpError(400, 'O percentual do sinal deve ser 30%, 50% ou 100%.');
+    }
+    if (s.deposit_type === 'fixed' && (s.deposit_value < MIN_FIXED_DEPOSIT_CENTS || s.deposit_value > MAX_FIXED_DEPOSIT_CENTS)) {
+      throw new HttpError(400, 'O valor fixo do sinal deve ficar entre R$ 1,00 e R$ 10.000,00.');
+    }
+  }
+  if (s.pix_key != null && !PIX_KEY_RE.test(s.pix_key)) {
+    throw new HttpError(400, 'Chave Pix inválida. Use CPF/CNPJ, e-mail, telefone ou chave aleatória, sem espaços.');
+  }
+  if (s.deposit_required) {
+    if (s.confirmation_mode !== 'automatic') {
+      throw new HttpError(400, 'Para cobrar sinal, a confirmação precisa ser automática: o horário é confirmado quando você marca o pagamento como recebido.');
+    }
+    if (s.deposit_type == null) throw new HttpError(400, 'Informe o tipo e o valor do sinal.');
+    if (!s.pix_key) throw new HttpError(400, 'Informe a chave Pix para cobrar o sinal.');
+  }
+}
+
+export async function updateBookingSettings(req, res, next) {
+  try {
+    const body = bookingSettingsSchema.parse(req.body ?? {});
+    const keys = Object.keys(body);
+    if (keys.length === 0) throw new HttpError(400, 'Nenhum campo para atualizar.');
+
+    const { rows: cur } = await pool.query(`SELECT ${BOOKING_SETTINGS_COLUMNS} FROM professionals WHERE id = $1`, [req.professionalId]);
+    if (!cur[0]) throw new HttpError(404, 'Profissional não encontrada.');
+
+    const merged = { ...cur[0], ...body };
+    if (typeof merged.pix_key === 'string' && merged.pix_key === '') merged.pix_key = null;
+    validateDepositSettings(merged);
+
+    const sets = [];
+    const values = [];
+    for (const key of ['confirmation_mode', 'deposit_required', 'deposit_type', 'deposit_value', 'pix_key']) {
+      if (key in body) {
+        values.push(merged[key]);
+        sets.push(`${key} = $${values.length}`);
+      }
+    }
+    values.push(req.professionalId);
+    const { rows } = await pool.query(
+      `UPDATE professionals SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING ${BOOKING_SETTINGS_COLUMNS}`,
+      values
+    );
+    if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
+    res.json(rows[0]);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new HttpError(400, err.issues[0]?.message || 'Dados inválidos.'));
+    next(err);
+  }
+}

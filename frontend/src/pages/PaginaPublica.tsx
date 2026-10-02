@@ -31,9 +31,34 @@ interface BookingResult {
   endsAt: string;
   serviceName: string;
   status: string;
+  // Só vem quando há sinal a pagar: a chave Pix é revelada apenas depois da reserva.
+  deposit?: { amountCents: number; pixKey: string; expiresAt: string };
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
+
+// Texto da tela de sucesso conforme o estado devolvido pela API.
+function bookingTexts(status: string, hasDeposit = false): { title: string; body: string } {
+  if (status === 'confirmado') {
+    return { title: 'Agendamento confirmado!', body: 'Seu horário está garantido. Esperamos você!' };
+  }
+  if (status === 'aguardando_pagamento' && hasDeposit) {
+    return {
+      title: 'Horário reservado!',
+      body: 'Faça o pagamento do sinal por Pix para garantir o seu horário.',
+    };
+  }
+  if (status === 'aguardando_pagamento') {
+    return {
+      title: 'Horário reservado!',
+      body: 'Seu horário está reservado e aguardando o pagamento do sinal. A profissional vai enviar as instruções.',
+    };
+  }
+  return {
+    title: 'Agendamento solicitado!',
+    body: 'Sua solicitação foi recebida e está aguardando confirmação.',
+  };
+}
 
 function todayStr() {
   const d = new Date();
@@ -185,6 +210,17 @@ export default function PaginaPublica() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
+  const [pixCopied, setPixCopied] = useState(false);
+
+  async function copyPixKey(key: string) {
+    try {
+      await navigator.clipboard.writeText(key);
+      setPixCopied(true);
+      setTimeout(() => setPixCopied(false), 2000);
+    } catch {
+      // sem permissão para copiar: a chave continua visível para copiar à mão
+    }
+  }
 
   const today = todayStr();
   const selectedService = services?.find((s) => s.id === selectedServiceId) ?? null;
@@ -378,15 +414,44 @@ export default function PaginaPublica() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="font-display text-2xl text-wine-700 mb-2">Agendamento solicitado!</h2>
-            <p className="text-sm text-ink/60 mb-5">
-              Seu pedido foi enviado e está aguardando a confirmação da profissional.
-            </p>
+            <h2 className="font-display text-2xl text-wine-700 mb-2">{bookingTexts(bookingResult.status, !!bookingResult.deposit).title}</h2>
+            <p className="text-sm text-ink/60 mb-5">{bookingTexts(bookingResult.status, !!bookingResult.deposit).body}</p>
             <div className="bg-wine-50 rounded-lg p-4 text-left text-sm text-ink/70 space-y-1.5">
               <p><span className="text-ink/40">Serviço:</span> {bookingResult.serviceName}</p>
               <p><span className="text-ink/40">Data/hora:</span> {formatSlotFull(bookingResult.startsAt)}</p>
               <p><span className="text-ink/40">Nome:</span> {clientName.trim()}</p>
             </div>
+
+            {bookingResult.status === 'aguardando_pagamento' && bookingResult.deposit && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-left text-sm text-ink/70 space-y-3">
+                <p className="font-semibold text-amber-800">Pagamento do sinal</p>
+                <p>
+                  <span className="text-ink/50">Valor:</span>{' '}
+                  <strong className="text-wine-700">{formatMoney(bookingResult.deposit.amountCents)}</strong>
+                </p>
+                <div>
+                  <p className="text-ink/50">Chave Pix:</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="flex-1 min-w-0 break-all rounded bg-white border border-amber-200 px-2 py-1.5 text-[13px] text-ink/80">
+                      {bookingResult.deposit.pixKey}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copyPixKey(bookingResult.deposit!.pixKey)}
+                      className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+                    >
+                      {pixCopied ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs leading-relaxed text-ink/60">
+                  Faça o Pix em até <strong>2 horas</strong> (até{' '}
+                  {new Date(bookingResult.deposit.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  ). Depois desse prazo a reserva é liberada. Assim que a profissional confirmar o pagamento, você
+                  recebe o aviso por WhatsApp.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

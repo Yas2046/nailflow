@@ -784,3 +784,83 @@ test('reprodução real: "Oi quero desmarcar meu agendamentos é sexta feira" id
     `esperava um estado de cancelamento, veio ${conv.bot_state}`
   );
 });
+
+// ---------- 10. Modo de confirmação (Fases 1B/2) ----------
+
+async function bookByNumbers(phone) {
+  await processMessage(phone, "oi");
+  await processMessage(phone, "1");
+  await processMessage(phone, "1");
+  await processMessage(phone, "1");
+  await processMessage(phone, "1");
+  return processMessage(phone, "sim");
+}
+
+async function lastBotAppointment(phone) {
+  const normalized = phone.replace(/^(\d{4})9(\d{8})$/, "$1$2");
+  const { rows } = await pool.query(
+    `SELECT a.status, a.source, a.expires_at FROM appointments a JOIN clients c ON c.id = a.client_id
+     WHERE c.professional_id = $1 AND c.phone = $2 ORDER BY a.created_at DESC LIMIT 1`,
+    [PROF_ID, normalized]
+  );
+  return rows[0];
+}
+
+test("bot em modo manual: cria pendente com validade de 24h e avisa que aguarda confirmação", async (t) => {
+  if (!dbAvailable) return t.skip("DATABASE_URL não está acessível.");
+  await pool.query("UPDATE professionals SET confirmation_mode = 'manual', deposit_required = false WHERE id = $1", [PROF_ID]);
+  const phone = "5531977000041";
+  const { json } = await bookByNumbers(phone);
+  assert.match(json.reply, /Recebi sua solicitação/);
+  const appt = await lastBotAppointment(phone);
+  assert.equal(appt.status, "pendente");
+  assert.equal(appt.source, "bot");
+  const diffH = (new Date(appt.expires_at) - Date.now()) / 3600000;
+  assert.ok(diffH > 23.9 && diffH <= 24.01);
+});
+
+test("bot em modo automático: cria confirmado, sem validade, e responde confirmado", async (t) => {
+  if (!dbAvailable) return t.skip("DATABASE_URL não está acessível.");
+  await pool.query("UPDATE professionals SET confirmation_mode = 'automatic', deposit_required = false WHERE id = $1", [PROF_ID]);
+  const phone = "5531977000042";
+  const { json } = await bookByNumbers(phone);
+  assert.match(json.reply, /confirmado para/);
+  assert.doesNotMatch(json.reply, /Recebi sua solicitação/);
+  const appt = await lastBotAppointment(phone);
+  assert.equal(appt.status, "confirmado");
+  assert.equal(appt.source, "bot");
+  assert.equal(appt.expires_at, null);
+  await pool.query("UPDATE professionals SET confirmation_mode = 'manual' WHERE id = $1", [PROF_ID]);
+});
+
+test("bot com sinal: cria aguardando_pagamento, calcula o sinal no backend e responde com valor, Pix e prazo", async (t) => {
+  if (!dbAvailable) return t.skip("DATABASE_URL não está acessível.");
+  await pool.query(
+    `UPDATE professionals SET confirmation_mode = 'automatic', deposit_required = true,
+       deposit_type = 'percentage', deposit_value = 50, pix_key = 'bot-pix@teste.com' WHERE id = $1`,
+    [PROF_ID]
+  );
+  const phone = "5531977000043";
+  try {
+    const { json } = await bookByNumbers(phone);
+    assert.match(json.reply, /Pix/);
+    assert.ok(json.reply.includes("bot-pix@teste.com"));
+    assert.match(json.reply, /2 horas/);
+    assert.doesNotMatch(json.reply, /confirmado para/);
+    const appt = await lastBotAppointment(phone);
+    assert.equal(appt.status, "aguardando_pagamento");
+    assert.equal(appt.source, "bot");
+    const { rows } = await pool.query(
+      `SELECT a.deposit_cents, a.price_cents_snapshot FROM appointments a JOIN clients c ON c.id = a.client_id
+       WHERE c.professional_id = $1 AND c.phone = $2 ORDER BY a.created_at DESC LIMIT 1`,
+      [PROF_ID, phone.replace(/^(\d{4})9(\d{8})$/, "$1$2")]
+    );
+    assert.equal(rows[0].deposit_cents, Math.round(rows[0].price_cents_snapshot * 0.5));
+  } finally {
+    await pool.query(
+      "UPDATE professionals SET confirmation_mode = 'manual', deposit_required = false, deposit_type = NULL, deposit_value = NULL, pix_key = NULL WHERE id = $1",
+      [PROF_ID]
+    );
+  }
+});
+

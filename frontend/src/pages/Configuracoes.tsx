@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import type { WhatsAppStatus, WhatsAppConnect, WhatsAppInstanceConfig, WhatsAppCreateInstance } from '../types';
 import Perfil from './Perfil';
 import Disponibilidade from './Disponibilidade';
+import BookingSettingsPanel from '../components/BookingSettingsPanel';
 
 
 const QR_TTL_MS = 55_000;
@@ -609,12 +610,13 @@ function PainelAparencia({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
 
 // ─── Configuracoes ────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'whatsapp' | 'disponibilidade' | 'aparencia';
+type Tab = 'perfil' | 'whatsapp' | 'disponibilidade' | 'agendamento' | 'aparencia';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'perfil', label: 'Perfil' },
   { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'disponibilidade', label: 'Disponibilidade' },
+  { id: 'agendamento', label: 'Agendamento' },
   { id: 'aparencia', label: 'Aparência' },
 ];
 
@@ -622,6 +624,7 @@ const TAB_TITLES: Record<Tab, string> = {
   perfil: 'Perfil',
   whatsapp: 'WhatsApp',
   disponibilidade: 'Disponibilidade',
+  agendamento: 'Agendamento',
   aparencia: 'Aparência',
 };
 
@@ -630,11 +633,11 @@ export default function Configuracoes() {
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [tab, setTab] = useState<Tab>(
-    tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' ? tabParam : 'perfil'
+    tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' || tabParam === 'agendamento' ? tabParam : 'perfil'
   );
 
   useEffect(() => {
-    if (tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp') setTab(tabParam);
+    if (tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' || tabParam === 'agendamento') setTab(tabParam);
   }, [tabParam]);
   const { theme, setTheme } = useTheme();
 
@@ -648,12 +651,12 @@ export default function Configuracoes() {
       </div>
 
       {/* ── Tab switcher ── */}
-      <div className="flex gap-1 bg-wine-50 rounded-xl p-1">
+      <div className="flex gap-1 bg-wine-50 rounded-xl p-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex-1 py-2.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+            className={`flex-1 whitespace-nowrap py-2.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               tab === t.id
                 ? 'bg-white text-wine-700 shadow-sm'
                 : 'text-ink/50 hover:text-ink/70'
@@ -676,6 +679,7 @@ export default function Configuracoes() {
           <Disponibilidade />
         </div>
       )}
+      {tab === 'agendamento' && <BookingSettingsPanel />}
       {tab === 'aparencia' && <PainelAparencia theme={theme} setTheme={setTheme} />}
     </div>
   );
