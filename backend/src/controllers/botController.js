@@ -1004,8 +1004,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
       const { rows: apptRows } = await pool.query(
         `INSERT INTO appointments
-           (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot)
-         VALUES ($1,$2,$3,$4,$5,'pendente',$6)
+           (professional_id, client_id, service_id, starts_at, ends_at, status, price_cents_snapshot, source)
+         VALUES ($1,$2,$3,$4,$5,'pendente',$6,'bot')
          RETURNING *`,
         [
           professionalId,
@@ -1021,7 +1021,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       const timeFormatted = formatTimeBR(new Date(ctx.selectedSlot));
 
       return reply(
-        `Prontinho! 💅 *${ctx.serviceName}* confirmado para ${dateFormatted} às ${timeFormatted}. Qualquer coisa, é só chamar! 😊`,
+        `Recebi sua solicitação! 💅 *${ctx.serviceName}* em ${dateFormatted} às ${timeFormatted} está aguardando a confirmação da profissional. Assim que ela confirmar, eu te aviso por aqui. 😊`,
         'MENU',
         {}
       );
@@ -1470,7 +1470,7 @@ export async function markAbandonmentNotified(req, res, next) {
 }
 
 // GET /bot/appointments-tomorrow
-// Returns tomorrow's appointments (confirmado|pendente, reminder_sent=false) for reminder cron
+// Returns tomorrow's appointments (somente confirmado, reminder_sent=false) for reminder cron
 // GET /bot/appointments-for-reminder
 // Returns appointments in the 23h30-24h30 window from now with reminder_sent=false
 export async function getAppointmentsTomorrow(req, res, next) {
@@ -1483,7 +1483,7 @@ export async function getAppointmentsTomorrow(req, res, next) {
        JOIN clients  c ON c.id = a.client_id
        JOIN services s ON s.id = a.service_id
        WHERE a.professional_id = $1
-         AND a.status IN ('confirmado', 'pendente')
+         AND a.status = 'confirmado'
          AND a.reminder_sent = false
          AND a.starts_at >= now() + interval '23 hours 30 minutes'
          AND a.starts_at <  now() + interval '24 hours 30 minutes'

@@ -433,7 +433,7 @@ test('"sim" continua confirmando normalmente depois da correção de horário', 
   await processMessage(phone, 'Quero manicure sexta às 14:30');
   await processMessage(phone, 'Na verdade pode ser 15h');
   const { json } = await processMessage(phone, 'sim');
-  assert.match(json.reply, /Prontinho/);
+  assert.match(json.reply, /Recebi sua solicitação/);
 });
 
 test('"pode ser 15h" (frase curta, sem "na verdade") também é tratada como correção, não como confirmação', async (t) => {
@@ -446,7 +446,7 @@ test('"pode ser 15h" (frase curta, sem "na verdade") também é tratada como cor
   await processMessage(phone, 'Quero manicure sábado às 11:00');
   const { json } = await processMessage(phone, 'pode ser 12h');
   // Não pode ter confirmado o agendamento original (11:00) por engano.
-  assert.doesNotMatch(json.reply, /Prontinho/);
+  assert.doesNotMatch(json.reply, /Recebi sua solicitação/);
   assert.match(json.reply, /Fechado!/);
   assert.match(json.reply, /12:00/);
 
@@ -463,7 +463,7 @@ test('correção de horário com "pode ser 14:30" seguida de "confirmo" cria o a
   await processMessage(phone, 'Quero manicure sábado às 13h');
   await processMessage(phone, 'pode ser 14:30');
   const { json } = await processMessage(phone, 'confirmo');
-  assert.match(json.reply, /Prontinho/);
+  assert.match(json.reply, /Recebi sua solicitação/);
 
   const normalizedPhone = phone.replace(/^(\d{4})9(\d{8})$/, '$1$2');
   const { rows } = await pool.query(
@@ -511,7 +511,7 @@ test('fluxo antigo por números (menu → serviço → data → horário → con
   assert.match(timeReply.json.reply, /Fechado!/);
 
   const confirmReply = await processMessage(phone, 'sim');
-  assert.match(confirmReply.json.reply, /Prontinho/);
+  assert.match(confirmReply.json.reply, /Recebi sua solicitação/);
 
   // phone tem 13 dígitos (DDI+DDD+9+8); a ficha de cliente é gravada com o
   // telefone normalizado (12 dígitos, sem o 9) — ver utils/phone.js.
@@ -557,7 +557,7 @@ test('fluxo de cancelamento (menu → listar → confirmar) continua funcionando
   await processMessage(phone, '1');
   await processMessage(phone, '1');
   const bookReply = await processMessage(phone, 'sim');
-  assert.match(bookReply.json.reply, /Prontinho/);
+  assert.match(bookReply.json.reply, /Recebi sua solicitação/);
 
   // Agora cancela.
   const menuReply = await processMessage(phone, '2');

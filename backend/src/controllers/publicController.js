@@ -245,8 +245,8 @@ export async function createPublicAppointment(req, res, next) {
       }
 
       const { rows: apptRows } = await txClient.query(
-        `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes, price_cents_snapshot)
-         VALUES ($1,$2,$3,$4,$5,'pendente',$6,$7)
+        `INSERT INTO appointments (professional_id, client_id, service_id, starts_at, ends_at, status, notes, price_cents_snapshot, source)
+         VALUES ($1,$2,$3,$4,$5,'pendente',$6,$7,'public')
          RETURNING id, starts_at, ends_at, status`,
         [
           professional.id,

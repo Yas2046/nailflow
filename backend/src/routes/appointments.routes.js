@@ -4,6 +4,8 @@ import {
   createAppointment,
   updateAppointment,
   cancelAppointment,
+  confirmAppointment,
+  rejectAppointment,
   createRecurring,
   cancelFromNow,
   updateFromNow,
@@ -18,6 +20,8 @@ router.get('/', listAppointments);
 router.post('/', createAppointment);
 router.post('/recurring', createRecurring);
 router.put('/:id', updateAppointment);
+router.post('/:id/confirm', confirmAppointment);
+router.post('/:id/reject', rejectAppointment);
 router.put('/:id/and-following', updateFromNow);
 router.delete('/:id', cancelAppointment);
 router.delete('/:id/and-following', cancelFromNow);

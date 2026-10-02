@@ -14,7 +14,7 @@ interface Props {
 }
 
 const statusOptions: { value: AppointmentStatus; label: string }[] = [
-  { value: 'pendente',        label: 'Pendente' },
+  { value: 'pendente',        label: 'Aguardando confirmação' },
   { value: 'confirmado',      label: 'Confirmado' },
   { value: 'concluido',       label: 'Concluído' },
   { value: 'nao_compareceu',  label: 'Não compareceu' },

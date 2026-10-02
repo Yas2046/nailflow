@@ -6,6 +6,8 @@
  * Variáveis de ambiente:
  *   N8N_WEBHOOK_CONFIRMED_URL       → workflow 3 (appointment.confirmed)
  *   N8N_WEBHOOK_CANCELLED_URL       → workflow 5 (appointment.cancelled)
+ *   N8N_WEBHOOK_REJECTED_URL        → avisa a cliente que a solicitação foi recusada
+ *                                     (appointment.rejected; o texto vai pronto em `message`)
  *   N8N_WEBHOOK_PUBLIC_CREATED_URL  → notifica a profissional (WhatsApp) quando
  *                                     um agendamento é criado pela página pública
  *
@@ -18,6 +20,7 @@
 const EVENT_URL_VARS = {
   'appointment.confirmed': 'N8N_WEBHOOK_CONFIRMED_URL',
   'appointment.cancelled': 'N8N_WEBHOOK_CANCELLED_URL',
+  'appointment.rejected': 'N8N_WEBHOOK_REJECTED_URL',
   'appointment.public_created': 'N8N_WEBHOOK_PUBLIC_CREATED_URL',
 };
 

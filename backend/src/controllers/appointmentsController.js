@@ -3,6 +3,7 @@ import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
 import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.js';
+import { TRANSITIONS, CLIENT_ORIGINATED_SOURCES } from '../utils/appointmentStatus.js';
 
 const createSchema = z.object({
   clientId: z.string().uuid(),
@@ -181,19 +182,27 @@ export async function updateAppointment(req, res, next) {
          service_id = COALESCE($2, service_id),
          starts_at = COALESCE($3, starts_at),
          ends_at = COALESCE($4, ends_at),
-         status = COALESCE($5, status),
+         status = COALESCE($5::text, appointments.status),
          notes = COALESCE($6, notes),
          price_cents_snapshot = COALESCE($9, price_cents_snapshot)
-       WHERE id = $7 AND professional_id = $8
-       RETURNING *`,
-      [data.clientId, data.serviceId, newStartsAt, newEndsAt, data.status, data.notes, req.params.id, req.professionalId, newSnapshot ?? null]
+       FROM (SELECT id, status AS prev_status FROM appointments
+             WHERE id = $7 AND professional_id = $8 FOR UPDATE) old
+       WHERE appointments.id = old.id
+         AND ($5::text IS DISTINCT FROM 'confirmado' OR appointments.status = ANY($10::text[]))
+       RETURNING appointments.*, old.prev_status`,
+      [data.clientId, data.serviceId, newStartsAt, newEndsAt, data.status, data.notes, req.params.id, req.professionalId, newSnapshot ?? null,
+       [...TRANSITIONS.confirm.from, 'confirmado']]
     );
-    if (!rows[0]) throw new HttpError(404, 'Agendamento não encontrado.');
+    if (!rows[0]) {
+      const { rows: exists } = await pool.query('SELECT 1 FROM appointments WHERE id = $1 AND professional_id = $2', [req.params.id, req.professionalId]);
+      if (!exists[0]) throw new HttpError(404, 'Agendamento não encontrado.');
+      return res.status(409).json({ error: 'Só é possível confirmar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
+    }
 
     const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
     const dto = toDto(full[0]);
 
-    if (data.status === 'confirmado') {
+    if (data.status === 'confirmado' && rows[0].prev_status !== 'confirmado') {
       const { rows: instRows } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
       notifyN8n('appointment.confirmed', { ...dto, waInstance: instRows[0]?.wa_instance_name ?? null });
     }
@@ -365,6 +374,77 @@ export async function updateFromNow(req, res, next) {
     res.json(toDto(full[0]));
   } catch (err) {
     if (err instanceof z.ZodError) return next(new HttpError(400, 'Dados inválidos.'));
+    next(err);
+  }
+}
+
+function formatWhen(startsAt) {
+  const d = new Date(startsAt);
+  const date = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+  const time = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  return `${date} às ${time}`;
+}
+
+async function loadFullDto(id, professionalId) {
+  const { rows } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [id, professionalId]);
+  return rows[0] ? { row: rows[0], dto: toDto(rows[0]) } : null;
+}
+
+// POST /appointments/:id/confirm — pendente → confirmado. Repetir é idempotente
+// (200, changed:false) e NÃO reenvia a mensagem.
+export async function confirmAppointment(req, res, next) {
+  try {
+    const t = TRANSITIONS.confirm;
+    const { rows } = await pool.query(
+      `UPDATE appointments SET status = $3
+       WHERE id = $1 AND professional_id = $2 AND status = ANY($4::text[]) RETURNING id`,
+      [req.params.id, req.professionalId, t.to, t.from]
+    );
+    const full = await loadFullDto(req.params.id, req.professionalId);
+    if (!full) throw new HttpError(404, 'Agendamento não encontrado.');
+
+    if (rows[0]) {
+      const { rows: inst } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+      notifyN8n('appointment.confirmed', { ...full.dto, waInstance: inst[0]?.wa_instance_name ?? null });
+      return res.json({ ...full.dto, changed: true });
+    }
+    if (full.row.status === t.to) return res.json({ ...full.dto, changed: false });
+    return res.status(409).json({ error: 'Só é possível confirmar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /appointments/:id/reject — pendente → cancelado (cancel_reason='rejected').
+// Avisa a cliente só quando o agendamento veio da página pública ou do bot.
+export async function rejectAppointment(req, res, next) {
+  try {
+    const t = TRANSITIONS.reject;
+    const { rows } = await pool.query(
+      `UPDATE appointments SET status = $3, cancel_reason = $5
+       WHERE id = $1 AND professional_id = $2 AND status = ANY($4::text[]) RETURNING id, source`,
+      [req.params.id, req.professionalId, t.to, t.from, t.cancelReason]
+    );
+    const full = await loadFullDto(req.params.id, req.professionalId);
+    if (!full) throw new HttpError(404, 'Agendamento não encontrado.');
+
+    if (rows[0]) {
+      if (CLIENT_ORIGINATED_SOURCES.includes(rows[0].source)) {
+        const { rows: inst } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+        const firstName = (full.dto.clientName || '').split(' ')[0];
+        notifyN8n('appointment.rejected', {
+          ...full.dto,
+          waInstance: inst[0]?.wa_instance_name ?? null,
+          message: `Olá${firstName ? `, ${firstName}` : ''}! Infelizmente não consegui confirmar seu horário de *${full.dto.serviceName}* em ${formatWhen(full.dto.startsAt)}. 😕 Se quiser, escolha outro horário pela página de agendamento ou me chame por aqui. 💅`,
+        });
+      }
+      return res.json({ ...full.dto, changed: true });
+    }
+    if (full.row.status === t.to && full.row.cancel_reason === t.cancelReason) {
+      return res.json({ ...full.dto, changed: false });
+    }
+    return res.status(409).json({ error: 'Só é possível recusar um agendamento aguardando confirmação.', reason: 'invalid_transition' });
+  } catch (err) {
     next(err);
   }
 }
