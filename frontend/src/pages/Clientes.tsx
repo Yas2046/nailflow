@@ -1,13 +1,40 @@
 import { useEffect, useState } from 'react';
+import { useToast } from '../context/ToastContext';
+import { usePageTitle } from '../hooks/usePageTitle';
+import { formatPhone } from '../utils/format';
 import { api } from '../services/api';
-import type { Client } from '../types';
+import AppointmentModal from '../components/AppointmentModal';
+import type { Client, Appointment } from '../types';
 
 interface HistoryItem {
   id: string;
   starts_at: string;
+  ends_at: string;
   status: string;
+  service_id: string;
   service_name: string;
+  price_cents_snapshot: number;
+  appointment_notes: string | null;
+  recurring_group_id: string | null;
 }
+
+interface ClientMetrics {
+  totalConcluidos: number;
+  totalCancelados: number;
+  totalFaltas: number;
+  valorTotalCents: number;
+  ticketMedioCents: number;
+  primeiroAtendimento: string | null;
+  ultimoAtendimento: string | null;
+  proximoAtendimento: string | null;
+  freqMediaDias: number | null;
+  inativaDias: number | null;
+  servicoFavorito: string | null;
+}
+
+type FilterOption = 'todas' | 'nova' | 'recorrente' | 'inativa';
+
+const PREDEFINED_TAGS = ['VIP', 'Fidelidade', 'Indicação', 'Primeira vez', 'Alergia', 'Pagamento pendente'];
 
 // ─── utilitários ─────────────────────────────────────────────────────────────
 
@@ -31,12 +58,47 @@ function relativeDate(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
+function isInativa(ultimoAtendimento: string | null | undefined): boolean {
+  if (!ultimoAtendimento) return false;
+  return (Date.now() - new Date(ultimoAtendimento).getTime()) / 86_400_000 >= 60;
+}
+
+function clientClassification(c: Client): 'nova' | 'recorrente' | 'inativa' | null {
+  if (isInativa(c.ultimoAtendimento)) return 'inativa';
+  if ((c.totalAtendimentos ?? 0) === 1) return 'nova';
+  if ((c.totalAtendimentos ?? 0) >= 2) return 'recorrente';
+  return null;
+}
+
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  );
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 const historyStatusConfig: Record<string, { label: string; cls: string }> = {
   pendente:       { label: 'Pendente',       cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
   confirmado:     { label: 'Confirmado',     cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
   concluido:      { label: 'Concluído',      cls: 'bg-green-50 text-green-700 border border-green-200' },
   cancelado:      { label: 'Cancelado',      cls: 'bg-rose-50 text-rose-600 border border-rose-200' },
   nao_compareceu: { label: 'Não compareceu', cls: 'bg-gray-100 text-gray-500 border border-gray-200' },
+};
+
+const classificationConfig = {
+  nova:       { label: 'Nova',       cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  recorrente: { label: 'Recorrente', cls: 'bg-wine-50 text-wine-700 border border-wine-100' },
+  inativa:    { label: 'Inativa',    cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
 };
 
 // ─── componentes auxiliares ───────────────────────────────────────────────────
@@ -52,7 +114,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg'
 
 function LoadingSkeleton() {
   return (
-    <div className="bg-white border border-wine-100 rounded-xl overflow-hidden animate-pulse">
+    <div className="bg-white border border-wine-100/80 rounded-2xl overflow-hidden animate-pulse">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-wine-50 last:border-0">
           <div className="w-10 h-10 rounded-full bg-wine-50 shrink-0" />
@@ -89,6 +151,23 @@ function IconUsers() {
   );
 }
 
+function IconWhatsApp() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  );
+}
+
 function CloseButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -109,11 +188,39 @@ export default function Clientes() {
   const [clients, setClients]   = useState<Client[] | null>(null);
   const [selected, setSelected] = useState<Client | null>(null);
   const [history, setHistory]   = useState<HistoryItem[]>([]);
+  const { toast } = useToast();
+  usePageTitle('Clientes');
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [metrics, setMetrics] = useState<ClientMetrics | null>(null);
   const [showNew, setShowNew]   = useState(false);
   const [search, setSearch]     = useState('');
 
-  // form
+  // filtros
+  const [activeFilter, setActiveFilter] = useState<FilterOption>('todas');
+  const [tagFilter, setTagFilter]       = useState<string>('');
+
+  // agendamento rápido
+  const [showBooking, setShowBooking] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+
+  // tags (ficha da cliente)
+  const [localTags, setLocalTags]   = useState<string[]>([]);
+  const [tagInput, setTagInput]     = useState('');
+  const [tagsDirty, setTagsDirty]   = useState(false);
+  const [tagsSaving, setTagsSaving] = useState(false);
+  const [tagsError, setTagsError]   = useState<string | null>(null);
+
+  // modo edição (ficha)
+  const [editing, setEditing]           = useState(false);
+  const [editName, setEditName]         = useState('');
+  const [editPhone, setEditPhone]       = useState('');
+  const [editNotes, setEditNotes]       = useState('');
+  const [editTags, setEditTags]         = useState<string[]>([]);
+  const [editTagInput, setEditTagInput] = useState('');
+  const [editSaving, setEditSaving]     = useState(false);
+  const [editError, setEditError]       = useState<string | null>(null);
+
+  // form nova cliente
   const [name, setName]   = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -125,15 +232,175 @@ export default function Clientes() {
   }
   useEffect(reload, []);
 
+  function closeModal() {
+    setSelected(null);
+    setLocalTags([]);
+    setTagInput('');
+    setTagsDirty(false);
+    setTagsError(null);
+    setEditing(false);
+    setEditError(null);
+    setShowBooking(false);
+  }
+
   function openHistory(client: Client) {
     setSelected(client);
     setHistory([]);
+    setMetrics(null);
+    setLocalTags(client.tags ?? []);
+    setTagsDirty(false);
+    setTagsError(null);
     setHistoryLoading(true);
     api
-      .get<{ history: HistoryItem[] }>(`/clients/${client.id}`)
-      .then((d) => setHistory(d.history))
+      .get<{ client: { tags?: string[] }; history: HistoryItem[]; metrics: ClientMetrics }>(`/clients/${client.id}`)
+      .then((d) => {
+        setLocalTags(d.client.tags ?? []);
+        setHistory(d.history);
+        setMetrics(d.metrics);
+      })
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
+  }
+
+  function openAppointmentEdit(h: HistoryItem) {
+    if (!selected) return;
+    const appointment: Appointment = {
+      id: h.id,
+      clientId: selected.id,
+      clientName: selected.name,
+      clientPhone: selected.phone,
+      serviceId: h.service_id,
+      serviceName: h.service_name,
+      startsAt: h.starts_at,
+      endsAt: h.ends_at,
+      status: h.status as Appointment['status'],
+      notes: h.appointment_notes,
+      recurringGroupId: h.recurring_group_id,
+    };
+    setEditingAppointment(appointment);
+  }
+
+  function addTag() {
+    const tag = tagInput.trim();
+    if (!tag) return;
+    if (tag.length > 30) { setTagsError('Tag deve ter no máximo 30 caracteres.'); return; }
+    if (localTags.includes(tag)) { setTagInput(''); return; }
+    if (localTags.length >= 20) { setTagsError('Máximo de 20 tags por cliente.'); return; }
+    setLocalTags([...localTags, tag]);
+    setTagInput('');
+    setTagsDirty(true);
+    setTagsError(null);
+  }
+
+  function addPredefTag(tag: string) {
+    if (localTags.includes(tag)) return;
+    if (localTags.length >= 20) { setTagsError('Máximo de 20 tags por cliente.'); return; }
+    setLocalTags([...localTags, tag]);
+    setTagsDirty(true);
+    setTagsError(null);
+  }
+
+  function removeTag(tag: string) {
+    setLocalTags(localTags.filter((t) => t !== tag));
+    setTagsDirty(true);
+    setTagsError(null);
+  }
+
+  async function saveTags() {
+    if (!selected) return;
+    setTagsSaving(true);
+    setTagsError(null);
+    try {
+      await api.put(`/clients/${selected.id}`, { tags: localTags });
+      setSelected({ ...selected, tags: localTags });
+      setTagsDirty(false);
+    } catch {
+      setTagsError('Erro ao salvar tags. Tente novamente.');
+    } finally {
+      setTagsSaving(false);
+    }
+  }
+
+  function startEditing() {
+    if (!selected) return;
+    setEditName(selected.name);
+    setEditPhone(selected.phone);
+    setEditNotes(selected.notes ?? '');
+    setEditTags([...localTags]);
+    setEditTagInput('');
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setEditError(null);
+    setEditTagInput('');
+  }
+
+  function addEditTag() {
+    const tag = editTagInput.trim();
+    if (!tag) return;
+    if (tag.length > 30) { setEditError('Tag deve ter no máximo 30 caracteres.'); return; }
+    if (editTags.includes(tag)) { setEditTagInput(''); return; }
+    if (editTags.length >= 20) { setEditError('Máximo de 20 tags por cliente.'); return; }
+    setEditTags([...editTags, tag]);
+    setEditTagInput('');
+    setEditError(null);
+  }
+
+  function addEditPredefTag(tag: string) {
+    if (editTags.includes(tag)) return;
+    if (editTags.length >= 20) { setEditError('Máximo de 20 tags por cliente.'); return; }
+    setEditTags([...editTags, tag]);
+    setEditError(null);
+  }
+
+  function removeEditTag(tag: string) {
+    setEditTags(editTags.filter((t) => t !== tag));
+  }
+
+  async function saveEdits() {
+    if (!selected) return;
+    const trimmedName  = editName.trim();
+    const trimmedPhone = editPhone.trim();
+    if (!trimmedName)              { setEditError('Nome é obrigatório.');     return; }
+    if (trimmedPhone.length < 8)   { setEditError('Telefone inválido (mínimo 8 dígitos).'); return; }
+
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.put(`/clients/${selected.id}`, {
+        name:  trimmedName,
+        phone: trimmedPhone,
+        notes: editNotes.trim() || null,
+        tags:  editTags,
+      });
+
+      const updated: Client = {
+        ...selected,
+        name:  trimmedName,
+        phone: trimmedPhone,
+        notes: editNotes.trim() || null,
+        tags:  editTags,
+      };
+      setSelected(updated);
+      setLocalTags(editTags);
+      setTagsDirty(false);
+
+      setClients((prev) =>
+        prev
+          ? prev.map((c) => c.id === selected.id ? { ...c, name: trimmedName, phone: trimmedPhone } : c)
+          : prev
+      );
+
+      setEditing(false);
+      toast('Dados da cliente atualizados');
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.');
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   function openNew() {
@@ -151,6 +418,7 @@ export default function Clientes() {
     try {
       await api.post('/clients', { name: name.trim(), phone: phone.trim(), notes: notes.trim() || null });
       setShowNew(false);
+      toast('Cliente cadastrada com sucesso');
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao cadastrar cliente.');
@@ -159,20 +427,49 @@ export default function Clientes() {
     }
   }
 
+  // tags únicas para o filtro de tag
+  const allTags = [...new Set((clients ?? []).flatMap((c) => c.tags ?? []))].sort();
+
   const filtered = (clients ?? []).filter((c) => {
     const q = search.toLowerCase();
-    return c.name.toLowerCase().includes(q) || c.phone.includes(q);
+    if (!c.name.toLowerCase().includes(q) && !c.phone.includes(q)) return false;
+    if (tagFilter && !(c.tags ?? []).includes(tagFilter)) return false;
+    if (activeFilter === 'inativa')    return isInativa(c.ultimoAtendimento);
+    if (activeFilter === 'nova')       return (c.totalAtendimentos ?? 0) === 1 && !isInativa(c.ultimoAtendimento);
+    if (activeFilter === 'recorrente') return (c.totalAtendimentos ?? 0) >= 2 && !isInativa(c.ultimoAtendimento);
+    return true;
   });
 
+  const filterCounts = {
+    todas:      (clients ?? []).length,
+    nova:       (clients ?? []).filter((c) => (c.totalAtendimentos ?? 0) === 1 && !isInativa(c.ultimoAtendimento)).length,
+    recorrente: (clients ?? []).filter((c) => (c.totalAtendimentos ?? 0) >= 2 && !isInativa(c.ultimoAtendimento)).length,
+    inativa:    (clients ?? []).filter((c) => isInativa(c.ultimoAtendimento)).length,
+  };
+
+  const filterLabels: { key: FilterOption; label: string }[] = [
+    { key: 'todas',      label: 'Todas' },
+    { key: 'nova',       label: 'Novas' },
+    { key: 'recorrente', label: 'Recorrentes' },
+    { key: 'inativa',    label: 'Inativas' },
+  ];
+
+  // phone limpo para link WhatsApp
+  const waPhone = selected ? selected.phone.replace(/\D/g, '') : '';
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="font-display text-3xl text-wine-700">Clientes</h1>
-        <button
-          onClick={openNew}
-          className="px-4 py-2 rounded-lg bg-wine-600 text-white text-sm font-medium hover:bg-wine-700 transition-colors shadow-sm"
-        >
+        <div>
+          <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Clientes</h1>
+          {clients != null && (
+            <p className="text-sm text-ink/40 mt-1">
+              {clients.length} cliente{clients.length !== 1 ? 's' : ''} cadastrada{clients.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+        <button onClick={openNew} className="btn-primary">
           + Nova cliente
         </button>
       </div>
@@ -190,58 +487,138 @@ export default function Clientes() {
         />
       </div>
 
+      {/* filtros */}
+      {clients !== null && clients.length > 0 && (
+        <div className="space-y-2">
+          {/* filtros de status */}
+          <div className="flex gap-2 flex-wrap">
+            {filterLabels.map(({ key, label }) => {
+              const count = filterCounts[key];
+              const active = activeFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setActiveFilter(key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    active
+                      ? 'bg-wine-600 text-white border-wine-600'
+                      : 'bg-white text-ink/60 border-wine-100 hover:border-wine-300 hover:text-ink/80'
+                  }`}
+                >
+                  {label}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                    active ? 'bg-white/20 text-white' : 'bg-wine-50 text-wine-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* filtro por tag */}
+          {allTags.length > 0 && (
+            <div className="flex gap-2 flex-wrap items-center">
+              <span className="text-xs text-ink/40 font-medium">Tag:</span>
+              <button
+                onClick={() => setTagFilter('')}
+                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                  tagFilter === ''
+                    ? 'bg-wine-100 text-wine-700 border-wine-200'
+                    : 'bg-white text-ink/50 border-wine-100 hover:border-wine-200'
+                }`}
+              >
+                Todas
+              </button>
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setTagFilter(tagFilter === tag ? '' : tag)}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                    tagFilter === tag
+                      ? 'bg-wine-600 text-white border-wine-600'
+                      : 'bg-white text-ink/50 border-wine-100 hover:border-wine-200'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* lista */}
       {clients === null ? (
         <LoadingSkeleton />
       ) : filtered.length === 0 ? (
-        <div className="bg-white border border-wine-100 rounded-xl p-10 flex flex-col items-center gap-3 text-ink/30">
-          <IconUsers />
-          <p className="text-sm">
-            {search ? 'Nenhuma cliente encontrada para esta busca.' : 'Nenhuma cliente cadastrada ainda.'}
-          </p>
+        <div className="bg-white border border-wine-100 rounded-2xl p-10 flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-full bg-wine-50 flex items-center justify-center text-wine-200">
+            <IconUsers />
+          </div>
+          <div>
+            <p className="font-display text-lg text-wine-700">
+              {search || activeFilter !== 'todas' || tagFilter
+                ? 'Nenhuma cliente encontrada'
+                : 'Nenhuma cliente cadastrada ainda'}
+            </p>
+            <p className="text-xs text-ink/30 mt-0.5">
+              {search || activeFilter !== 'todas' || tagFilter
+                ? 'Tente outros filtros ou termos de busca'
+                : 'Adicione sua primeira cliente para começar'}
+            </p>
+          </div>
+          {!search && activeFilter === 'todas' && !tagFilter && (
+            <button onClick={openNew} className="btn-primary">
+              + Adicionar primeira cliente
+            </button>
+          )}
         </div>
       ) : (
-        <div className="bg-white border border-wine-100 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-white border border-wine-100 rounded-2xl overflow-hidden shadow-sm">
           <ul className="divide-y divide-wine-50">
-            {filtered.map((c) => (
-              <li key={c.id}>
-                <button
-                  onClick={() => openHistory(c)}
-                  className="w-full text-left flex items-center gap-4 px-5 py-4 hover:bg-wine-50/50 transition-colors"
-                >
-                  {/* avatar */}
-                  <Avatar name={c.name} />
+            {filtered.map((c) => {
+              const classification = clientClassification(c);
+              return (
+                <li key={c.id}>
+                  <button
+                    onClick={() => openHistory(c)}
+                    className="w-full text-left flex items-center gap-4 px-5 py-4 hover:bg-wine-50/50 transition-colors"
+                  >
+                    <Avatar name={c.name} />
 
-                  {/* nome + telefone */}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink truncate">{c.name}</p>
-                    <p className="text-sm text-ink/50 truncate">{c.phone}</p>
-                  </div>
-
-                  {/* estatísticas */}
-                  <div className="shrink-0 text-right space-y-1">
-                    <div className="flex justify-end">
-                      <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-wine-50 text-wine-700">
-                        {c.totalAtendimentos ?? 0}{' '}
-                        {(c.totalAtendimentos ?? 0) === 1 ? 'atend.' : 'atend.'}
-                      </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-ink truncate">{c.name}</p>
+                      <p className="text-sm text-ink/50 truncate">{formatPhone(c.phone)}</p>
                     </div>
-                    {c.ultimoAtendimento ? (
-                      <p className="text-xs text-ink/40">Último: {relativeDate(c.ultimoAtendimento)}</p>
-                    ) : (
-                      <p className="text-xs text-ink/30">Sem atendimentos</p>
-                    )}
-                  </div>
-                </button>
-              </li>
-            ))}
+
+                    <div className="shrink-0 text-right space-y-1">
+                      <div className="flex justify-end items-center gap-1.5 flex-wrap">
+                        {classification && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${classificationConfig[classification].cls}`}>
+                            {classificationConfig[classification].label}
+                          </span>
+                        )}
+                        <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-wine-50 text-wine-700">
+                          {c.totalAtendimentos ?? 0} atend.
+                        </span>
+                      </div>
+                      {c.ultimoAtendimento ? (
+                        <p className="text-xs text-ink/40">Último: {relativeDate(c.ultimoAtendimento)}</p>
+                      ) : (
+                        <p className="text-xs text-ink/30">Sem atendimentos</p>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
 
-          {/* rodapé da lista */}
           {clients.length > 0 && (
             <div className="px-5 py-2.5 border-t border-wine-50 bg-wine-50/30">
               <p className="text-xs text-ink/40">
-                {search
+                {filtered.length < clients.length
                   ? `${filtered.length} de ${clients.length} clientes`
                   : `${clients.length} cliente${clients.length !== 1 ? 's' : ''} cadastrada${clients.length !== 1 ? 's' : ''}`}
               </p>
@@ -250,11 +627,11 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* ── modal histórico ─────────────────────────────────────────────── */}
-      {selected && (
+      {/* ── ficha da cliente ────────────────────────────────────────────── */}
+      {selected && !showBooking && (
         <div
           className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
-          onClick={() => setSelected(null)}
+          onClick={editing ? cancelEditing : closeModal}
         >
           <div
             className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[90vh]"
@@ -266,75 +643,416 @@ export default function Clientes() {
                 <Avatar name={selected.name} size="lg" />
                 <div className="min-w-0">
                   <h3 className="font-display text-xl text-wine-700 truncate">{selected.name}</h3>
-                  <p className="text-sm text-ink/50">{selected.phone}</p>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <p className="text-sm text-ink/50">{formatPhone(selected.phone)}</p>
+                    {metrics?.inativaDias != null && metrics.inativaDias >= 60 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
+                        Inativa há {metrics.inativaDias}d
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <CloseButton onClick={() => setSelected(null)} />
-            </div>
-
-            {/* observações */}
-            {selected.notes && (
-              <div className="px-6 pt-4">
-                <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-1.5">Observações</p>
-                <p className="text-sm bg-wine-50 rounded-xl p-3 text-ink/70">{selected.notes}</p>
+              <div className="flex items-center gap-1 shrink-0">
+                {!editing && (
+                  <button
+                    onClick={startEditing}
+                    className="p-1.5 rounded-lg hover:bg-wine-50 text-ink/40 hover:text-wine-600 transition-colors"
+                    aria-label="Editar cliente"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+                <CloseButton onClick={closeModal} />
               </div>
-            )}
-
-            {/* histórico */}
-            <div className="px-6 pt-4 pb-2">
-              <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-3">
-                Histórico de atendimentos
-              </p>
             </div>
 
-            <div className="overflow-y-auto flex-1 px-6 pb-6">
-              {historyLoading ? (
-                <div className="space-y-2 animate-pulse">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-10 bg-wine-50 rounded-lg" />
+            {/* KPIs */}
+            {metrics && (() => {
+              const kpis = [
+                { label: 'Total gasto',    value: formatCents(metrics.valorTotalCents),                                                              cls: 'text-ink' },
+                { label: 'Ticket médio',   value: metrics.totalConcluidos > 0 ? formatCents(metrics.ticketMedioCents) : '—',                        cls: 'text-ink' },
+                { label: 'Freq. retorno',  value: metrics.freqMediaDias != null && metrics.totalConcluidos > 1 ? `${metrics.freqMediaDias} dias` : '—', cls: 'text-ink' },
+                { label: 'Concluídos',     value: String(metrics.totalConcluidos),                                                                   cls: 'text-wine-700' },
+              ];
+              return (
+                <div className="grid grid-cols-2 gap-px bg-wine-100 border-b border-wine-100">
+                  {kpis.map((kpi) => (
+                    <div key={kpi.label} className="bg-white px-5 py-3">
+                      <p className="text-xs text-ink/40 mb-0.5">{kpi.label}</p>
+                      <p className={`text-base font-semibold ${kpi.cls}`}>{kpi.value}</p>
+                    </div>
                   ))}
                 </div>
-              ) : history.length === 0 ? (
-                <p className="text-sm text-ink/40 py-4 text-center">Sem atendimentos registrados.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {history.map((h) => {
-                    const cfg = historyStatusConfig[h.status] ?? { label: h.status, cls: 'bg-gray-100 text-gray-500' };
-                    return (
-                      <li
-                        key={h.id}
-                        className="flex items-center justify-between gap-3 py-2.5 border-b border-wine-50 last:border-0"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink truncate">{h.service_name}</p>
-                          <p className="text-xs text-ink/40">
-                            {new Date(h.starts_at).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                          </p>
-                        </div>
-                        <span className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
-                          {cfg.label}
+              );
+            })()}
+
+            <div className="overflow-y-auto flex-1">
+              {editing ? (
+                /* ── modo edição ── */
+                <div className="p-6 flex flex-col gap-4">
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">Nome</span>
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Nome completo"
+                      autoFocus
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">Telefone</span>
+                    <input
+                      className="input"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="55319XXXXXXXX"
+                      type="tel"
+                    />
+                    <span className="block text-xs text-ink/40 mt-1">Formato: código do país + DDD + número</span>
+                  </label>
+
+                  <label className="block">
+                    <span className="block text-sm font-medium text-ink/60 mb-1">
+                      Observações <span className="font-normal text-ink/30">(opcional)</span>
+                    </span>
+                    <textarea
+                      className="input"
+                      rows={3}
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      placeholder="Alergias, preferências, etc."
+                    />
+                  </label>
+
+                  <div>
+                    <span className="block text-sm font-medium text-ink/60 mb-2">Tags</span>
+
+                    {/* sugestões pré-definidas no modo edição */}
+                    {PREDEFINED_TAGS.filter((t) => !editTags.includes(t)).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2.5">
+                        {PREDEFINED_TAGS.filter((t) => !editTags.includes(t)).map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => addEditPredefTag(tag)}
+                            className="text-xs px-2.5 py-1 rounded-full bg-wine-50/60 text-wine-500 border border-wine-100 border-dashed hover:bg-wine-50 hover:text-wine-700 transition-colors"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-1.5 mb-2 min-h-[1.75rem]">
+                      {editTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 border border-wine-100"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeEditTag(tag)}
+                            className="text-wine-400 hover:text-wine-700 transition-colors leading-none"
+                            aria-label={`Remover tag ${tag}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                      ))}
+                      {editTags.length === 0 && (
+                        <span className="text-xs text-ink/30 py-1">Nenhuma tag.</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-sm py-1.5 flex-1 min-w-0"
+                        placeholder="Tag personalizada…"
+                        value={editTagInput}
+                        maxLength={30}
+                        onChange={(e) => setEditTagInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEditTag(); } }}
+                      />
+                      <button
+                        onClick={addEditTag}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-wine-50 text-wine-700 border border-wine-100 hover:bg-wine-100 transition-colors shrink-0 font-medium"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {editError && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                      {editError}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ── modo visualização ── */
+                <>
+                  {/* informações rápidas */}
+                  {metrics && (metrics.proximoAtendimento || metrics.ultimoAtendimento || metrics.primeiroAtendimento || metrics.servicoFavorito) && (
+                    <div className="px-6 pt-5 pb-2 space-y-2.5">
+                      {metrics.proximoAtendimento && (
+                        <div className="flex items-start gap-2 text-sm">
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 pt-0.5 uppercase tracking-wide">Próx. agend.</span>
+                          <span className="text-emerald-700 font-medium">{formatDateTime(metrics.proximoAtendimento)}</span>
+                        </div>
+                      )}
+                      {metrics.ultimoAtendimento && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 uppercase tracking-wide">Último atend.</span>
+                          <span className="text-ink/70">{formatDate(metrics.ultimoAtendimento)}</span>
+                        </div>
+                      )}
+                      {metrics.primeiroAtendimento && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 uppercase tracking-wide">Cliente desde</span>
+                          <span className="text-ink/70">{formatDate(metrics.primeiroAtendimento)}</span>
+                        </div>
+                      )}
+                      {metrics.servicoFavorito && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-xs font-medium text-ink/40 w-28 shrink-0 uppercase tracking-wide">Serv. favorito</span>
+                          <span className="text-ink/70">{metrics.servicoFavorito}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* observações */}
+                  {selected.notes && (
+                    <div className="px-6 pt-4">
+                      <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-1.5">Observações</p>
+                      <p className="text-sm bg-wine-50 rounded-xl p-3 text-ink/70">{selected.notes}</p>
+                    </div>
+                  )}
+
+                  {/* tags */}
+                  <div className="px-6 pt-4">
+                    <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-2">Tags</p>
+
+                    {/* sugestões pré-definidas */}
+                    {PREDEFINED_TAGS.filter((t) => !localTags.includes(t)).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2.5">
+                        {PREDEFINED_TAGS.filter((t) => !localTags.includes(t)).map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => addPredefTag(tag)}
+                            className="text-xs px-2.5 py-1 rounded-full bg-wine-50/60 text-wine-500 border border-wine-100 border-dashed hover:bg-wine-50 hover:text-wine-700 transition-colors"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-1.5 mb-2 min-h-[1.75rem]">
+                      {localTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-wine-50 text-wine-700 border border-wine-100"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeTag(tag)}
+                            className="text-wine-400 hover:text-wine-700 transition-colors leading-none"
+                            aria-label={`Remover tag ${tag}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                      {localTags.length === 0 && (
+                        <span className="text-xs text-ink/30 py-1">Nenhuma tag adicionada.</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-sm py-1.5 flex-1 min-w-0"
+                        placeholder="Tag personalizada…"
+                        value={tagInput}
+                        maxLength={30}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                      />
+                      <button
+                        onClick={addTag}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-wine-50 text-wine-700 border border-wine-100 hover:bg-wine-100 transition-colors shrink-0 font-medium"
+                      >
+                        +
+                      </button>
+                    </div>
+                    {tagsDirty && (
+                      <div className="flex items-center justify-between mt-2 gap-2">
+                        {tagsError
+                          ? <p className="text-xs text-rose-600 flex-1">{tagsError}</p>
+                          : <span className="flex-1" />
+                        }
+                        <button
+                          onClick={saveTags}
+                          disabled={tagsSaving}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-wine-600 text-white font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors shrink-0"
+                        >
+                          {tagsSaving ? 'Salvando…' : 'Salvar tags'}
+                        </button>
+                      </div>
+                    )}
+                    {!tagsDirty && tagsError && (
+                      <p className="text-xs text-rose-600 mt-1">{tagsError}</p>
+                    )}
+                  </div>
+
+                  {/* histórico */}
+                  <div className="px-6 pt-4 pb-2">
+                    <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-3">
+                      Histórico de atendimentos
+                    </p>
+                  </div>
+
+                  <div className="px-6 pb-4">
+                    {historyLoading ? (
+                      <div className="space-y-2 animate-pulse">
+                        {[0, 1, 2].map((i) => (
+                          <div key={i} className="h-10 bg-wine-50 rounded-lg" />
+                        ))}
+                      </div>
+                    ) : history.length === 0 ? (
+                      <p className="text-sm text-ink/40 py-4 text-center">Sem atendimentos registrados.</p>
+                    ) : (
+                      <ul>
+                        {history.map((h) => {
+                          const cfg = historyStatusConfig[h.status] ?? { label: h.status, cls: 'bg-gray-100 text-gray-500' };
+                          return (
+                            <li
+                              key={h.id}
+                              className="py-2.5 border-b border-wine-50 last:border-0"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold text-ink truncate">{h.service_name}</p>
+                                  <p className="text-xs text-ink/40">{formatDate(h.starts_at)}</p>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cfg.cls}`}>
+                                      {cfg.label}
+                                    </span>
+                                    {h.price_cents_snapshot > 0 && (
+                                      <span className="text-xs font-semibold text-wine-700">{formatCents(h.price_cents_snapshot)}</span>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => openAppointmentEdit(h)}
+                                    className="p-1.5 rounded-lg hover:bg-wine-50 text-ink/40 hover:text-wine-600 transition-colors shrink-0"
+                                    aria-label="Editar agendamento"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                              {/* notas do agendamento */}
+                              {h.appointment_notes && (
+                                <p className="mt-1.5 text-xs text-ink/50 bg-wine-50/60 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                                  {h.appointment_notes}
+                                </p>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
-            <div className="px-6 pb-6">
-              <button
-                onClick={() => setSelected(null)}
-                className="w-full py-2.5 rounded-xl border border-wine-100 text-sm text-ink/70 hover:bg-wine-50 transition-colors"
-              >
-                Fechar
-              </button>
+            {/* rodapé da ficha */}
+            <div className="px-6 py-4 border-t border-wine-50">
+              {editing ? (
+                <div className="flex gap-2">
+                  <button onClick={cancelEditing} className="btn-secondary flex-1">
+                    Cancelar
+                  </button>
+                  <button onClick={saveEdits} disabled={editSaving} className="btn-primary flex-1 disabled:opacity-60">
+                    {editSaving ? 'Salvando…' : 'Salvar alterações'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  {/* WhatsApp */}
+                  <a
+                    href={`https://wa.me/${waPhone}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-medium hover:bg-emerald-100 transition-colors"
+                    title="Abrir no WhatsApp"
+                  >
+                    <IconWhatsApp />
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </a>
+
+                  {/* Agendar */}
+                  <button
+                    onClick={() => setShowBooking(true)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-wine-200 bg-wine-50 text-wine-700 text-sm font-medium hover:bg-wine-100 transition-colors"
+                    title="Novo agendamento"
+                  >
+                    <IconCalendar />
+                    <span className="hidden sm:inline">Agendar</span>
+                  </button>
+
+                  <button onClick={closeModal} className="btn-secondary flex-1">
+                    Fechar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* agendamento rápido a partir da ficha */}
+      {showBooking && selected && (
+        <AppointmentModal
+          date={new Date()}
+          time={null}
+          appointment={null}
+          initialClientId={selected.id}
+          onClose={() => setShowBooking(false)}
+          onSaved={() => {
+            setShowBooking(false);
+            toast('Agendamento criado');
+            openHistory(selected);
+          }}
+        />
+      )}
+
+      {/* editar agendamento a partir do histórico da ficha */}
+      {editingAppointment && selected && (
+        <AppointmentModal
+          date={new Date(editingAppointment.startsAt)}
+          time={null}
+          appointment={editingAppointment}
+          onClose={() => setEditingAppointment(null)}
+          onSaved={() => {
+            setEditingAppointment(null);
+            toast('Agendamento atualizado');
+            openHistory(selected);
+          }}
+        />
       )}
 
       {/* ── modal nova cliente ───────────────────────────────────────────── */}
@@ -344,7 +1062,6 @@ export default function Clientes() {
           onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false); }}
         >
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
-            {/* cabeçalho */}
             <div className="flex items-center justify-between p-6 pb-4 border-b border-wine-50">
               <h3 className="font-display text-xl text-wine-700">Nova cliente</h3>
               <CloseButton onClick={() => setShowNew(false)} />
@@ -375,7 +1092,9 @@ export default function Clientes() {
               </label>
 
               <label className="block">
-                <span className="block text-sm font-medium text-ink/60 mb-1">Observações <span className="font-normal text-ink/30">(opcional)</span></span>
+                <span className="block text-sm font-medium text-ink/60 mb-1">
+                  Observações <span className="font-normal text-ink/30">(opcional)</span>
+                </span>
                 <textarea
                   className="input"
                   rows={2}
@@ -392,17 +1111,10 @@ export default function Clientes() {
               )}
 
               <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => setShowNew(false)}
-                  className="px-4 py-2 text-sm rounded-lg border border-wine-100 text-ink/70 hover:bg-wine-50 transition-colors"
-                >
+                <button onClick={() => setShowNew(false)} className="btn-secondary">
                   Cancelar
                 </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={saving}
-                  className="px-5 py-2 text-sm rounded-lg bg-wine-600 text-white font-medium hover:bg-wine-700 disabled:opacity-60 transition-colors"
-                >
+                <button onClick={handleCreate} disabled={saving} className="btn-primary disabled:opacity-60">
                   {saving ? 'Cadastrando…' : 'Cadastrar'}
                 </button>
               </div>

@@ -1,0 +1,71 @@
+{
+  "name": "NailFlow — W-C. Confirmação",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nailflow/agendamento-confirmado",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-confirmacao",
+      "name": "Webhook NailFlow (appointment.confirmed)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "notes": "Disparado pelo backend NailFlow (utils/notifyN8n.js) quando a profissional muda o status de um agendamento para 'confirmado'."
+    },
+    {
+      "parameters": {
+        "jsCode": "const { payload } = $input.first().json.body;\nconst data = new Date(payload.startsAt);\nconst dataFormatada = data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });\nconst horaFormatada = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });\nreturn [{\n  json: {\n    telefoneCliente: payload.clientPhone,\n    texto: `Seu horário foi confirmado para ${dataFormatada} às ${horaFormatada}. 💅`\n  }\n}];"
+      },
+      "id": "montar-mensagem-confirmacao",
+      "name": "Montar mensagem de confirmação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.telefoneCliente, text: { body: $json.texto } } }}",
+        "options": {}
+      },
+      "id": "enviar-confirmacao",
+      "name": "Enviar confirmação no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 0]
+    },
+    {
+      "parameters": { "respondWith": "noData", "options": {} },
+      "id": "responder-webhook",
+      "name": "Responder Webhook (200 OK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 0]
+    }
+  ],
+  "connections": {
+    "Webhook NailFlow (appointment.confirmed)": {
+      "main": [[{ "node": "Montar mensagem de confirmação", "type": "main", "index": 0 }]]
+    },
+    "Montar mensagem de confirmação": {
+      "main": [[{ "node": "Enviar confirmação no WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Enviar confirmação no WhatsApp": {
+      "main": [[{ "node": "Responder Webhook (200 OK)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

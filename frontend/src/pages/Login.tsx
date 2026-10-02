@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from '../components/LogoMark';
 
@@ -115,7 +115,14 @@ export default function Login() {
 
           </form>
 
-          <p className="mt-8 text-center text-xs text-ink/30">
+          <p className="mt-6 text-center text-sm text-ink/50">
+            Ainda não tem uma conta?{' '}
+            <Link to="/register" className="text-wine-600 hover:text-wine-700 font-medium">
+              Criar conta
+            </Link>
+          </p>
+
+          <p className="mt-6 text-center text-xs text-ink/30">
             NailFlow · Agenda para profissionais de beleza
           </p>
 

@@ -47,6 +47,15 @@ const SELECT_BASE = `
   JOIN services s ON s.id = a.service_id
 `;
 
+// Mesma resposta para UUID inexistente ou de outra profissional: não revela a outra conta.
+async function assertOwnClient(clientId, professionalId) {
+  const { rows } = await pool.query(
+    'SELECT id FROM clients WHERE id = $1 AND professional_id = $2',
+    [clientId, professionalId]
+  );
+  if (!rows[0]) throw new HttpError(400, 'Cliente inválido.');
+}
+
 // Retorna até 6 slots disponíveis no mesmo dia, ordenados por proximidade ao
 // horário solicitado. Usado para popular o campo `alternatives` da resposta 409.
 // Se qualquer coisa falhar, retorna [] silenciosamente — nunca deve quebrar a
@@ -100,6 +109,7 @@ export async function createAppointment(req, res, next) {
       [data.serviceId, req.professionalId]
     );
     if (!serviceRows[0]) throw new HttpError(400, 'Serviço inválido.');
+    await assertOwnClient(data.clientId, req.professionalId);
 
     const check = await checkSlotAvailability(req.professionalId, data.serviceId, data.startsAt);
     if (!check.available) {
@@ -116,7 +126,7 @@ export async function createAppointment(req, res, next) {
       [req.professionalId, data.clientId, data.serviceId, new Date(check.startsAt), new Date(check.endsAt), data.status, data.notes ?? null, serviceRows[0].price_cents]
     );
 
-    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
+    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
     res.status(201).json(toDto(full[0]));
   } catch (err) {
     if (err instanceof z.ZodError) return next(new HttpError(400, 'Dados de agendamento inválidos.'));
@@ -127,6 +137,7 @@ export async function createAppointment(req, res, next) {
 export async function updateAppointment(req, res, next) {
   try {
     const data = updateSchema.parse(req.body);
+    if (data.clientId) await assertOwnClient(data.clientId, req.professionalId);
 
     let newStartsAt;
     let newEndsAt;
@@ -179,11 +190,12 @@ export async function updateAppointment(req, res, next) {
     );
     if (!rows[0]) throw new HttpError(404, 'Agendamento não encontrado.');
 
-    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
+    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
     const dto = toDto(full[0]);
 
     if (data.status === 'confirmado') {
-      notifyN8n('appointment.confirmed', dto);
+      const { rows: instRows } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+      notifyN8n('appointment.confirmed', { ...dto, waInstance: instRows[0]?.wa_instance_name ?? null });
     }
 
     res.json(dto);
@@ -202,8 +214,9 @@ export async function cancelAppointment(req, res, next) {
     );
     if (!rows[0]) throw new HttpError(404, 'Agendamento não encontrado.');
 
-    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [rows[0].id]);
-    notifyN8n('appointment.cancelled', toDto(full[0]));
+    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [rows[0].id, req.professionalId]);
+    const { rows: instRowsC } = await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [req.professionalId]);
+    notifyN8n('appointment.cancelled', { ...toDto(full[0]), waInstance: instRowsC[0]?.wa_instance_name ?? null });
 
     res.status(204).end();
   } catch (err) {
@@ -348,7 +361,7 @@ export async function updateFromNow(req, res, next) {
       [data.status ?? null, data.notes ?? null, req.professionalId, target[0].recurring_group_id, target[0].starts_at]
     );
 
-    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1`, [req.params.id]);
+    const { rows: full } = await pool.query(`${SELECT_BASE} WHERE a.id = $1 AND a.professional_id = $2`, [req.params.id, req.professionalId]);
     res.json(toDto(full[0]));
   } catch (err) {
     if (err instanceof z.ZodError) return next(new HttpError(400, 'Dados inválidos.'));

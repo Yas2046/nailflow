@@ -2,12 +2,11 @@ import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.js';
 import { zonedTimeToUtc } from '../utils/timezone.js';
+import { classifyReply } from '../utils/replyClassifier.js';
+import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
+import { extractSlots, extractDateMention, extractPeriodMention, extractTimeMention, extractActionIntent, extractServiceMention } from '../utils/conversationContext.js';
 
 // ---------- helpers ----------
-
-function cleanPhone(raw) {
-  return String(raw).replace('@s.whatsapp.net', '').replace(/\D/g, '');
-}
 
 function formatDateBR(isoOrDate) {
   const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
@@ -61,6 +60,28 @@ function isEscapePhrase(normalizedText) {
 
 function isBackCommand(normalizedText) {
   return /^(menu|voltar|inicio|recomecar|recomeço)$/.test(normalizedText);
+}
+
+// Frases claras de desistência durante uma etapa em andamento (ex.:
+// escolhendo serviço/data/horário). Diferente de isBackCommand (que exige
+// a palavra exata "menu"/"voltar"), aqui a cliente está abandonando a
+// conversa, não pedindo o menu — por isso o tratamento é "tudo bem, como
+// posso ajudar" em vez de reimprimir o menu numerado.
+const GIVE_UP_PHRASES = [
+  'desisto',
+  'deixa pra la',
+  'deixa para la',
+  'deixa pra depois',
+  'esquece',
+  'esquece isso',
+  'nao ta dando',
+  'nao da nao',
+  'nao quero mais',
+  'vou deixar pra depois',
+].map(normalizeText);
+
+function isGiveUpPhrase(normalizedText) {
+  return GIVE_UP_PHRASES.some((p) => normalizedText.includes(p));
 }
 
 // ---------- DB helpers ----------
@@ -119,34 +140,6 @@ async function findMessageBySender(professionalId, waMessageId) {
   return rows[0] ?? null;
 }
 
-function normalizeBrPhone(phone) {
-  const digits = String(phone).replace(/\D/g, '');
-  // BR mobile: 55 + DDD(2) + 9 + 8 digits = 13 digits; normalize to 12 by removing the 9
-  if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') {
-    return digits.slice(0, 4) + digits.slice(5);
-  }
-  return digits;
-}
-
-async function findClientByPhone(professionalId, phone) {
-  const normalized = normalizeBrPhone(phone);
-  const { rows } = await pool.query(
-    `SELECT * FROM clients
-     WHERE professional_id = $1
-       AND (
-         regexp_replace(phone, '\\D', '', 'g') = $2
-         OR (
-           length(regexp_replace(phone, '\\D', '', 'g')) = 13
-           AND left(regexp_replace(phone, '\\D', '', 'g'), 4) || right(regexp_replace(phone, '\\D', '', 'g'), 8) = $2
-         )
-       )
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    [professionalId, normalized]
-  );
-  return rows[0] ?? null;
-}
-
 async function findOrCreateClient(professionalId, phone, name) {
   const existing = await findClientByPhone(professionalId, phone);
   if (existing) return existing;
@@ -163,7 +156,7 @@ async function findOrCreateClient(professionalId, phone, name) {
 async function listActiveServices(professionalId) {
   const { rows } = await pool.query(
     `SELECT id, name, description, price_cents, duration_minutes
-     FROM services WHERE professional_id = $1 AND active = true ORDER BY name ASC`,
+     FROM services WHERE professional_id = $1 AND active = true AND available_on_whatsapp = true ORDER BY name ASC`,
     [professionalId]
   );
   return rows;
@@ -173,7 +166,7 @@ async function getUpcomingAppointments(professionalId, phone) {
   const client = await findClientByPhone(professionalId, phone);
   if (!client) return [];
   const { rows } = await pool.query(
-    `SELECT a.id, a.starts_at, a.ends_at, a.status, s.name AS service_name
+    `SELECT a.id, a.starts_at, a.ends_at, a.status, s.id AS service_id, s.name AS service_name
      FROM appointments a JOIN services s ON s.id = a.service_id
      WHERE a.client_id = $1
        AND a.professional_id = $2
@@ -196,6 +189,7 @@ async function getLastCompletedService(professionalId, phone) {
        AND a.professional_id = $2
        AND a.status = 'concluido'
        AND s.active = true
+       AND s.available_on_whatsapp = true
      ORDER BY a.starts_at DESC
      LIMIT 1`,
     [client.id, professionalId]
@@ -203,11 +197,109 @@ async function getLastCompletedService(professionalId, phone) {
   return rows[0] ?? null;
 }
 
-// Returns up to maxDays days that have slots for given service duration
+function formatConfirmationMessage(serviceName, startsAtIso, priceCents) {
+  return `Fechado! 💅 *${serviceName}* ${formatDateBR(new Date(startsAtIso))} às ${formatTimeBR(new Date(startsAtIso))}, por ${formatPrice(priceCents)}. Confirma? (sim / não)`;
+}
+
+// Tenta identificar, entre os agendamentos futuros já carregados, qual
+// deles a cliente quis dizer a partir de pistas no texto (data/dia da
+// semana e/ou nome do serviço, ex.: "o de sábado", "a manicure de sexta").
+// Só retorna um agendamento quando a combinação de pistas aponta para
+// EXATAMENTE um — ambiguidade real (nenhuma pista, ou mais de um
+// candidato) retorna null de propósito, para cair no menu numerado em
+// vez de adivinhar qual agendamento cancelar.
+function matchAppointmentFromText(rawText, appointments, services) {
+  const mentionedDate = extractDateMention(rawText);
+  const mentionedService = extractServiceMention(rawText, services);
+  if (!mentionedDate && !mentionedService) return null;
+
+  let candidates = appointments;
+  if (mentionedDate) {
+    const dateStr = mentionedDate.toISOString().split('T')[0];
+    candidates = candidates.filter((a) => {
+      const apptDateStr = new Date(a.starts_at).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      return apptDateStr === dateStr;
+    });
+  }
+  if (mentionedService) {
+    candidates = candidates.filter((a) => a.service_id === mentionedService.id);
+  }
+
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+// Monta a resposta de "ver agendamentos" — sem reimprimir o menu 1-4 em
+// seguida (reduz o "despejo de menu"); os números continuam funcionando
+// se a cliente decidir usá-los na próxima mensagem, porque o estado
+// volta para MENU mesmo assim.
+async function buildViewAppointmentsReply(professionalId, phone) {
+  const appointments = await getUpcomingAppointments(professionalId, phone);
+  if (appointments.length === 0) {
+    return {
+      message: `Você ainda não tem nenhum agendamento marcado. 😊 Quer marcar um horário?`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+  const lines = appointments.map((a) => `• ${a.service_name}: ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`);
+  return {
+    message: `Esses são os seus próximos horários:\n\n${lines.join('\n')}`,
+    botState: 'MENU',
+    context: {},
+  };
+}
+
+// Monta a resposta de cancelamento: se o texto já trouxer uma pista que
+// identifica exatamente um agendamento (data/dia da semana e/ou serviço),
+// pula direto para a confirmação daquele agendamento específico. Senão,
+// cai no menu numerado de sempre — mesmos nomes de estado/contexto
+// (`AGUARDANDO_CANCELAMENTO`/`apptMap`, `AGUARDANDO_CONFIRMACAO_CANCELAMENTO`/
+// `apptIdToCancel`) usados pelos estados já existentes, então nada downstream
+// precisa mudar.
+async function buildCancelReply(professionalId, phone, rawText) {
+  const appointments = await getUpcomingAppointments(professionalId, phone);
+  if (appointments.length === 0) {
+    return {
+      message: `Não encontrei nenhum agendamento ativo pra cancelar. 😊`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+
+  const services = await listActiveServices(professionalId);
+  const match = matchAppointmentFromText(rawText, appointments, services);
+  if (match) {
+    return {
+      message: `Posso cancelar *${match.service_name}* de ${formatDateBR(match.starts_at)} às ${formatTimeBR(match.starts_at)}? (sim / não)`,
+      botState: 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO',
+      context: { apptIdToCancel: match.id, abandonment_notified: false },
+    };
+  }
+
+  const apptMap = {};
+  const lines = appointments.map((a, i) => {
+    apptMap[String(i + 1)] = a.id;
+    return `${i + 1}. ${a.service_name} - ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`;
+  });
+  return {
+    message: `Encontrei estes agendamentos:\n\n${lines.join('\n')}\n\nQual deseja cancelar? (digite o número)`,
+    botState: 'AGUARDANDO_CANCELAMENTO',
+    context: { apptMap, abandonment_notified: false },
+  };
+}
+
+// Returns up to maxDays days that have slots for given service duration.
+// The search window is capped by the professional's booking_horizon_days setting.
 async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDays = 5) {
+  const { rows } = await pool.query(
+    'SELECT booking_horizon_days FROM professionals WHERE id = $1',
+    [professionalId]
+  );
+  const horizon = rows[0]?.booking_horizon_days ?? 60;
+
   const days = [];
   const today = new Date();
-  for (let i = 1; i <= 21 && days.length < maxDays; i++) {
+  for (let i = 1; i <= horizon && days.length < maxDays; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     d.setHours(12, 0, 0, 0); // use noon so timezone math is safe
@@ -217,6 +309,130 @@ async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDay
     }
   }
   return days;
+}
+
+// ---------- Motor de contexto (Parte 1) ----------
+//
+// Camada leve por cima da máquina de estados existente: tenta reconhecer
+// intenção/serviço/data/período em mensagens livres (ex.: "quero fazer
+// unha sexta depois das 18h") e guarda o que já foi entendido em
+// `ctx.slots`, para não perder essa informação a cada resposta — sem
+// substituir os estados/menus existentes, que continuam sendo o fallback
+// sempre que nada é reconhecido.
+
+// Filtra uma lista de slots (Date) por um período { afterMinutes?, beforeMinutes? }
+// em minutos desde 00:00 no fuso de São Paulo.
+function filterSlotsByPeriod(slots, period) {
+  if (!period) return slots;
+  return slots.filter((s) => {
+    const parts = s.start.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    const [h, m] = parts.split(':').map(Number);
+    const minutes = h * 60 + m;
+    if (period.afterMinutes != null && minutes < period.afterMinutes) return false;
+    if (period.beforeMinutes != null && minutes >= period.beforeMinutes) return false;
+    return true;
+  });
+}
+
+// Monta a mensagem de confirmação final (mesmo formato de sempre, usado em
+// AGUARDANDO_HORARIO) direto a partir de um dia + hora exata já conhecidos,
+// revalidando a disponibilidade de verdade (checkSlotAvailability) — nunca
+// confirma nem "inventa" um horário sem essa checagem. Retorna null se o
+// horário pedido não estiver disponível (quem chama decide o fallback).
+async function tryDirectBooking(professionalId, service, dateStr, timeMention) {
+  if (!dateStr || !timeMention) return null;
+  const naive = `${dateStr}T${String(timeMention.hour).padStart(2, '0')}:${String(timeMention.minute).padStart(2, '0')}:00`;
+  const check = await checkSlotAvailability(professionalId, service.id, naive);
+  if (!check.available) return null;
+
+  return {
+    message: formatConfirmationMessage(service.name, check.startsAt, service.price_cents),
+    botState: 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
+    context: {
+      serviceId: service.id,
+      serviceName: service.name,
+      serviceDuration: service.duration_minutes,
+      servicePrice: service.price_cents,
+      selectedDate: dateStr,
+      selectedSlot: check.startsAt,
+      abandonment_notified: false,
+    },
+  };
+}
+
+// Monta a lista de dias disponíveis para um serviço, já formatada como
+// resposta + daysMap (mesmo formato usado em AGUARDANDO_SERVICO). Se
+// serviço + data + horário exato já foram reconhecidos juntos (ex.:
+// "sexta às 14:30"), tenta ir direto para a confirmação (tryDirectBooking),
+// sem listar nada. Se só a data foi reconhecida, pula para a lista de
+// horários daquele dia (buildTimeReply), já filtrada por período se dito.
+async function buildDaysReply(professionalId, service, slots) {
+  if (slots?.date && slots?.time) {
+    const direct = await tryDirectBooking(professionalId, service, slots.date, slots.time);
+    if (direct) return direct;
+    // Horário pedido não está disponível nesse dia: cai no fluxo normal
+    // abaixo (lista de horários reais daquele dia), sem inventar nada.
+  }
+
+  const days = await getAvailableDaysWithSlots(professionalId, service.duration_minutes);
+  if (days.length === 0) {
+    return {
+      message: `No momento não há horários disponíveis para ${service.name}. Tente novamente mais tarde ou entre em contato diretamente. 😊`,
+      botState: 'MENU',
+      context: {},
+    };
+  }
+
+  // Preserva ctx.slots no context salvo, do mesmo jeito que os caminhos de
+  // correção em AGUARDANDO_DATA/AGUARDANDO_HORARIO já fazem — consistência
+  // pedida na revisão, sem mudar nenhuma regra de negócio.
+  const baseCtx = {
+    serviceId: service.id,
+    serviceName: service.name,
+    serviceDuration: service.duration_minutes,
+    servicePrice: service.price_cents,
+    ...(slots ? { slots } : {}),
+  };
+
+  if (slots?.date) {
+    const dayMatch = days.find((d) => d.date.toISOString().split('T')[0] === slots.date);
+    if (dayMatch) {
+      const timeReply = buildTimeReply(dayMatch.date, dayMatch.slots, baseCtx, slots.period);
+      if (timeReply) return timeReply;
+    }
+  }
+
+  const daysMap = {};
+  const lines = days.map((d, i) => {
+    daysMap[String(i + 1)] = d.date.toISOString().split('T')[0];
+    return `${i + 1}. ${formatDateBR(d.date)}`;
+  });
+
+  return {
+    message: `Ótimo! ${service.name} 💅\n\nEscolha a data:\n\n${lines.join('\n')}\n\nDigite o número da data.`,
+    botState: 'AGUARDANDO_DATA',
+    context: { ...baseCtx, daysMap, abandonment_notified: false },
+  };
+}
+
+// Monta a lista de horários de um dia já carregado (slots = resultado de
+// getAvailableSlots), aplicando um filtro de período opcional. Retorna null
+// se o período filtrar todos os horários (quem chama decide o que fazer).
+function buildTimeReply(date, slots, baseCtx, period) {
+  const filtered = filterSlotsByPeriod(slots, period);
+  if (filtered.length === 0) return null;
+
+  const slotsMap = {};
+  const lines = filtered.slice(0, 8).map((s, i) => {
+    slotsMap[String(i + 1)] = s.start.toISOString();
+    return `${i + 1}. ${formatTimeBR(s.start)}`;
+  });
+
+  return {
+    message: `${formatDateBR(date)} 📅\n\nHorários disponíveis:\n\n${lines.join('\n')}\n\nDigite o número do horário.`,
+    botState: 'AGUARDANDO_HORARIO',
+    context: { ...baseCtx, selectedDate: date.toISOString().split('T')[0], slotsMap, abandonment_notified: false },
+  };
 }
 
 // ---------- Bot state machine ----------
@@ -241,6 +457,56 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     return `Claro! 😊 Vou chamar a profissional para te atender. Um momentinho! 🌸`;
   }
 
+  // Desistência clara ("desisto", "deixa pra lá", "esquece", "não tá
+  // dando"...) em qualquer etapa em andamento — abandona o fluxo atual e
+  // volta para um MENU limpo, sem ficar repetindo a mesma pergunta.
+  if (state.startsWith('AGUARDANDO_') && isGiveUpPhrase(text)) {
+    return reply(`Tudo bem! 😊 Como posso ajudar?`, 'MENU', {});
+  }
+
+  // Motor de contexto (Parte 1): tenta reconhecer intenção/serviço/data/
+  // período em mensagens livres e acumula em ctx.slots, sem interferir em
+  // respostas que já são um número de menu ou um comando de navegação.
+  const CONTEXTUAL_STATES = new Set(['INICIO', 'MENU', 'AGUARDANDO_SERVICO', 'AGUARDANDO_DATA', 'AGUARDANDO_HORARIO']);
+  if (CONTEXTUAL_STATES.has(state) && !/^\d+$/.test(text) && !isBackCommand(text) && !isEscapePhrase(text)) {
+    const servicesForContext = await listActiveServices(professionalId);
+    const newSlots = extractSlots(rawText, servicesForContext);
+    if (Object.keys(newSlots).length > 0) {
+      ctx.slots = { ...(ctx.slots || {}), ...newSlots };
+    }
+  }
+
+  // Mudança clara de assunto durante uma etapa de agendamento/cancelamento
+  // em andamento (ex.: cliente escolhendo horário manda "na verdade quero
+  // cancelar meu outro agendamento") — em vez de travar em "não entendi",
+  // reconhece e conduz para a nova intenção, sem perder nada já salvo no
+  // banco (só descarta a escolha parcial que ainda não virou agendamento).
+  const BOOKING_FLOW_STATES = new Set(['AGUARDANDO_SERVICO', 'AGUARDANDO_DATA', 'AGUARDANDO_HORARIO', 'AGUARDANDO_CONFIRMACAO_AGENDAMENTO']);
+  const CANCEL_FLOW_STATES = new Set(['AGUARDANDO_CANCELAMENTO', 'AGUARDANDO_CONFIRMACAO_CANCELAMENTO']);
+  if ((BOOKING_FLOW_STATES.has(state) || CANCEL_FLOW_STATES.has(state)) && !/^\d+$/.test(text) && !isBackCommand(text) && !isEscapePhrase(text)) {
+    const switchAction = extractActionIntent(rawText);
+
+    if (switchAction === 'cancelar' && BOOKING_FLOW_STATES.has(state)) {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(`Sem problema, vamos cancelar. 😊\n\n${built.message}`, built.botState, built.context);
+    }
+
+    if (switchAction === 'ver' && BOOKING_FLOW_STATES.has(state)) {
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(built.message, built.botState, built.context);
+    }
+
+    if (switchAction === 'agendar' && CANCEL_FLOW_STATES.has(state)) {
+      const services = await listActiveServices(professionalId);
+      const freshSlots = extractSlots(rawText, services);
+      const chosen = freshSlots.serviceId ? services.find((s) => s.id === freshSlots.serviceId) : null;
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, freshSlots);
+        return reply(`Combinado, vamos agendar. 😊\n\n${built.message}`, built.botState, built.context);
+      }
+    }
+  }
+
   // ---------- INICIO ----------
   if (state === 'INICIO') {
     const existingClient = await findClientByPhone(professionalId, phone);
@@ -254,6 +520,33 @@ async function runStateMachine(conv, rawText, phone, professionalId, pushName) {
     const firstName = rawFirstName || null;
 
     const greeting = firstName ? `Oi, ${firstName}! 😊` : `Oi! 😊 Seja bem-vinda!`;
+
+    // Se a própria primeira mensagem já identifica um serviço com intenção
+    // clara de agendar (ex.: "quero fazer unha sexta depois das 18h"),
+    // pula a saudação genérica e o menu numerado e vai direto para a
+    // seleção de data/horário daquele serviço.
+    if (ctx.slots?.serviceId && ctx.slots?.intent === 'agendar') {
+      const services = await listActiveServices(professionalId);
+      const chosen = services.find((s) => s.id === ctx.slots.serviceId);
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+        return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
+      }
+    }
+
+    // Mesma ideia do atalho acima, mas para "ver agendamentos" e
+    // "cancelar" — se a própria primeira mensagem já deixa isso claro
+    // (ex.: "quero ver meus agendamentos", "quero cancelar o de sábado"),
+    // atende direto, sem passar pela saudação genérica + menu.
+    const initialAction = extractActionIntent(rawText);
+    if (initialAction === 'ver') {
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
+    }
+    if (initialAction === 'cancelar') {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(`${greeting}\n\n${built.message}`, built.botState, built.context);
+    }
 
     if (existingClient) {
       const upcoming = await getUpcomingAppointments(professionalId, phone);
@@ -332,8 +625,24 @@ Como posso ajudar?
 
   // ---------- MENU ----------
   if (state === 'MENU') {
-    // agendar
-    if (/^1$/.test(text) || /agendar|marcar|horario|quero marcar/.test(text)) {
+    // Serviço já identificado na própria mensagem (ex.: "quero fazer unha
+    // sexta depois das 18h") → pula a lista de serviços e vai direto para
+    // data/horário, já aplicando data/período se também reconhecidos.
+    // Exige intenção explícita de agendar reconhecida no texto — não basta
+    // citar o nome de um serviço (ex.: "quero cancelar minha manicure" não
+    // deve ser tratado como um novo agendamento).
+    if (ctx.slots?.serviceId && ctx.slots?.intent === 'agendar') {
+      const services = await listActiveServices(professionalId);
+      const chosen = services.find((s) => s.id === ctx.slots.serviceId);
+      if (chosen) {
+        const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+        return reply(built.message, built.botState, built.context);
+      }
+    }
+
+    // agendar — \b (word boundary) é essencial aqui: sem ele, "desmarcar"
+    // bate em "marcar" como substring e vira "agendar" por engano.
+    if (/^1$/.test(text) || /\b(agendar|marcar|horario)\b/.test(text)) {
       const services = await listActiveServices(professionalId);
       if (services.length === 0) {
         return reply('No momento não temos serviços disponíveis. Por favor, entre em contato diretamente. 😊', 'MENU', {});
@@ -350,38 +659,21 @@ Como posso ajudar?
       );
     }
 
-    // cancelar
-    if (/^2$/.test(text) || /cancelar|cancela/.test(text)) {
-      const appointments = await getUpcomingAppointments(professionalId, phone);
-      if (appointments.length === 0) {
-        return reply('Não encontrei agendamentos ativos. 😊 Posso ajudar com mais alguma coisa?', 'MENU', {});
-      }
-      const apptMap = {};
-      const lines = appointments.map((a, i) => {
-        apptMap[String(i + 1)] = a.id;
-        return `${i + 1}. ${a.service_name} - ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`;
-      });
-      return reply(
-        `Encontrei seus agendamentos:\n\n${lines.join('\n')}\n\nQual deseja cancelar? (Digite o número)`,
-        'AGUARDANDO_CANCELAMENTO',
-        { apptMap, abandonment_notified: false }
-      );
+    // cancelar — se a mensagem já trouxer uma pista (data/serviço) que
+    // identifica exatamente um agendamento, pula direto pra confirmação
+    // daquele; senão cai no menu numerado de sempre (buildCancelReply).
+    // Inclui "desmarcar/desmarca" (sinônimo comum) — sem isso, uma frase
+    // como "quero desmarcar meu agendamento" cairia no check de "ver"
+    // logo abaixo, só por conter "meu"/"agendamento".
+    if (/^2$/.test(text) || /cancelar|cancela|desmarcar|desmarca/.test(text)) {
+      const built = await buildCancelReply(professionalId, phone, rawText);
+      return reply(built.message, built.botState, built.context);
     }
 
-    // ver agendamentos
+    // ver agendamentos — sem reimprimir o menu 1-4 em seguida.
     if (/^3$/.test(text) || /ver|meu|agendamento|proximo/.test(text)) {
-      const appointments = await getUpcomingAppointments(professionalId, phone);
-      if (appointments.length === 0) {
-        return reply('Você não possui agendamentos futuros. 😊\n\nPosso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento', 'MENU', {});
-      }
-      const lines = appointments.map(
-        (a) => `• ${a.service_name}: ${formatDateBR(a.starts_at)} às ${formatTimeBR(a.starts_at)}`
-      );
-      return reply(
-        `Seus próximos agendamentos:\n\n${lines.join('\n')}\n\nPosso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento`,
-        'MENU',
-        {}
-      );
+      const built = await buildViewAppointmentsReply(professionalId, phone);
+      return reply(built.message, built.botState, built.context);
     }
 
     // saudação no meio de uma conversa: re-executa INICIO para personalizar
@@ -410,10 +702,14 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       await updateConversation(professionalId, phone, { mode: 'ATENDIMENTO_HUMANO', botState: 'MENU', context: {} });
       return `Parece que não estou conseguindo te ajudar da forma certa. 😊 Vou chamar a profissional para te atender melhor! Aguarda um momento. 🌸`;
     }
+    // Mensagem não reconhecida no MENU: não carrega slots parciais (data/
+    // período/intenção/serviço) para a próxima tentativa — só uma menção
+    // solta não deve influenciar um agendamento futuro sem confirmação
+    // clara. Mantém só o contador de tentativas.
     return reply(
       `Não entendi. 😊 Por favor escolha uma opção:\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
       'MENU',
-      { ...ctx, menuRetries }
+      { menuRetries }
     );
   }
 
@@ -435,6 +731,12 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       chosen = all.find((s) => normalizeText(s.name).includes(text));
     }
 
+    // Sinônimo coloquial reconhecido pelo motor de contexto (ex.: "unha"
+    // → Manicure), quando o serviço citado está entre as opções mostradas.
+    if (!chosen && ctx.slots?.serviceId) {
+      chosen = Object.values(servicesMap).find((s) => s.id === ctx.slots.serviceId);
+    }
+
     if (!chosen) {
       const lines = Object.entries(servicesMap).map(([k, s]) => `${k}. ${s.name}`);
       return reply(
@@ -444,34 +746,13 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    // Load available days
-    const days = await getAvailableDaysWithSlots(professionalId, chosen.duration_minutes);
-    if (days.length === 0) {
-      return reply(
-        `No momento não há horários disponíveis para ${chosen.name}. Tente novamente mais tarde ou entre em contato diretamente. 😊`,
-        'MENU',
-        {}
-      );
-    }
-
-    const daysMap = {};
-    const lines = days.map((d, i) => {
-      daysMap[String(i + 1)] = d.date.toISOString().split('T')[0];
-      return `${i + 1}. ${formatDateBR(d.date)}`;
-    });
-
-    return reply(
-      `Ótimo! ${chosen.name} 💅\n\nEscolha a data:\n\n${lines.join('\n')}\n\nDigite o número da data.`,
-      'AGUARDANDO_DATA',
-      {
-        serviceId: chosen.id,
-        serviceName: chosen.name,
-        serviceDuration: chosen.duration_minutes,
-        servicePrice: chosen.price_cents,
-        daysMap,
-        abandonment_notified: false,
-      }
-    );
+    // Serviço escolhido (por número, nome ou sinônimo) — reaproveita o
+    // mesmo caminho do atalho contextual: se a mensagem também já trazia
+    // data/período/horário (ex.: cliente digitou "2" e a mensagem anterior
+    // tinha "sexta às 14h" preservado em ctx.slots), pula direto pra lá em
+    // vez de sempre listar os dias de novo.
+    const built = await buildDaysReply(professionalId, chosen, ctx.slots);
+    return reply(built.message, built.botState, built.context);
   }
 
   // ---------- AGUARDANDO_DATA ----------
@@ -487,6 +768,37 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     const dateStr = daysMap[text];
 
     if (!dateStr) {
+      // Correção de data dita em texto livre (ex.: "Não, sábado é melhor"),
+      // mesmo que não esteja entre as datas inicialmente oferecidas — busca
+      // a disponibilidade real daquele dia em vez de inventar horário.
+      const mentionedDate = extractDateMention(rawText);
+      if (mentionedDate) {
+        // Data + horário exato na mesma mensagem (ex.: "sexta às 14:30")
+        // pula direto para a confirmação, sem listar horário nenhum.
+        const mentionedTime = extractTimeMention(rawText);
+        if (mentionedTime) {
+          const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+          const direct = await tryDirectBooking(professionalId, service, mentionedDate.toISOString().split('T')[0], mentionedTime);
+          if (direct) {
+            return reply(direct.message, direct.botState, direct.context);
+          }
+        }
+
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const period = extractPeriodMention(rawText) || ctx.slots?.period;
+        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, period) : null;
+        if (timeReply) {
+          return reply(timeReply.message, timeReply.botState, timeReply.context);
+        }
+        return reply(
+          `Não há horários disponíveis em ${formatDateBR(mentionedDate)}. 😕 Escolha outra data:\n\n${Object.entries(daysMap)
+            .map(([k, v]) => `${k}. ${formatDateBR(new Date(v + 'T12:00:00'))}`)
+            .join('\n')}`,
+          'AGUARDANDO_DATA',
+          ctx
+        );
+      }
+
       const lines = Object.entries(daysMap).map(([k, v]) => {
         const d = new Date(v + 'T12:00:00');
         return `${k}. ${formatDateBR(d)}`;
@@ -535,15 +847,99 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     }
 
     const slotsMap = ctx.slotsMap || {};
-    const slotIso = slotsMap[text];
+    let slotIso = slotsMap[text];
 
     if (!slotIso) {
-      const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
-      return reply(
-        `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
-        'AGUARDANDO_HORARIO',
-        ctx
-      );
+      const mentionedDate = extractDateMention(rawText);
+      const mentionedTime = extractTimeMention(rawText);
+
+      // Troca de dia dita nesta etapa (ex.: "sexta às 14h" ou só "sábado é
+      // melhor") — verificada ANTES do período/hora do dia atual, senão
+      // "sexta às 14h" tentaria achar 14h na grade do dia errado.
+      if (mentionedDate) {
+        const mentionedDateStr = mentionedDate.toISOString().split('T')[0];
+        if (mentionedTime) {
+          const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+          const direct = await tryDirectBooking(professionalId, service, mentionedDateStr, mentionedTime);
+          if (direct) {
+            return reply(direct.message, direct.botState, direct.context);
+          }
+        }
+
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
+        const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
+        if (timeReply) {
+          return reply(timeReply.message, timeReply.botState, timeReply.context);
+        }
+      } else {
+        // Sem troca de dia: período ou horário exato dentro do MESMO dia
+        // já escolhido.
+
+        // Correção de período dita em texto livre (ex.: "Pode ser qualquer
+        // horário à tarde") — refiltra os horários do MESMO dia já
+        // escolhido, sem consultar de novo o banco além do necessário.
+        const period = extractPeriodMention(rawText);
+        if (period && ctx.selectedDate) {
+          const d = new Date(ctx.selectedDate + 'T12:00:00-03:00');
+          const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
+          const timeReply = buildTimeReply(d, daySlots, ctx, period);
+          if (timeReply) {
+            return reply(timeReply.message, timeReply.botState, timeReply.context);
+          }
+          return reply(
+            `Não há horários nesse período para essa data. 😕 Escolha um dos horários abaixo:\n\n${Object.entries(slotsMap)
+              .map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`)
+              .join('\n')}`,
+            'AGUARDANDO_HORARIO',
+            ctx
+          );
+        }
+
+        // Horário exato dito em texto livre (ex.: "10:30", "10h30", "às
+        // 10:30", "10 e meia", "dez e meia") — seleciona direto a opção
+        // correspondente na grade já oferecida, sem exigir o número. Só
+        // age quando o texto não foi reconhecido como período acima
+        // (então "18h" sozinho seleciona o horário das 18h, mas "depois
+        // das 18h" continua sendo tratado como período, igual antes).
+        if (mentionedTime) {
+          const matches = Object.entries(slotsMap).filter(([, iso]) => {
+            const d = new Date(iso);
+            const [h, m] = d
+              .toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false })
+              .split(':')
+              .map(Number);
+            return h === mentionedTime.hour && m === mentionedTime.minute;
+          });
+          if (matches.length === 1) {
+            slotIso = matches[0][1];
+          } else if (matches.length === 0) {
+            // Horário reconhecido, mas fora da grade oferecida — explica e
+            // mostra as opções válidas, sem inventar nenhum horário novo.
+            const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+            return reply(
+              `Esse horário não está entre os disponíveis. 😕 Escolha um destes:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+              'AGUARDANDO_HORARIO',
+              ctx
+            );
+          }
+          // matches.length > 1 não deveria acontecer numa grade de 30 em
+          // 30 minutos, mas por segurança cai no fallback abaixo sem
+          // selecionar nada sozinho.
+        }
+      }
+
+      // A partir daqui, só continua se nenhum horário exato foi resolvido
+      // acima — se foi, `slotIso` já está preenchido e o fluxo segue
+      // direto para a revalidação de disponibilidade logo abaixo.
+      if (!slotIso) {
+        const lines = Object.entries(slotsMap).map(([k, v]) => `${k}. ${formatTimeBR(new Date(v))}`);
+        return reply(
+          `Por favor escolha um dos horários:\n\n${lines.join('\n')}\n\nDigite o número, ou diga *menu* para voltar.`,
+          'AGUARDANDO_HORARIO',
+          ctx
+        );
+      }
     }
 
     // Validate availability one more time
@@ -558,11 +954,8 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    const dateFormatted = formatDateBR(new Date(slotIso));
-    const timeFormatted = formatTimeBR(new Date(slotIso));
-
     return reply(
-      `Perfeito! 😊 Vou confirmar:\n\n📌 Serviço: ${ctx.serviceName}\n📅 Data: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Valor: ${formatPrice(ctx.servicePrice)}\n\nConfirma? (sim / não)`,
+      formatConfirmationMessage(ctx.serviceName, slotIso, ctx.servicePrice),
       'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
       { ...ctx, selectedSlot: slotIso, abandonment_notified: false }
     );
@@ -577,7 +970,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok|isso)/.test(text)) {
+    const answer = classifyReply(rawText, 'booking');
+
+    if (answer === 'yes') {
       // Find or create client
       const client = await findOrCreateClient(professionalId, phone, pushName || 'Cliente WhatsApp');
 
@@ -624,13 +1019,13 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       const timeFormatted = formatTimeBR(new Date(ctx.selectedSlot));
 
       return reply(
-        `Prontinho! 💅 Seu horário foi marcado:\n\n📌 ${ctx.serviceName}\n📅 ${dateFormatted}\n⏰ ${timeFormatted}\n\nSe precisar cancelar ou alterar, é só me avisar. Até lá! 😊`,
+        `Prontinho! 💅 *${ctx.serviceName}* confirmado para ${dateFormatted} às ${timeFormatted}. Qualquer coisa, é só chamar! 😊`,
         'MENU',
         {}
       );
     }
 
-    if (/^(n|nao|nope|cancel)/.test(text)) {
+    if (answer === 'no') {
       return reply(
         `Tudo bem! 😊 O que mais posso ajudar?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento\n3️⃣ Ver meus agendamentos\n4️⃣ Falar com a profissional`,
         'MENU',
@@ -638,8 +1033,37 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
+    // Correção sem precisar responder sim/não primeiro (ex.: "Na verdade
+    // pode ser 15h" ou "prefiro sábado") — mantém serviço e o resto do
+    // contexto, só troca o horário/data proposto. Nunca confirma sozinho:
+    // sempre revalida a disponibilidade e volta a pedir "sim/não".
+    const correctionTime = extractTimeMention(rawText);
+    if (correctionTime && ctx.selectedDate) {
+      const service = { id: ctx.serviceId, name: ctx.serviceName, duration_minutes: ctx.serviceDuration, price_cents: ctx.servicePrice };
+      const direct = await tryDirectBooking(professionalId, service, ctx.selectedDate, correctionTime);
+      if (direct) {
+        return reply(direct.message, direct.botState, direct.context);
+      }
+      const horaAtual = formatTimeBR(new Date(ctx.selectedSlot));
+      return reply(
+        `Esse horário não está disponível nesse dia. 😕 Quer tentar outro horário, ou confirmo o que já tínhamos combinado (${horaAtual})? Responda *sim* para confirmar ou me diga outro horário.`,
+        'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
+        ctx
+      );
+    }
+
+    const correctionDate = extractDateMention(rawText);
+    if (correctionDate) {
+      const daySlots = await getAvailableSlots(professionalId, correctionDate, ctx.serviceDuration);
+      const period = extractPeriodMention(rawText) || ctx.slots?.period;
+      const timeReply = daySlots.length > 0 ? buildTimeReply(correctionDate, daySlots, ctx, period) : null;
+      if (timeReply) {
+        return reply(timeReply.message, timeReply.botState, timeReply.context);
+      }
+    }
+
     return reply(
-      `Por favor responda *sim* para confirmar ou *não* para cancelar. 😊`,
+      `Por favor responda *sim* para confirmar, *não* para cancelar, ou me diga outro horário/data se quiser mudar. 😊`,
       'AGUARDANDO_CONFIRMACAO_AGENDAMENTO',
       ctx
     );
@@ -665,18 +1089,24 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    // Get appointment details for confirmation
+    // Get appointment details for confirmation.
+    // Exige tambem client_id: apptId vem de apptMap (context), que pode ter
+    // sido adulterado via POST /bot/conversation/:phone; sem essa checagem,
+    // uma conversa poderia confirmar o cancelamento do agendamento de OUTRA
+    // cliente da mesma profissional.
+    const cancelClient = await findClientByPhone(professionalId, phone);
     const { rows } = await pool.query(
       `SELECT a.starts_at, s.name AS service_name FROM appointments a
-       JOIN services s ON s.id = a.service_id WHERE a.id = $1 AND a.professional_id = $2`,
-      [apptId, professionalId]
+       JOIN services s ON s.id = a.service_id
+       WHERE a.id = $1 AND a.professional_id = $2 AND a.client_id = $3`,
+      [apptId, professionalId, cancelClient?.id ?? null]
     );
     if (!rows[0]) {
       return reply('Agendamento não encontrado. 😕', 'MENU', {});
     }
 
     return reply(
-      `Confirma o cancelamento?\n\n📌 ${rows[0].service_name}\n📅 ${formatDateBR(rows[0].starts_at)} às ${formatTimeBR(rows[0].starts_at)}\n\nResponda *sim* para cancelar ou *não* para manter.`,
+      `Posso cancelar *${rows[0].service_name}* de ${formatDateBR(rows[0].starts_at)} às ${formatTimeBR(rows[0].starts_at)}? (sim / não)`,
       'AGUARDANDO_CONFIRMACAO_CANCELAMENTO',
       { ...ctx, apptIdToCancel: apptId, abandonment_notified: false }
     );
@@ -691,19 +1121,29 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok)/.test(text)) {
-      await pool.query(
-        `UPDATE appointments SET status = 'cancelado' WHERE id = $1 AND professional_id = $2`,
-        [ctx.apptIdToCancel, professionalId]
+    const answer = classifyReply(rawText, 'cancel');
+
+    if (answer === 'yes') {
+      // Mesma exigencia de client_id do passo anterior, para o caso de o
+      // estado ter sido forjado direto em AGUARDANDO_CONFIRMACAO_CANCELAMENTO
+      // (pulando a etapa de listagem) via POST /bot/conversation/:phone.
+      const cancelClient = await findClientByPhone(professionalId, phone);
+      const { rowCount } = await pool.query(
+        `UPDATE appointments SET status = 'cancelado'
+         WHERE id = $1 AND professional_id = $2 AND client_id = $3`,
+        [ctx.apptIdToCancel, professionalId, cancelClient?.id ?? null]
       );
+      if (rowCount === 0) {
+        return reply('Agendamento não encontrado. 😕', 'MENU', {});
+      }
       return reply(
-        `Agendamento cancelado com sucesso! ✅\n\nSe quiser remarcar, é só me avisar. 😊\n\n1️⃣ Agendar horário`,
+        `Prontinho, cancelado! ✅ Se quiser remarcar, é só me chamar. 😊`,
         'MENU',
         {}
       );
     }
 
-    if (/^(n|nao|nope)/.test(text)) {
+    if (answer === 'no') {
       return reply(
         `Ok, mantive seu agendamento! 😊 Posso ajudar com mais alguma coisa?\n\n1️⃣ Agendar horário\n2️⃣ Cancelar agendamento`,
         'MENU',
@@ -720,7 +1160,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
 
   // ---------- AGUARDANDO_REPETICAO ----------
   if (state === 'AGUARDANDO_REPETICAO') {
-    if (isBackCommand(text) || /^(n|nao|nope|outr|ver|opcoes|menu)/.test(text)) {
+    const answer = classifyReply(rawText, 'repeat');
+
+    if (isBackCommand(text) || answer === 'no') {
       return reply(
         `Sem problema! 😊 Como posso ajudar?
 
@@ -733,7 +1175,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       );
     }
 
-    if (/^(s|sim|yes|confirma|ok|isso|quero|pode|bora|va|vamos|claro|com certeza)/.test(text)) {
+    if (answer === 'yes') {
       const { lastServiceId, lastServiceName, lastServiceDuration, lastServicePrice } = ctx;
 
       if (!lastServiceId) {
@@ -810,6 +1252,17 @@ Digite o número da data.`,
 // ---------- Route handlers ----------
 
 // POST /bot/process
+export async function getProfessionalInstances(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT wa_instance_name FROM professionals WHERE wa_instance_name IS NOT NULL ORDER BY created_at ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function processMessage(req, res, next) {
   try {
     const { phone: rawPhone, text, waMessageId, fromMe, pushName } = req.body;
@@ -874,10 +1327,11 @@ export async function processMessage(req, res, next) {
 
     // Lê last_message_at anterior (necessário para TTL do BOT_ATIVO)
     const { rows: _prevRows } = await pool.query(
-      'SELECT last_message_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
+      'SELECT last_message_at, updated_at FROM conversation_states WHERE professional_id = $1 AND phone = $2 LIMIT 1',
       [professionalId, phone]
     );
     const _prevLastMsgAt = _prevRows[0]?.last_message_at ?? null;
+    const _prevUpdatedAt = _prevRows[0]?.updated_at ?? null;
 
     // Get or create conversation (atualiza last_message_at = now())
     const conv = await getOrCreateConversation(professionalId, phone);
@@ -895,13 +1349,12 @@ export async function processMessage(req, res, next) {
         [professionalId, phone]
       );
       const _profLastAt = _profRows[0]?.created_at ?? null;
-      // Base do TTL: o mais recente entre a última mensagem da profissional
-      // e o início do modo ATENDIMENTO_HUMANO (conv.updated_at).
-      // Isso evita expirar quando o cliente acabou de escolher "Falar com a profissional"
-      // e a última mensagem da profissional é de uma sessão anterior.
-      const _profTime = _profLastAt ? new Date(_profLastAt).getTime() : 0;
-      const _modeTime = new Date(conv.updated_at ?? conv.last_message_at).getTime();
-      const _msecSinceProfessional = Date.now() - Math.max(_profTime, _modeTime);
+      // TTL baseado na última mensagem da profissional.
+      // Se nunca houve mensagem da profissional (cliente acabou de entrar em human_mode),
+      // usa Date.now() para não expirar imediatamente.
+      // Evita depender de updated_at, que o trigger de banco contamina a cada mensagem do cliente.
+      const _modeTime = _profLastAt ? new Date(_profLastAt).getTime() : Date.now();
+      const _msecSinceProfessional = Date.now() - _modeTime;
 
       if (_msecSinceProfessional > _TTL_MS) {
         // Mais de 4h desde a última mensagem da profissional → retorna ao bot

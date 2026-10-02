@@ -6,6 +6,7 @@ interface Professional {
   name: string;
   email: string;
   businessName: string;
+  isAdmin?: boolean;
 }
 
 interface AuthContextValue {
@@ -14,6 +15,14 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   updateProfessional: (p: Professional) => void;
+  register: (data: RegisterData) => Promise<void>;
+}
+
+interface RegisterData {
+  email: string;
+  password: string;
+  businessName: string;
+  slug: string;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -36,6 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function register(data: RegisterData) {
+    setLoading(true);
+    try {
+      await api.post('/auth/register', data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function logout() {
     api.post('/auth/logout', {}).catch(() => {});
     localStorage.removeItem('nailflow_professional');
@@ -48,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ professional, loading, login, logout, updateProfessional }}>
+    <AuthContext.Provider value={{ professional, loading, login, logout, updateProfessional, register }}>
       {children}
     </AuthContext.Provider>
   );

@@ -36,8 +36,8 @@ async function setupFixtures() {
   await pool.query('DELETE FROM professionals WHERE id = $1', [TEST_PROFESSIONAL_ID]);
 
   await pool.query(
-    `INSERT INTO professionals (id, name, email, password_hash, phone_whatsapp, business_name)
-     VALUES ($1, 'Teste Disponibilidade', 'teste-disponibilidade@nailflow.dev', 'hash-fake', '5531900000000', 'Studio Teste')`,
+    `INSERT INTO professionals (id, name, email, password_hash, phone_whatsapp, business_name, slug)
+     VALUES ($1, 'Teste Disponibilidade', 'teste-disponibilidade@nailflow.dev', 'hash-fake', '5531900000000', 'Studio Teste', 'teste-disponibilidade')`,
     [TEST_PROFESSIONAL_ID]
   );
 

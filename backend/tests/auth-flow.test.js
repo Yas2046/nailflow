@@ -70,15 +70,38 @@ test('endpoint autenticado aceita o token retornado pelo login', async (t) => {
   assert.ok(Array.isArray(services));
 });
 
-test('página pública de disponibilidade não exige autenticação', async (t) => {
+test('página pública de disponibilidade (por slug) não exige autenticação', async (t) => {
   if (!dbAvailable) {
     t.skip('DATABASE_URL não está acessível.');
     return;
   }
 
-  const res = await fetch(`${baseUrl}/public/availability?days=3`);
+  const res = await fetch(`${baseUrl}/public/camila-nails-studio/availability?days=3`);
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.ok('businessName' in body);
   assert.ok(Array.isArray(body.days));
+});
+
+test('página pública de disponibilidade retorna 404 para slug inexistente', async (t) => {
+  if (!dbAvailable) {
+    t.skip('DATABASE_URL não está acessível.');
+    return;
+  }
+
+  const res = await fetch(`${baseUrl}/public/slug-que-nao-existe/availability?days=3`);
+  assert.equal(res.status, 404);
+});
+
+test('rotas legadas sem slug (/public/info e /public/availability) foram removidas', async (t) => {
+  if (!dbAvailable) {
+    t.skip('DATABASE_URL não está acessível.');
+    return;
+  }
+
+  const infoRes = await fetch(`${baseUrl}/public/info`);
+  assert.equal(infoRes.status, 404);
+
+  const availabilityRes = await fetch(`${baseUrl}/public/availability?days=3`);
+  assert.equal(availabilityRes.status, 404);
 });

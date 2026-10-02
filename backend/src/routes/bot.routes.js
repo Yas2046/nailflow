@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireBotAuth } from '../middleware/botAuth.js';
+import { requireBotAuth, hasValidBotKey } from '../middleware/botAuth.js';
 import {
   processMessage,
   recordSentMessage,
@@ -9,10 +9,24 @@ import {
   markAbandonmentNotified,
   getAppointmentsTomorrow,
   markReminderSent,
+  getProfessionalInstances,
 } from '../controllers/botController.js';
 
 const router = Router();
 
+// Middleware que valida somente o BOT_API_KEY, sem resolver professionalId.
+// Usado por GET /instances que nao pertence a uma profissional especifica.
+function requireBotKey(req, res, next) {
+  if (!hasValidBotKey(req)) {
+    return res.status(401).json({ error: 'Bot nao autorizado.' });
+  }
+  next();
+}
+
+// Listagem de instancias (cron multi-profissional) -- nao precisa de professionalId
+router.get('/instances', requireBotKey, getProfessionalInstances);
+
+// Todas as demais rotas exigem autenticacao completa (BOT_API_KEY + resolucao de professionalId)
 router.use(requireBotAuth);
 
 router.post('/process', processMessage);

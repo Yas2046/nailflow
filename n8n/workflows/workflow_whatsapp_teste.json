@@ -1,0 +1,79 @@
+{
+  "name": "WhatsApp Teste — oi/olá",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Receber Mensagem",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evolution-chip2",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Filtrar e Extrair",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst body = item.body;\n\nif (body.event !== 'messages.upsert') return [];\n\nconst data = body.data;\nif (data?.key?.fromMe) return [];\n\nconst remoteJid = data?.key?.remoteJid || '';\nif (remoteJid.endsWith('@g.us')) return [];\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '');\nconst text = (\n  data?.message?.conversation ||\n  data?.message?.extendedTextMessage?.text ||\n  ''\n).trim().toLowerCase();\n\nif (text !== 'oi' && text !== 'ol\\u00e1') return [];\n\nreturn [{ json: { phone, text } }];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Enviar Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [720, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://nailflow-evolution.duckdns.org/message/sendText/chip2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "text",
+              "value": "Oi! Como posso ajudar?"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Receber Mensagem": {
+      "main": [
+        [{ "node": "Filtrar e Extrair", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filtrar e Extrair": {
+      "main": [
+        [{ "node": "Enviar Resposta", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,346 @@
+{
+  "name": "NailFlow — Abandono de Conversa",
+  "nodes": [
+    {
+      "id": "8Z_JSgbVmMK2bymr",
+      "name": "Trigger 15min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "5wMrwpxhsW59RrT0",
+      "name": "Buscar abandonados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3333/bot/abandoned-conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "instance",
+              "value": "={{ $('Split instancias').item.json.wa_instance_name }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "xVz8K4MhueJihnoc",
+      "name": "Tem abandonos",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "uiGb97cXuVVvcfQv",
+      "name": "Split conversas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1340,
+        180
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "G6F0SujRQhXZLqJ0",
+      "name": "Enviar Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://nailflow-evolution.duckdns.org/message/sendText/' + $('Split instancias').item.json.wa_instance_name }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"number\": \"{{ $json.phone }}\", \"text\": \"Oi! 😊 Vi que seu agendamento ficou pendente. Se quiser continuar, é só mandar uma mensagem por aqui que eu te ajudo.\" }",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "text",
+              "value": "Oi! 😊 Vi que você estava tentando agendar ou cancelar um horário e não conseguiu concluir. Posso te ajudar? É só responder essa mensagem! 💅"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SEzSTK4yU9MsfW08",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "id": "fOjPdc8yqWCsBl6N",
+      "name": "Marcar notificado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/bot/mark-abandonment-notified",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"phone\": \"{{ $('Split conversas').item.json.phone }}\", \"instance\": \"{{ $('Split instancias').item.json.wa_instance_name }}\" }",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $json.phone }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "ABN_buscar_inst_01",
+      "name": "Buscar instancias",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3333/bot/instances",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "ABN_split_inst_01",
+      "name": "Split instancias",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Trigger 15min": {
+      "main": [
+        [
+          {
+            "node": "Buscar instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar instancias": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split instancias": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar abandonados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar abandonados": {
+      "main": [
+        [
+          {
+            "node": "Tem abandonos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem abandonos": {
+      "main": [
+        [
+          {
+            "node": "Split conversas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split conversas": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Evolution": {
+      "main": [
+        [
+          {
+            "node": "Marcar notificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar notificado": {
+      "main": [
+        [
+          {
+            "node": "Split conversas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": null
+}

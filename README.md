@@ -1,173 +1,181 @@
 # NailFlow
 
-Site privado de agenda para profissionais autônomas de manicure/nail design,
-com página pública de consulta de horários e camada de automação via n8n
-preparada para integração com WhatsApp.
+Sistema privado de agendamento e automação de atendimento via WhatsApp para profissional autônoma de nail design.
 
-## Escopo
+O sistema permite que clientes agendem, confirmem e cancelem horários diretamente pelo WhatsApp, enquanto a profissional gerencia tudo por um painel web completo.
 
-- Site privado para a profissional (login)
-- Agenda (visão dia/semana/mês)
-- Cadastro de clientes e histórico de atendimentos
-- Cadastro de serviços (preço, duração)
-- Disponibilidade semanal (expediente + intervalo)
-- Horários bloqueados (folgas, compromissos pontuais)
-- Página pública, somente leitura, para a cliente ver horários livres
-- Preparação para integração com WhatsApp via n8n (webhooks de novo
-  agendamento, consulta de horários, confirmação, lembrete e cancelamento)
+---
+
+## Funcionalidades
+
+### Painel web (profissional)
+- **Dashboard** — KPIs do dia e do mês: faturamento realizado, previsto e perdido; agendamentos concluídos/cancelados; novos clientes; top 5 serviços; gráfico de faturamento dos últimos 6 meses
+- **Agenda** — visualização diária, semanal e mensal; criação e edição de agendamentos; bloqueio de horários; suporte a agendamentos recorrentes (semanal e quinzenal)
+- **Clientes** — listagem com busca, histórico de atendimentos, avatar com inicial
+- **Serviços** — cadastro de serviços com preço e duração
+- **Disponibilidade** — configuração de horários de trabalho por dia da semana com intervalo de almoço
+- **Perfil** — edição de nome, nome do negócio, WhatsApp e e-mail
+
+### Automação WhatsApp (via n8n + Evolution API)
+- Recepção de mensagens pelo WhatsApp Business
+- Agendamento guiado por bot conversacional
+- Confirmação e cancelamento automático
+- Lembretes de agendamento
+- Modo profissional (pausa o bot para atendimento humano)
+
+---
+
+## Stack
+
+| Camada | Tecnologia |
+|---|---|
+| **Backend API** | Node.js 20, Express 5, ESM (`"type":"module"`), PM2 |
+| **Banco de dados** | PostgreSQL 16 |
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS v3 |
+| **Automação** | n8n Community Edition |
+| **WhatsApp gateway** | Evolution API v2.3.7 |
+| **Servidor** | VPS com Nginx + HTTPS (Let's Encrypt) |
+
+---
 
 ## Estrutura do projeto
 
 ```
 nailflow/
-├── backend/           # API Node.js/Express + PostgreSQL
+├── backend/
+│   ├── db/
+│   │   ├── migrations/       # Migrations SQL (001, 003…)
+│   │   ├── schema.sql         # Schema completo
+│   │   └── seed.sql           # Dados iniciais
 │   ├── src/
-│   │   ├── config/db.js
-│   │   ├── middleware/ (auth.js, errorHandler.js)
-│   │   ├── controllers/
-│   │   ├── routes/
-│   │   ├── utils/ (cálculo de disponibilidade, notificação ao n8n)
-│   │   └── server.js
-│   ├── db/ (schema.sql, seed.sql)
-│   ├── tests/
-│   └── .env.example
-├── frontend/          # React + Vite + TypeScript + Tailwind
+│   │   ├── config/            # Configuração do banco
+│   │   ├── controllers/       # Lógica de negócio
+│   │   ├── middleware/        # Auth, error handler, bot auth
+│   │   ├── routes/            # Roteamento Express
+│   │   └── utils/             # Disponibilidade, timezone, notificações
+│   ├── tests/                 # Testes de integração
+│   └── .env.example           # Referência de variáveis de ambiente
+├── frontend/
 │   ├── src/
-│   │   ├── pages/, components/, context/, services/
-│   │   ├── App.tsx, main.tsx, types.ts
-│   └── .env.example
+│   │   ├── components/        # AppointmentModal, BlockTimeModal, Layout
+│   │   ├── context/           # AuthContext (sessão da profissional)
+│   │   ├── pages/             # Dashboard, Agenda, Clientes, Servicos,
+│   │   │                      # Disponibilidade, Perfil, Login, PaginaPublica
+│   │   ├── services/          # api.ts (fetch wrapper)
+│   │   └── types.ts           # Tipos compartilhados
+│   └── .env.example           # Referência de variáveis de ambiente
 ├── n8n/
-│   ├── workflows/ (5 arquivos .json prontos para importar)
-│   └── README.md  (como importar, configurar credenciais e ativar)
-└── docker-compose.yml  (Postgres + n8n opcional)
+│   ├── workflows/             # Workflows n8n exportados (importar na instância)
+│   └── README.md              # Instruções de configuração do n8n
+├── backend/migrations/        # Migrations adicionais (bot tables)
+└── docker-compose.yml         # Postgres + n8n para desenvolvimento local
 ```
 
-## Pré-requisitos
+---
 
-- Node.js 18 ou superior (usa `fetch` nativo e `node --test`)
-- PostgreSQL 14+ (ou Docker, veja abaixo)
-- npm
+## Como executar localmente
 
-## 1. Subir o PostgreSQL
+### Pré-requisitos
+- Node.js 20+
+- PostgreSQL 16
+- (Opcional) Docker + Docker Compose
 
-**Opção A — Docker (recomendado):**
+### 1. Banco de dados
+
 ```bash
-docker compose up -d postgres
-```
-Isso sobe o Postgres na porta `5432` com usuário/senha `postgres`/`postgres`
-e banco `nailflow` (já definidos no `docker-compose.yml`).
+# Com Docker:
+docker-compose up -d postgres
 
-**Opção B — Postgres já instalado localmente:**
-```bash
-createdb nailflow
+# Ou crie manualmente o banco e aplique o schema:
+psql -U postgres -c "CREATE DATABASE nailflow;"
+psql -U postgres -d nailflow -f backend/db/schema.sql
 ```
 
-## 2. Configurar e rodar o backend
+### 2. Backend
 
 ```bash
 cd backend
+cp .env.example .env        # edite com suas credenciais
 npm install
-cp .env.example .env
+npm run dev                 # porta 3333
 ```
 
-Abra `.env` e preencha pelo menos:
-- `DATABASE_URL` — já vem correta para a Opção A do Docker; ajuste se usar
-  outro host/usuário/senha.
-- `JWT_SECRET` — troque por uma string aleatória longa.
+### 3. Frontend
 
-Crie as tabelas e popule com dados de exemplo:
-```bash
-npm run db:create
-npm run db:seed
-```
-
-Rode a API:
-```bash
-npm run dev
-```
-A API sobe em `http://localhost:3333`. Teste com:
-```bash
-curl http://localhost:3333/health
-```
-
-**Login de exemplo (criado pelo seed):**
-- E-mail: `camila@nailflow.com`
-- Senha: `senha123`
-
-> ⚠️ O hash de senha em `db/seed.sql` foi gerado fora deste ambiente (sem
-> acesso à internet para reinstalar dependências e reverificar o hash aqui).
-> Se o login com `senha123` falhar, gere um hash novo rodando, dentro da
-> pasta `backend` (depois do `npm install`):
-> ```bash
-> node -e "require('bcryptjs').hash('senha123', 10).then(console.log)"
-> ```
-> e substitua o valor de `password_hash` em `db/seed.sql` antes de rodar
-> `npm run db:seed` (ou aplique um `UPDATE` direto no banco).
-
-## 3. Configurar e rodar o frontend
-
-Em outro terminal:
 ```bash
 cd frontend
+cp .env.example .env        # ajuste VITE_API_URL se necessário
 npm install
-cp .env.example .env
-npm run dev
+npm run dev                 # porta 5173
 ```
-Acesse `http://localhost:5173`. A página pública de horários fica em
-`http://localhost:5173/agenda-publica`.
 
-## 4. Rodar os testes básicos da API
+### 4. Migrations adicionais (opcional — funcionalidades de recorrência e bot)
+
+```bash
+psql $DATABASE_URL -f backend/db/migrations/001_add_price_cents_snapshot.sql
+psql $DATABASE_URL -f backend/migrations/002_bot_tables.sql
+psql $DATABASE_URL -f backend/db/migrations/003_recurring_appointments.sql
+```
+
+---
+
+## Variáveis de ambiente
+
+### Backend (`backend/.env`)
+
+| Variável | Descrição |
+|---|---|
+| `PORT` | Porta da API (padrão: 3333) |
+| `DATABASE_URL` | String de conexão PostgreSQL |
+| `JWT_SECRET` | Segredo para assinar tokens JWT |
+| `JWT_EXPIRES_IN` | Validade do token (ex.: `7d`) |
+| `FRONTEND_URL` | URL do frontend (CORS) |
+| `API_URL` | URL pública da API |
+| `WHATSAPP_TOKEN` | Token da WhatsApp Business Platform |
+| `WHATSAPP_PHONE_ID` | Phone Number ID (Meta) |
+| `WHATSAPP_VERIFY_TOKEN` | Token de verificação do webhook |
+| `N8N_WEBHOOK_URL` | URL do webhook n8n para notificações |
+
+> Consulte `backend/.env.example` para a lista completa e comentários.
+
+### Frontend (`frontend/.env`)
+
+| Variável | Descrição |
+|---|---|
+| `VITE_API_URL` | URL base da API backend |
+
+> Consulte `frontend/.env.example`.
+
+---
+
+## Workflows n8n
+
+Os arquivos em `n8n/workflows/` são exportações prontas para importar na instância n8n.
+
+| Arquivo | Finalidade |
+|---|---|
+| `1-novo-agendamento.json` | Fluxo de agendamento via WhatsApp |
+| `2-consulta-horarios.json` | Consulta de horários disponíveis |
+| `3-confirmacao.json` | Confirmação de agendamento |
+| `4-lembrete.json` | Lembrete automático |
+| `5-cancelamento.json` | Cancelamento pelo cliente |
+| `whatsapp_nailflow_definitivo.json` | Workflow unificado definitivo |
+
+Consulte `n8n/README.md` para instruções detalhadas de configuração.
+
+---
+
+## Testes
 
 ```bash
 cd backend
 npm test
 ```
-- `tests/health.test.js` roda sempre, sem precisar do banco (healthcheck e
-  bloqueio de rotas autenticadas sem token).
-- `tests/auth-flow.test.js` testa o fluxo real de login → uso do token →
-  página pública. Pula automaticamente (com aviso) se o Postgres configurado
-  em `DATABASE_URL` não estiver acessível.
 
-## 5. Automação com n8n (WhatsApp)
+Os testes cobrem: health check, fluxo de autenticação, disponibilidade de horários, snapshot de preço, rate limiting.
 
-Veja o passo a passo completo em [`n8n/README.md`](./n8n/README.md):
-importar os 5 workflows, configurar variáveis (`API_URL`, `WHATSAPP_TOKEN`,
-`WHATSAPP_PHONE_ID`), criar a credencial usada para chamar a API do NailFlow,
-e ativar.
+---
 
-Se quiser subir um n8n local junto com o Postgres:
-```bash
-docker compose up -d
-```
-Isso sobe o n8n em `http://localhost:5678`.
+## Licença
 
-## Variáveis de ambiente — resumo
-
-### `backend/.env`
-| Variável | Obrigatória | Descrição |
-|---|---|---|
-| `PORT` | não (default 3333) | Porta da API |
-| `DATABASE_URL` | sim | Conexão com o Postgres |
-| `JWT_SECRET` | sim | Segredo para assinar o JWT |
-| `JWT_EXPIRES_IN` | não (default 7d) | Validade do token de login |
-| `FRONTEND_URL` | sim | Origem liberada no CORS |
-| `API_URL` | usada pelo n8n | URL pública desta API |
-| `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_VERIFY_TOKEN` | só para integração WhatsApp | Credenciais da Meta (placeholders — preencher ao integrar) |
-| `N8N_WEBHOOK_CONFIRMED_URL` | só para integração n8n | URL do webhook do n8n — workflow 3 (agendamento confirmado) |
-| `N8N_WEBHOOK_CANCELLED_URL` | só para integração n8n | URL do webhook do n8n — workflow 5 (agendamento cancelado) |
-
-### `frontend/.env`
-| Variável | Obrigatória | Descrição |
-|---|---|---|
-| `VITE_API_URL` | sim | URL da API consumida pelo frontend |
-
-## Status conhecido / limitações documentadas
-
-- O hash de senha do seed pode precisar ser regerado localmente (ver seção 2).
-- A verificação do webhook do WhatsApp (handshake GET da Meta) não está
-  implementada nos workflows — é um passo manual único, documentado em
-  `n8n/README.md`.
-- O token usado pelo n8n para chamar a API expira conforme `JWT_EXPIRES_IN`;
-  para automação de longo prazo, ver a nota em `n8n/README.md`.
-- O projeto assume uma única profissional por instalação (multi-tenant não
-  faz parte do escopo atual).
+Projeto privado. Todos os direitos reservados.

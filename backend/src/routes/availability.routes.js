@@ -7,6 +7,11 @@ import {
   deleteBlockedTime,
   getSlots,
   checkAvailability,
+  getHorizon,
+  updateHorizon,
+  listExceptions,
+  createException,
+  deleteException,
 } from '../controllers/availabilityController.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -17,6 +22,15 @@ router.use(requireAuth);
 // Expediente semanal
 router.get('/', getWeeklyAvailability);
 router.put('/', updateWeeklyAvailability);
+
+// Antecedência máxima para agendamento
+router.get('/horizon', getHorizon);
+router.put('/horizon', updateHorizon);
+
+// Fechamentos recorrentes (ex.: "3º sábado de cada mês")
+router.get('/exceptions', listExceptions);
+router.post('/exceptions', createException);
+router.delete('/exceptions/:id', deleteException);
 
 // Horários livres calculados (uso interno/autenticado, ex.: tela de Agenda)
 router.get('/slots', getSlots);

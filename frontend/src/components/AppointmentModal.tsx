@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
 interface Props {
+  initialClientId?: string;
   date: Date;
   time: string | null;
   appointment: Appointment | null;
@@ -29,12 +31,19 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
+// Soma N dias a uma data e devolve YYYY-MM-DD (mesmo formato que o input date usa).
+function addDaysToYmd(base: Date, days: number) {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'result';
 
-export default function AppointmentModal({ date, time, appointment, onClose, onSaved }: Props) {
+export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId }: Props) {
   const [clients, setClients]       = useState<Client[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
-  const [clientId, setClientId]     = useState(appointment?.clientId || '');
+  const [clientId, setClientId]     = useState(appointment?.clientId || initialClientId || '');
   const [serviceId, setServiceId]   = useState(appointment?.serviceId || '');
   const [timeValue, setTimeValue]   = useState(
     time || (appointment ? new Date(appointment.startsAt).toTimeString().slice(0, 5) : '09:00')
@@ -43,16 +52,19 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const [notes, setNotes]           = useState(appointment?.notes || '');
   const [error, setError]           = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
+  const { toast } = useToast();
   const [saving, setSaving]         = useState(false);
 
   // Recorrência (somente na criação)
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency]     = useState<RecurringFrequency>('weekly');
+  const [endMode, setEndMode]         = useState<'date' | 'days'>('date');
   const [endsOn, setEndsOn]           = useState(() => {
     const d = new Date(date);
     d.setMonth(d.getMonth() + 3);
     return d.toISOString().slice(0, 10);
   });
+  const [repeatDays, setRepeatDays]   = useState('30');
 
   // Fluxo de passos
   const [step, setStep]             = useState<Step>('form');
@@ -68,6 +80,11 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
   const selectedService = services.find((s) => s.id === serviceId);
 
+  const repeatDaysNum = parseInt(repeatDays, 10);
+  const computedEndsOn = endMode === 'days' && repeatDaysNum > 0
+    ? addDaysToYmd(date, repeatDaysNum)
+    : endsOn;
+
   function clearError() { setError(null); setAlternatives([]); }
 
   // ── Salvar / criar ─────────────────────────────────────────────────────────
@@ -75,6 +92,11 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   async function handleSubmit() {
     clearError();
     if (!clientId || !serviceId) { setError('Selecione cliente e serviço.'); return; }
+
+    if (!isEditing && isRecurring && endMode === 'days' && !(repeatDaysNum > 0)) {
+      setError('Informe uma quantidade de dias válida (maior que zero).');
+      return;
+    }
 
     // Agendamento recorrente existente: pede escopo antes de salvar
     if (isRecurringAppt) { setStep('scope-edit'); return; }
@@ -92,6 +114,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       if (isEditing && scope === 'following') {
         // Atualiza este e os próximos (status + notes)
         await api.put(`/appointments/${appointment!.id}/and-following`, { status, notes: notes || null });
+        toast('Agendamentos atualizados');
         onSaved();
         return;
       }
@@ -100,6 +123,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
         await api.put(`/appointments/${appointment!.id}`, {
           clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null,
         });
+        toast('Agendamento atualizado');
         onSaved();
         return;
       }
@@ -107,7 +131,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       if (isRecurring) {
         const result = await api.post<RecurringResult>('/appointments/recurring', {
           clientId, serviceId, startsAt: startsAt.toISOString(),
-          frequency, endsOn, notes: notes || null,
+          frequency, endsOn: computedEndsOn, notes: notes || null,
         });
         setRecurringResult(result);
         setStep('result');
@@ -117,6 +141,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       await api.post('/appointments', {
         clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null,
       });
+      toast('Agendamento criado com sucesso');
       onSaved();
     } catch (err) {
       setError(getFriendlyAvailabilityMessage(err, 'Não foi possível salvar o agendamento.'));
@@ -143,6 +168,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       } else {
         await api.delete(`/appointments/${appointment!.id}`);
       }
+      toast('Agendamento cancelado', 'info');
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao cancelar.');
@@ -410,14 +436,54 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                       </select>
                     </Field>
                     <Field label="Repetir até">
-                      <input
-                        className="input"
-                        type="date"
-                        value={endsOn}
-                        min={date.toISOString().slice(0, 10)}
-                        onChange={(e) => setEndsOn(e.target.value)}
-                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEndMode('date')}
+                          className={`flex-1 text-sm py-2 rounded-lg border transition-colors ${
+                            endMode === 'date' ? 'bg-wine-600 text-white border-wine-600' : 'border-wine-100 text-ink/60 hover:bg-wine-50'
+                          }`}
+                        >
+                          Até uma data
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEndMode('days')}
+                          className={`flex-1 text-sm py-2 rounded-lg border transition-colors ${
+                            endMode === 'days' ? 'bg-wine-600 text-white border-wine-600' : 'border-wine-100 text-ink/60 hover:bg-wine-50'
+                          }`}
+                        >
+                          Por X dias
+                        </button>
+                      </div>
                     </Field>
+
+                    {endMode === 'date' ? (
+                      <Field label="Data final">
+                        <input
+                          className="input"
+                          type="date"
+                          value={endsOn}
+                          min={date.toISOString().slice(0, 10)}
+                          onChange={(e) => setEndsOn(e.target.value)}
+                        />
+                      </Field>
+                    ) : (
+                      <Field label="Repetir por (dias)">
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          value={repeatDays}
+                          onChange={(e) => setRepeatDays(e.target.value)}
+                        />
+                        <p className="text-xs text-ink/40 mt-1">
+                          {repeatDaysNum > 0
+                            ? `Término previsto: ${new Date(computedEndsOn + 'T00:00:00').toLocaleDateString('pt-BR')}`
+                            : 'Informe uma quantidade de dias válida.'}
+                        </p>
+                      </Field>
+                    )}
                   </div>
                 )}
               </div>

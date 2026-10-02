@@ -1,0 +1,71 @@
+{
+  "name": "NailFlow — W-D. Cancelamento",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nailflow/agendamento-cancelado",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-cancelamento",
+      "name": "Webhook NailFlow (appointment.cancelled)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "notes": "Disparado pelo backend NailFlow (utils/notifyN8n.js) quando um agendamento é cancelado. O horário já volta a ficar disponível automaticamente no banco — este workflow só cuida do aviso via WhatsApp."
+    },
+    {
+      "parameters": {
+        "jsCode": "const { payload } = $input.first().json.body;\nconst data = new Date(payload.startsAt);\nreturn [{\n  json: {\n    telefoneCliente: payload.clientPhone,\n    texto: `Seu horário de ${payload.serviceName} em ${data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} às ${data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })} foi cancelado. Qualquer coisa, me chama por aqui!`\n  }\n}];"
+      },
+      "id": "montar-mensagem-cancelamento",
+      "name": "Montar mensagem de cancelamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.WHATSAPP_TOKEN}}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.telefoneCliente, text: { body: $json.texto } } }}",
+        "options": {}
+      },
+      "id": "enviar-cancelamento",
+      "name": "Enviar aviso no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 0]
+    },
+    {
+      "parameters": { "respondWith": "noData", "options": {} },
+      "id": "responder-webhook",
+      "name": "Responder Webhook (200 OK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 0]
+    }
+  ],
+  "connections": {
+    "Webhook NailFlow (appointment.cancelled)": {
+      "main": [[{ "node": "Montar mensagem de cancelamento", "type": "main", "index": 0 }]]
+    },
+    "Montar mensagem de cancelamento": {
+      "main": [[{ "node": "Enviar aviso no WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Enviar aviso no WhatsApp": {
+      "main": [[{ "node": "Responder Webhook (200 OK)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

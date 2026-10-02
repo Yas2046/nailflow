@@ -1,0 +1,257 @@
+{
+  "name": "WhatsApp NailFlow — Definitivo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-nailflow",
+        "options": {}
+      },
+      "id": "96e8315b-26f4-4db3-bee4-f9e3b91cb459",
+      "name": "Receber Mensagem",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        112
+      ],
+      "webhookId": "ec52e800-ed54-4a6b-ba1c-54ebe95f7477"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\n\n// Ignorar eventos que não são mensagens\nif (body.event !== 'messages.upsert') return [];\n\nconst data = body.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\nconst remoteJid = key.remoteJid || '';\n\n// Ignorar grupos\nif (remoteJid.endsWith('@g.us')) return [];\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\\D/g, '');\nconst fromMe = key.fromMe === true;\nconst waMessageId = key.id || '';\nconst text = (\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  ''\n);\n\n// Ignorar mensagens sem texto (audio, sticker, etc.) quando enviadas pelo bot/professional\n// Mas para clientes, ainda podemos querer registrar outros tipos\nconst messageType = data.messageType || 'conversation';\n\n// Ignorar tipos técnicos sem conteúdo real\nconst ignoredTypes = ['protocolMessage','reactionMessage','senderKeyDistributionMessage'];\nif (ignoredTypes.includes(messageType)) return [];\n\n// Se não tem texto e não é fromMe, ignorar (não conseguimos processar áudios, imagens sem legenda)\nif (!text && !fromMe) return [];\n\nconst pushName = data.pushName || '';\nconst instance = body.instance || '';\n\nconst waInstance = instance;\nreturn [{ json: { phone, text, waMessageId, fromMe, pushName, instance, messageType, waInstance } }];"
+      },
+      "id": "fd421f29-3bb5-49d6-86b6-625697b5d6f4",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/bot/process",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "specifyBody": "json",
+        "jsonBody": "={{ { phone: $('Extrair Dados').item.json.phone, text: $('Extrair Dados').item.json.text, waMessageId: $('Extrair Dados').item.json.waMessageId, fromMe: $('Extrair Dados').item.json.fromMe, pushName: $('Extrair Dados').item.json.pushName, waInstance: $('Extrair Dados').item.json.waInstance, messageType: $('Extrair Dados').item.json.messageType } }}"
+      },
+      "id": "25069a90-8b40-4f16-b485-f402e5ae85ac",
+      "name": "Processar no NailFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -480,
+        112
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.reply }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "899b2dad-345f-4e43-83b7-6ca3e1109ed5",
+      "name": "Tem Resposta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://nailflow-evolution.duckdns.org/message/sendText/' + $('Extrair Dados').item.json.waInstance }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Extrair Dados').item.json.phone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Processar no NailFlow').item.json.reply }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8b9d4d9d-9649-4676-9308-41df057be0e4",
+      "name": "Enviar via Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SEzSTK4yU9MsfW08",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3333/bot/record-sent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $('Extrair Dados').item.json.phone }}"
+            },
+            {
+              "name": "waMessageId",
+              "value": "={{ $json.key?.id || '' }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Processar no NailFlow').item.json.reply }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1eb56ee-b719-4e42-8e8c-3571ad872e3a",
+      "name": "Registrar Mensagem Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receber Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Extrair Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Dados": {
+      "main": [
+        [
+          {
+            "node": "Processar no NailFlow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar no NailFlow": {
+      "main": [
+        [
+          {
+            "node": "Tem Resposta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Resposta?": {
+      "main": [
+        [
+          {
+            "node": "Enviar via Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar via Evolution": {
+      "main": [
+        [
+          {
+            "node": "Registrar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "id": "3yBtUtgMlKsXh3mw",
+  "pinData": {}
+}

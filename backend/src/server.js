@@ -7,11 +7,14 @@ import authRoutes from './routes/auth.routes.js';
 import appointmentsRoutes from './routes/appointments.routes.js';
 import availabilityRoutes from './routes/availability.routes.js';
 import clientsRoutes from './routes/clients.routes.js';
+import expensesRoutes from './routes/expenses.routes.js';
 import servicesRoutes from './routes/services.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import botRoutes from './routes/bot.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import onboardingRoutes from './routes/onboarding.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -35,10 +38,14 @@ app.use('/appointments', appointmentsRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/clients', clientsRoutes);
 app.use('/services', servicesRoutes);
+app.use('/expenses', expensesRoutes);
+
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);
-app.use('/bot', cors({ origin: '*' }), botRoutes);
+app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
+app.use('/admin', adminRoutes);
+app.use('/onboarding', onboardingRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });

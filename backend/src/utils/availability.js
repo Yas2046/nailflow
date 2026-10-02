@@ -18,6 +18,40 @@ function toMinutes(timeStr) {
  * @param {number} serviceDurationMinutes - duração do serviço a encaixar
  * @returns {Promise<Array<{start: Date, end: Date}>>}
  */
+/**
+ * Verifica se uma data civil (em SP) está marcada como fechamento
+ * recorrente para a profissional. Centraliza a lógica para que Agenda,
+ * página pública e bot respeitem exatamente a mesma regra.
+ */
+async function isRecurringException(professionalId, zonedParts) {
+  const { rows } = await pool.query(
+    `SELECT exception_type, weekday, week_of_month,
+            TO_CHAR(specific_date, 'YYYY-MM-DD') AS specific_date,
+            TO_CHAR(date_from, 'YYYY-MM-DD') AS date_from,
+            TO_CHAR(date_to, 'YYYY-MM-DD') AS date_to
+     FROM recurring_exceptions WHERE professional_id = $1`,
+    [professionalId]
+  );
+  if (rows.length === 0) return false;
+
+  const dateStr = `${zonedParts.year}-${String(zonedParts.month).padStart(2, '0')}-${String(zonedParts.day).padStart(2, '0')}`;
+  const weekOfMonth = Math.ceil(zonedParts.day / 7);
+  const daysInMonth = new Date(zonedParts.year, zonedParts.month, 0).getDate();
+  const isLastOccurrence = zonedParts.day + 7 > daysInMonth;
+
+  for (const ex of rows) {
+    if (ex.exception_type === 'specific_date') {
+      if (ex.specific_date === dateStr) return true;
+    } else if (ex.exception_type === 'weekday_of_month') {
+      if (ex.weekday !== zonedParts.weekday) continue;
+      if (ex.week_of_month === -1 ? isLastOccurrence : ex.week_of_month === weekOfMonth) return true;
+    } else if (ex.exception_type === 'date_range') {
+      if (dateStr >= ex.date_from && dateStr <= ex.date_to) return true;
+    }
+  }
+  return false;
+}
+
 export async function getAvailableSlots(professionalId, date, serviceDurationMinutes) {
   // Determina o dia da semana e as fronteiras do dia civil em America/Sao_Paulo.
   // Em containers de produção (UTC), date.getDay() retornaria o dia errado para
@@ -35,6 +69,11 @@ export async function getAvailableSlots(professionalId, date, serviceDurationMin
   const availability = availabilityRows[0];
   if (!availability || !availability.is_working) {
     return []; // folga nesse dia da semana
+  }
+
+  // Fechamento recorrente (ex.: "3º sábado de cada mês")
+  if (await isRecurringException(professionalId, zonedParts)) {
+    return [];
   }
 
   const dayStart = toMinutes(availability.start_time);
@@ -160,6 +199,10 @@ export async function checkSlotAvailability(professionalId, serviceId, startsAtI
   );
   const availability = availabilityRows[0];
   if (!availability || !availability.is_working) {
+    return { available: false, reason: 'outside_working_hours' };
+  }
+
+  if (await isRecurringException(professionalId, zonedStart)) {
     return { available: false, reason: 'outside_working_hours' };
   }
 
