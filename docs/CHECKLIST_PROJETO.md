@@ -221,7 +221,7 @@
 - [x] Branch de trabalho única: `feat/phase5-register` — em 2026-10-01 está **8 commits à frente de `origin/feat/phase5-register`** (ainda não enviados, aguardando decisão); 0 commits atrás da origin
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
-- [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). **Pendente**: restart do `nailflow-backend` em produção para recarregar o código em memória (ver I16 em [`PENDENCIAS.md`](./PENDENCIAS.md))
+- [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). Restart confirmado em 2026-10-02 (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [ ] GitBook — não utilizado neste fluxo de trabalho; nenhuma publicação/sincronização feita
 
 ---
