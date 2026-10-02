@@ -33,9 +33,7 @@
 
 ~~**C3. Testar cancelamento pelo WhatsApp**~~ — validado em 2026-10-01 (ver "Resolvido"): cancelamento por data + horário, confirmação e cancelamento real, retorno ao menu/início
 
-**C4. Integrar V1/V2 ao `main`**
-- Confirmado em 2026-10-01: `feat/phase5-register` tem 59 commits que `main` não tem; `main` tem 1 commit próprio (`985c1f1`, "phase 0" antigo de bot/WhatsApp/multi-tenancy) que não existe em `feat/phase5-register` — histórico realmente divergente, não é só "branch desatualizada". Um merge direto exige decidir antes como tratar esse commit divergente (não decidido nesta sessão — fica para quando a integração for priorizada)
-- `feat/phase5-register` está também 8 commits à frente de `origin/feat/phase5-register` (local), ainda sem push — ver seção de pendências abaixo
+~~**C4. Integrar V1/V2 ao `main`**~~ — integrado em 2026-10-02 (ver "Resolvido"): merge de `feat/phase5-register` em `main` resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado, sem conteúdo exclusivo real além de 2 arquivos órfãos nunca ativados, preservados no merge); `main` e `origin/main` sincronizados e publicados. Build do frontend e suíte de testes do backend validados pós-merge (ver I14 para as falhas conhecidas). **Pendente**: restart do processo `nailflow-backend` no PM2 para garantir que o código em memória reflita exatamente o commit publicado (ver I16).
 
 ~~**C5. Revisão final e commit/push das mudanças de 2026-09-27**~~ — feito em 2026-09-28 (commit da rodada de segurança V6–V17). Os 2 exports do n8n regenerados (Abandono/Lembretes) e o restante ainda pendente (Definitivo/Notificações) seguem em I9.
 
@@ -90,6 +88,10 @@
 - Auditoria de 2026-09-28 nos dois advisories do `npm audit` (open redirect e SSR hydration) concluiu que **nenhum é explorável no NailFlow hoje**: todo destino de navegação (`<Link>`/`navigate()`) é string fixa no código, e o app usa Declarative Mode sem SSR (o segundo advisory se autoexclui para esse modo)
 - Não é necessário corrigir agora; revisar só se uma funcionalidade futura introduzir navegação com destino dinâmico/vindo de URL ou API, ou uso de SSR
 - **Reconfirmado em 2026-09-29** (revisão de segurança do audit log/admin): `npm audit` do frontend continua reportando as mesmas 2 vulnerabilidades moderadas em `react-router-dom` (`package.json` fixa `^6.26.0`). Correção via `npm audit fix --force` seria um bump major (breaking change, o próprio npm avisa) — decisão de não aplicar agora se mantém pelo mesmo motivo já registrado acima. Reavaliar só se as condições descritas mudarem.
+
+**I16. Confirmar que o `nailflow-backend` em produção está executando exatamente o commit publicado após o merge do V1**
+- Em 2026-10-02, o processo PM2 estava ativo desde 2026-10-01 20:29 (antes do merge de hoje); os arquivos em disco já refletem o merge, mas o restart para recarregar o código em memória não foi feito nesta sessão (ação de deploy em produção, requer autorização explícita/execução manual)
+- Comando sugerido: `pm2 restart nailflow-backend && pm2 logs nailflow-backend --lines 50 --nostream` seguido de checagem do `/health` e de uma rota real (ex.: `/public/:slug/services`)
 
 ### 🟡 Melhoria
 
@@ -230,3 +232,4 @@
 | `createAppointment`: SELECT pós-criação não filtrava por `professional_id` (único ponto do arquivo nesse padrão, não explorável mas inconsistente) | 2026-10-01 | Commit `26ae97f`: filtro adicionado por defesa em profundidade, sem mudança de comportamento |
 | ~23 arquivos `.bak*`/temporários acumulados em `backend/src/controllers`, `backend/src/routes`, `backend/src/server.js` e `frontend/src` | 2026-10-01 | Removidos do disco (já estavam no `.gitignore`, não rastreados, não referenciados por nenhum import) |
 | 3 bloqueadores visuais de UX encontrados em auditoria de produção (página pública com mensagem contraditória do WhatsApp durante o fluxo novo; "R$" sobreposto no Dashboard; pluralização errada em Clientes) | 2026-10-01 | Commit `3f039dd` — ver detalhe na seção 9 do [`CHECKLIST_PROJETO.md`](./CHECKLIST_PROJETO.md) |
+| C4 — integração de `feat/phase5-register` (V1) ao `main` | 2026-10-02 | `main` mesclado com a feature (commit divergente `985c1f1` resolvido a favor da feature, superado), `origin/main` incluído para permitir push, histórico publicado (`1f0216a`); build frontend e suíte de testes backend validados pós-merge sem regressão nova (ver I14/I16) |

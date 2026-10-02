@@ -221,7 +221,7 @@
 - [x] Branch de trabalho única: `feat/phase5-register` — em 2026-10-01 está **8 commits à frente de `origin/feat/phase5-register`** (ainda não enviados, aguardando decisão); 0 commits atrás da origin
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
-- [ ] Integração de `feat/phase5-register` ao `main` — divergência real de histórico confirmada em 2026-10-01: `feat/phase5-register` tem 59 commits que `main` não tem, e `main` tem 1 commit próprio (`985c1f1`, um "phase 0" antigo e abrangente de bot/WhatsApp/multi-tenancy) que não existe em `feat/phase5-register`. Um merge direto não é trivial — exige decisão de como tratar esse commit divergente antes de prosseguir
+- [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). **Pendente**: restart do `nailflow-backend` em produção para recarregar o código em memória (ver I16 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [ ] GitBook — não utilizado neste fluxo de trabalho; nenhuma publicação/sincronização feita
 
 ---
@@ -238,7 +238,7 @@
 - [ ] Publicar recuperação/troca de senha (depende de conta Brevo/SMTP configurada e autorização)
 - [ ] Migração do PM2 para usuário não-root (backend e n8n)
 - [ ] SSH restrito só a chave
-- [ ] Integração de `feat/phase5-register` ao `main` — ver divergência de histórico registrada na seção 11
+- [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02 (ver seção 11)
 - [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados) — o workflow "Notificações" também foi editado manualmente na interface em 2026-10-01 (F9) e ainda não foi re-exportado para o repositório
 - [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder que a Evolution rejeita (`exists: false`); falta um teste com número de WhatsApp real para considerar a F9 100% validada
 - [ ] **8 commits locais em `feat/phase5-register` não enviados para `origin`** — identificado em 2026-10-01, aguardando decisão de quando/como fazer push (ver seção 11)
