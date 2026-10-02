@@ -87,12 +87,121 @@ ssh root@77.237.242.192 "pm2 restart 0 --update-env"
 
 ---
 
-## Estado em produção (16/09/2026)
+## Multi-tenancy — Fases validadas (17/09/2026)
 
-### Commit de referência
+Todas as fases abaixo foram implementadas, testadas com 2 profissionais simultâneas
+(Camila Souza / Studio Beta) e validadas em isolamento completo antes de serem
+consolidadas no `main`.
+
+### Isolamento multi-tenant
+
+O mecanismo central é **JWT → `professional_id`**: ao fazer login, o token JWT inclui
+`sub = professional.id`. O middleware `requireAuth` extrai `req.professionalId` de cada
+request. Todas as queries de dados privados filtram por esse campo, garantindo que
+profissional A nunca veja dados de profissional B.
+
+Todas as tabelas têm `professional_id UUID NOT NULL REFERENCES professionals(id) ON DELETE CASCADE`.
+
+### Fase 0 — Filtros `professional_id` (commit `3857908`)
+
+- Todas as queries de `botController.js` e `clientsController.js` filtradas por `professional_id`
+- Migrations: `004_reminder_sent.sql` (campo `reminder_sent` em `appointments`)
+- Rotas cron do bot adicionadas ao `bot.routes.js`
+
+### Fase 1 — `slug` e `wa_instance_name` (commit `e7b8773`)
+
+- Colunas `slug VARCHAR(80) NOT NULL UNIQUE` e `wa_instance_name VARCHAR(80)` adicionadas em `professionals`
+- Indexes em ambas as colunas
+- Migration: `005_slug_wa_instance.sql`
+
+### Fase 3 — Página pública por slug (commit `6ddfb54`)
+
+- `GET /p/:slug` → `publicController.getBySlug` retorna dados da profissional dada pelo slug
+- Rota legada `/agenda-publica` mantida para compatibilidade
+- Frontend: `PaginaPublica.tsx` atualizado para usar o slug da URL
+- `App.tsx`: rota `/p/:slug` adicionada
+
+### Fase 4 — Bot multi-profissional (commit `29f58f8`)
+
+- `botAuth.js`: lookup de `wa_instance_name` no banco para identificar a profissional
+  que recebe a mensagem → `req.professionalId` derivado do número da instância Evolution
+- `whatsappController.js`: queries de status e QR isoladas por `professionalId`
+- Bot responde exclusivamente com dados da profissional dona da instância ativa
+
+### Fase 4.1 — Cron workflows multi-profissional (commit `0e4405e`)
+
+- `botController.js`: funções `getAbandonedConversations`, `markAbandonmentNotified`,
+  `getAppointmentsTomorrow`, `markReminderSent` agora retornam dados agrupados por profissional
+- `bot.routes.js`: endpoints cron expostos para o n8n
+  - `GET /bot/abandoned-conversations`
+  - `POST /bot/mark-abandonment-notified`
+  - `GET /bot/appointments-tomorrow`
+  - `POST /bot/mark-reminder-sent`
+- Workflows n8n: `WB-lembretes.json`, `WC-confirmacao.json`, `WD-cancelamento.json`
+
+### Fase 5 — Cadastro de profissionais (commit `e123e70`)
+
+- `POST /auth/register`: campos `email`, `password`, `businessName`, `slug`
+  - Validação zod, unicidade de email e slug (409), bcrypt 10 rounds, rate limit 5/h por IP
+  - `wa_instance_name` inicia como `NULL` — sem Evolution na criação
+- `phone_whatsapp` agora nullable na tabela `professionals`
+  - Migration: `006_phone_whatsapp_nullable.sql`
+  - `publicController.js`: null-safe `whatsappLink` (ternário)
+- Frontend:
+  - `Register.tsx`: slug auto-sugerido a partir do nome do negócio (slugify), editável
+  - `Login.tsx`: link "Criar conta" → `/register`
+  - `App.tsx`: rota `/register` adicionada
+
+### Teste de isolamento validado (17/09/2026)
+
+| Teste | Resultado |
+|-------|-----------|
+| Registro de P2 via UI | OK |
+| Login de P2 (sidebar "Studio Beta") | OK |
+| Serviços P2: P1 invisível | OK |
+| Clientes P2: P1 invisível | OK |
+| Agenda P2: dropdowns somente P2 | OK |
+| Dashboard P2: KPIs isolados | OK |
+| Página pública `/p/studio-beta` | OK |
+| Integridade P1 (10c / 5s / 30a inalterados) | OK |
+| Cross-contaminação no banco: 0 registros | OK |
+| `wa_instance_name` de P2 = NULL | OK |
+| Limpeza CASCADE sem órfãos | OK |
+
+**Conclusão: isolamento 100% validado. Fase 2 (WhatsApp para novas profissionais) permanece pendente.**
+
+---
+
+## Fase 2 — WhatsApp para novas profissionais (PENDENTE)
+
+Esta fase está **bloqueada** e não foi incluída na consolidação de `main`.
+
+O que está pendente:
+- Fluxo de onboarding para conectar a instância Evolution de uma nova profissional
+- QR Code individualizado por profissional no `Configurações`
+- Associação de `wa_instance_name` via `PATCH /auth/me` ou endpoint específico
+- Testes de Evolution dinâmico com 2 instâncias simultâneas
+
+**Não reconectar `chip2` nem criar nova instância Evolution sem autorização explícita.**
+
+---
+
+## Estado em produção (17/09/2026)
+
+### Commit de referência (VPS — ainda em `main` pré-multi-tenancy)
 
 ```
-300d3bc  feat: integração WhatsApp, Dashboard V2 e melhorias de layout (2026-09-14 a 16)
+072aa70  feat(whatsapp): conexão via QR Code na tela Configurações
+```
+
+> O VPS ainda roda a versão pré-multi-tenancy. As fases 0–5 estão em
+> `integrate/all-phases` local e foram testadas em isolamento. O deploy
+> para produção será feito após aprovação do `main` consolidado.
+
+### Commit de referência (branch de integração local)
+
+```
+56d7467  merge: fase 5 — cadastro de novas profissionais e isolamento validado
 ```
 
 ### Frontend (dist no VPS)
@@ -102,7 +211,7 @@ ssh root@77.237.242.192 "pm2 restart 0 --update-env"
 | `index-Brh_NMra.js` | 260 KB |
 | `index-Y72aXm50.css` | 29 KB |
 
-### Funcionalidades ativas
+### Funcionalidades ativas (VPS atual)
 
 - Painel (Dashboard V2): faturamento realizado/previsto/perdido, variação % vs mês
   anterior, top 5 serviços, gráfico de 6 meses
@@ -112,6 +221,14 @@ ssh root@77.237.242.192 "pm2 restart 0 --update-env"
 - Disponibilidade: toggle por dia da semana
 - Perfil: página da profissional
 - Configurações → WhatsApp: status da conexão (chip2), número conectado, nome do perfil
+
+### Funcionalidades validadas localmente (prontas para deploy)
+
+- Isolamento multi-tenant completo (todas as queries filtradas por `professional_id`)
+- Página pública por slug (`/p/:slug`)
+- Bot roteado por `wa_instance_name`
+- Crons multi-profissional (lembretes, abandono)
+- Cadastro de novas profissionais (`/register`)
 
 ### Backend (PM2 id 0, porta 3333)
 
@@ -163,11 +280,16 @@ pm2 reload 0   # graceful reload — aguarda requisições em andamento antes de
 
 ## Pendências
 
+- **Fase 2 WhatsApp**: onboarding de instância Evolution para novas profissionais
+  (bloqueada — ver seção acima)
+- **Deploy de `main` consolidado**: branch `integrate/all-phases` aprovada localmente;
+  aguarda merge em `main` e deploy para VPS
+- **Evolution `chip2`**: container parado desde 17/09/2026 13:37 UTC — não reconectar
+  sem autorização explícita
 - Verificar execução completa do workflow Abandono de Conversa: confirmar que mensagem
   é enviada via Evolution API e `abandonment_notified` marcado como `true`
-  (próxima janela de 30+ min sem interação do número de teste `5511777700001`).
 - Futura funcionalidade: `POST /whatsapp/reconnect` para reconexão via QR Code
-  a partir da tela Configurações.
+  a partir da tela Configurações (parte da Fase 2)
 
 ---
 
