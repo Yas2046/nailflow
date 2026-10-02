@@ -5,7 +5,8 @@
 ───────────────────────────────────────────────────────────────────────────── */
 
 /* Tema padrão: Vinho & Creme */
-:root {
+:root,
+[data-theme="vinho"] {
   --wine-50:  250 241 243;
   --wine-100: 235 217 222;
   --wine-200: 217 184 193;
@@ -18,7 +19,7 @@
 }
 
 /* Tema: Verde & Creme */
-:root[data-theme="verde"] {
+[data-theme="verde"] {
   --wine-50:  240 246 241;
   --wine-100: 209 231 212;
   --wine-200: 172 209 178;
@@ -31,7 +32,7 @@
 }
 
 /* Tema: Azul & Neutro */
-:root[data-theme="azul"] {
+[data-theme="azul"] {
   --wine-50:  240 245 250;
   --wine-100: 210 225 240;
   --wine-200: 172 200 225;

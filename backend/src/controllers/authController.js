@@ -64,7 +64,7 @@ export async function logout(req, res) {
 export async function me(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin, slug FROM professionals WHERE id = $1',
+      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin, slug, bio, public_theme FROM professionals WHERE id = $1',
       [req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
@@ -75,19 +75,29 @@ export async function me(req, res, next) {
 }
 
 export const MAX_AVATAR_B64_BYTES = 400_000;
+export const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
+export const PUBLIC_THEMES = ['vinho', 'verde', 'azul'];
+export const MAX_BIO_LENGTH = 280;
 
 export const updateMeSchema = z.object({
   name:            z.string().min(1, 'Nome obrigatório').max(100),
   business_name:   z.string().min(1, 'Nome do negócio obrigatório').max(100),
   phone_whatsapp:  z.string().min(10, 'WhatsApp inválido (mínimo 10 dígitos)').max(20),
   email:           z.string().email('E-mail inválido').max(200),
-  avatar_b64:      z.union([z.string().max(MAX_AVATAR_B64_BYTES, 'Imagem muito grande.'), z.null()]).optional(),
+  avatar_b64:      z.union([
+                     z.string()
+                       .max(MAX_AVATAR_B64_BYTES, 'Imagem muito grande.')
+                       .regex(AVATAR_DATA_URL_RE, 'Formato de imagem inválido. Use JPEG, PNG ou WebP.'),
+                     z.null(),
+                   ]).optional(),
+  bio:             z.union([z.string().trim().max(MAX_BIO_LENGTH, `A apresentação deve ter no máximo ${MAX_BIO_LENGTH} caracteres.`), z.null()]).optional(),
+  public_theme:    z.enum(PUBLIC_THEMES, { errorMap: () => ({ message: 'Cor da página inválida.' }) }).optional(),
 });
 
 export async function updateMe(req, res, next) {
   try {
-    const { name, business_name, phone_whatsapp, email, avatar_b64 } = updateMeSchema.parse(req.body);
-    const hasAvatar = Object.prototype.hasOwnProperty.call(req.body, 'avatar_b64');
+    const { name, business_name, phone_whatsapp, email, avatar_b64, bio, public_theme } = updateMeSchema.parse(req.body);
+    const has = (key) => Object.prototype.hasOwnProperty.call(req.body, key);
 
     const { rows: conflict } = await pool.query(
       'SELECT id FROM professionals WHERE email = $1 AND id != $2',
@@ -95,24 +105,23 @@ export async function updateMe(req, res, next) {
     );
     if (conflict.length > 0) throw new HttpError(409, 'Este e-mail já está em uso por outra conta.');
 
-    let rows;
-    if (hasAvatar) {
-      ({ rows } = await pool.query(
-        `UPDATE professionals
-           SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4, avatar_b64 = $5
-         WHERE id = $6
-         RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64`,
-        [name, business_name, phone_whatsapp, email, avatar_b64 ?? null, req.professionalId]
-      ));
-    } else {
-      ({ rows } = await pool.query(
-        `UPDATE professionals
-           SET name = $1, business_name = $2, phone_whatsapp = $3, email = $4
-         WHERE id = $5
-         RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64`,
-        [name, business_name, phone_whatsapp, email, req.professionalId]
-      ));
-    }
+    // Campos opcionais só são alterados quando enviados no corpo.
+    const sets = ['name = $1', 'business_name = $2', 'phone_whatsapp = $3', 'email = $4'];
+    const values = [name, business_name, phone_whatsapp, email];
+    const addOptional = (column, value) => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+    if (has('avatar_b64')) addOptional('avatar_b64', avatar_b64 ?? null);
+    if (has('bio')) addOptional('bio', bio ? bio : null);
+    if (has('public_theme') && public_theme) addOptional('public_theme', public_theme);
+    values.push(req.professionalId);
+
+    const { rows } = await pool.query(
+      `UPDATE professionals SET ${sets.join(', ')} WHERE id = $${values.length}
+       RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64, slug, bio, public_theme`,
+      values
+    );
 
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
     res.json(rows[0]);

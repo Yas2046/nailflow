@@ -255,6 +255,7 @@ psql $DATABASE_URL -f backend/db/migrations/014_expenses.sql
 | 017 | Foreign keys compostas `(id, professional_id)` cross-tenant (`appointments`→`clients`/`services`/`recurring_groups`, `message_history`→`clients`) |
 | 018 | `services.available_on_whatsapp BOOLEAN NOT NULL DEFAULT true` |
 | 019 | Tabela `admin_audit_log` (audit log de ações administrativas — ver [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md)); sem FK obrigatória para `professionals` (o registro precisa sobreviver à exclusão do ator ou do alvo) |
+| 020 | Colunas `professionals.bio` (VARCHAR 280, apresentação da página pública) e `professionals.public_theme` (VARCHAR 20, padrão `vinho`, CHECK em `vinho`/`verde`/`azul`, independente do tema do painel). **Ainda não aplicada no banco de produção** — aplicar antes de publicar o backend |
 
 ### Migration obsoleta: `002_bot_tables.sql`
 

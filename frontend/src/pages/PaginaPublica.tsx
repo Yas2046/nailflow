@@ -9,6 +9,15 @@ interface PublicData {
   days: Array<{ date: string; slots: string[] }>;
 }
 
+type PublicTheme = 'vinho' | 'verde' | 'azul';
+
+interface PublicInfo {
+  businessName: string;
+  bio: string | null;
+  theme: PublicTheme;
+  photo: string | null;
+}
+
 interface PublicService {
   id: string;
   name: string;
@@ -160,6 +169,7 @@ function LegacyLink() {
 export default function PaginaPublica() {
   const { slug } = useParams<{ slug?: string }>();
   const [data, setData] = useState<PublicData | null>(null);
+  const [info, setInfo] = useState<PublicInfo | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [services, setServices] = useState<PublicService[] | null>(null);
@@ -223,6 +233,18 @@ export default function PaginaPublica() {
     loadAvailability(selectedServiceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, selectedServiceId]);
+
+  // Cabeçalho da página (nome, bio, foto e cor): buscado uma única vez por
+  // slug, independente da disponibilidade, que é recarregada a cada serviço.
+  useEffect(() => {
+    if (!slug) return;
+    api
+      .get<PublicInfo>(`/public/${slug}/info`)
+      .then(setInfo)
+      .catch((e) => {
+        if (e.response?.status === 404) setNotFound(true);
+      });
+  }, [slug]);
 
   // Lista de serviços disponíveis para agendamento (Etapa 1 do fluxo de
   // agendamento online). Erro tratado com mensagem genérica — nunca expõe
@@ -317,18 +339,34 @@ export default function PaginaPublica() {
   if (notFound) return <NotFound />;
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col items-center px-4 py-12">
+    <div
+      data-theme={info?.theme ?? 'vinho'}
+      className="min-h-screen bg-cream flex flex-col items-center px-4 py-12"
+    >
       <div className="w-full max-w-lg">
 
         {/* ── cabeçalho ──────────────────────────────────────────────────── */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-3 shadow-sm">
-            <LogoMark className="w-7 h-7" />
-          </div>
+          {info?.photo ? (
+            <img
+              src={info.photo}
+              alt=""
+              className="w-20 h-20 rounded-full object-cover mb-3 mx-auto shadow-sm ring-2 ring-wine-100"
+            />
+          ) : (
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wine-700 text-cream mb-3 shadow-sm">
+              <LogoMark className="w-7 h-7" />
+            </div>
+          )}
           <p className="text-[11px] font-semibold text-ink/30 uppercase tracking-[0.25em] mb-5">NailFlow</p>
-          <h1 className="font-display text-4xl text-wine-700 leading-tight mb-2">
-            {data?.businessName || 'Carregando…'}
+          <h1 className="font-display text-4xl text-wine-700 leading-tight mb-2 break-words">
+            {info?.businessName || data?.businessName || 'Carregando…'}
           </h1>
+          {info?.bio && (
+            <p className="text-ink/60 text-sm leading-relaxed whitespace-pre-line break-words max-w-sm mx-auto mb-3">
+              {info.bio}
+            </p>
+          )}
           <p className="text-ink/50 text-sm">Horários disponíveis para agendamento</p>
         </div>
 

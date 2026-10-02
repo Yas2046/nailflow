@@ -5,6 +5,7 @@ import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
+import { AVATAR_DATA_URL_RE, PUBLIC_THEMES } from './authController.js';
 
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
@@ -62,13 +63,23 @@ async function buildAvailabilityResponse(professional, requestedDays, overrideDu
 // ─── Rotas por slug (Phase 3) ─────────────────────────────────────────────────
 
 // GET /public/:slug/info
+// Somente campos públicos (cabeçalho da página). Nunca expõe id, e-mail nem
+// qualquer dado interno; a foto só é devolvida se for uma data URL de imagem
+// válida (defesa em profundidade além da validação ao salvar).
 export async function getPublicInfoBySlug(req, res, next) {
   try {
-    const professional = await getProfessionalBySlug(req.params.slug);
+    const { rows } = await pool.query(
+      'SELECT business_name, phone_whatsapp, bio, public_theme, avatar_b64 FROM professionals WHERE slug = $1',
+      [req.params.slug]
+    );
+    const professional = rows[0];
     if (!professional) return res.status(404).json({ error: 'Profissional não encontrada.' });
     res.json({
       businessName: professional.business_name,
       whatsappLink: professional.phone_whatsapp ? `https://wa.me/${professional.phone_whatsapp}` : null,
+      bio: professional.bio || null,
+      theme: PUBLIC_THEMES.includes(professional.public_theme) ? professional.public_theme : 'vinho',
+      photo: AVATAR_DATA_URL_RE.test(professional.avatar_b64 || '') ? professional.avatar_b64 : null,
     });
   } catch (err) {
     next(err);

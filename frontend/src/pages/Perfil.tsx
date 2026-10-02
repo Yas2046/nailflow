@@ -14,7 +14,20 @@ interface ProfileData {
   phone_whatsapp: string;
   avatar_b64: string | null;
   slug: string;
+  bio: string | null;
+  public_theme: PublicTheme;
 }
+
+type PublicTheme = 'vinho' | 'verde' | 'azul';
+
+const MAX_BIO = 280;
+
+// Cores dos presets (mesmos valores de --wine-600 de index.css) só para o seletor.
+const PUBLIC_THEME_OPTIONS: Array<{ id: PublicTheme; label: string; swatch: string }> = [
+  { id: 'vinho', label: 'Vinho', swatch: 'rgb(115 58 76)' },
+  { id: 'verde', label: 'Verde', swatch: 'rgb(52 105 62)' },
+  { id: 'azul',  label: 'Azul',  swatch: 'rgb(38 90 135)' },
+];
 
 // ─── ícones ───────────────────────────────────────────────────────────────────
 
@@ -370,6 +383,10 @@ export default function Perfil() {
   const [error, setError]           = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const [bioDraft, setBioDraft]       = useState('');
+  const [themeDraft, setThemeDraft]   = useState<PublicTheme>('vinho');
+  const [savingPublic, setSavingPublic] = useState(false);
+
   const [editing, setEditing]       = useState(false);
   const [form, setForm]             = useState<FormState>({ name: '', business_name: '', phone_whatsapp: '', email: '' });
   const [saving, setSaving]         = useState(false);
@@ -384,6 +401,8 @@ export default function Perfil() {
     api.get<ProfileData>('/auth/me')
       .then((data) => {
         setProfile(data);
+        setBioDraft(data.bio ?? '');
+        setThemeDraft(data.public_theme ?? 'vinho');
         updateProfessional({
           id:           data.id,
           name:         data.name,
@@ -433,6 +452,30 @@ export default function Perfil() {
       setSaveError(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Salvar apresentação e cor da página pública ───────────────────────
+  async function handleSavePublic() {
+    if (!profile) return;
+    setSavingPublic(true);
+    try {
+      const updated = await api.put<ProfileData>('/auth/me', {
+        name:           profile.name,
+        business_name:  profile.business_name,
+        phone_whatsapp: profile.phone_whatsapp,
+        email:          profile.email,
+        bio:            bioDraft,
+        public_theme:   themeDraft,
+      });
+      setProfile(updated);
+      setBioDraft(updated.bio ?? '');
+      setThemeDraft(updated.public_theme);
+      toast('Página pública atualizada');
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.', 'error');
+    } finally {
+      setSavingPublic(false);
     }
   }
 
@@ -614,6 +657,58 @@ export default function Perfil() {
             </div>
             <CopyButton value={`${window.location.origin}/p/${profile.slug}`} />
           </div>
+        </div>
+      )}
+
+      {/* personalização da página pública */}
+      {!editing && (
+        <div className="bg-white border border-wine-100 rounded-xl px-5 py-4 shadow-sm">
+          <p className="text-sm font-semibold text-ink mb-0.5">Página pública</p>
+          <p className="text-xs text-ink/45 mb-4">
+            Como suas clientes veem sua página de agendamento. A foto é a mesma do seu perfil.
+          </p>
+
+          <label htmlFor="public-bio" className="text-xs font-medium text-ink/40 mb-1 block">Apresentação</label>
+          <textarea
+            id="public-bio"
+            value={bioDraft}
+            maxLength={MAX_BIO}
+            rows={3}
+            onChange={(e) => setBioDraft(e.target.value)}
+            placeholder="Ex.: Nail designer em Belo Horizonte. Alongamento, esmaltação em gel e nail art."
+            className="w-full text-sm text-ink bg-transparent border border-wine-200 rounded-lg px-3 py-2 focus:outline-none focus:border-wine-600 resize-none"
+          />
+          <p className="text-[11px] text-ink/35 text-right mt-1">{bioDraft.length}/{MAX_BIO}</p>
+
+          <p className="text-xs font-medium text-ink/40 mt-3 mb-2">Cor da página</p>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Cor da página pública">
+            {PUBLIC_THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={themeDraft === opt.id}
+                onClick={() => setThemeDraft(opt.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  themeDraft === opt.id
+                    ? 'border-wine-600 text-wine-700 bg-wine-50'
+                    : 'border-wine-100 text-ink/60 hover:bg-wine-50/60'
+                }`}
+              >
+                <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: opt.swatch }} />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSavePublic}
+            disabled={savingPublic || (bioDraft.trim() === (profile.bio ?? '') && themeDraft === profile.public_theme)}
+            className="mt-4 px-5 py-2 rounded-lg bg-wine-600 text-white text-sm font-semibold hover:bg-wine-700 transition-colors disabled:opacity-50"
+          >
+            {savingPublic ? 'Salvando…' : 'Salvar página pública'}
+          </button>
         </div>
       )}
 
