@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Appointment, DashboardSummary, Service } from '../types';
 import AppointmentModal from '../components/AppointmentModal';
-import OnboardingChecklist from '../components/OnboardingChecklist';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import OnboardingChecklist, { getNextStep, type OnboardingStatus } from '../components/OnboardingChecklist';
 
 // ── Utils ────────────────────────────────────────────────────────────────────
 
@@ -108,12 +110,14 @@ function LoadingSkeleton() {
 export default function Inicio() {
   usePageTitle('Início');
   const navigate = useNavigate();
+  const { professional } = useAuth();
 
   const [data, setData]                       = useState<DashboardSummary | null>(null);
   const [error, setError]                     = useState<string | null>(null);
   const [todayAppts, setTodayAppts]           = useState<Appointment[]>([]);
   const [services, setServices]               = useState<Service[]>([]);
   const [selectedAppt, setSelectedAppt]       = useState<Appointment | null>(null);
+  const [onboarding, setOnboarding]           = useState<OnboardingStatus | null>(null);
 
   function fetchAll() {
     api.get<DashboardSummary>('/dashboard').then(setData).catch((e: Error) => setError(e.message));
@@ -122,6 +126,10 @@ export default function Inicio() {
     api.get<Service[]>('/services').then(setServices).catch(() => {});
   }
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    if (!professional || professional.isAdmin) return;
+    api.get<OnboardingStatus>('/onboarding/status').then(setOnboarding).catch(() => {});
+  }, [professional]);
 
   if (error) return (
     <div className="rounded-xl bg-rose-50 border border-rose-200 p-5 text-rose-600 text-sm">
@@ -145,6 +153,7 @@ export default function Inicio() {
   });
 
   const isProximoId = proximo?.id;
+  const nextOnboardingStep = onboarding && onboarding.concluidos < onboarding.total ? getNextStep(onboarding) : undefined;
 
   return (
     <>
@@ -156,7 +165,27 @@ export default function Inicio() {
           <p className="text-sm text-ink/40 mt-1.5 capitalize">{getTodayLabel()}</p>
         </div>
 
-        <OnboardingChecklist />
+        {!proximo && nextOnboardingStep && (
+          /* Boas-vindas: onboarding incompleto e sem próximo atendimento */
+          <div className="bg-wine-800 rounded-2xl overflow-hidden shadow-lg shadow-wine-800/20 text-cream px-6 py-7">
+            <p className="text-wine-400 text-[11px] uppercase tracking-widest font-semibold">
+              {onboarding!.concluidos} de {onboarding!.total} passos concluídos
+            </p>
+            <h2 className="font-display text-2xl sm:text-3xl text-cream leading-snug mt-2">Vamos configurar sua agenda</h2>
+            <p className="text-wine-300 text-sm mt-1.5 max-w-md">
+              Em poucos passos você já pode receber agendamentos pela sua página pública.
+            </p>
+            <Link
+              to={nextOnboardingStep.to}
+              className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2.5"
+            >
+              Continuar: {nextOnboardingStep.label}
+              <IconArrowRight />
+            </Link>
+          </div>
+        )}
+
+        <OnboardingChecklist status={onboarding} />
 
         {/* ── 1. PRÓXIMO ATENDIMENTO — HERO ── */}
         {proximo ? (
@@ -207,7 +236,7 @@ export default function Inicio() {
               </button>
             </div>
           </div>
-        ) : (
+        ) : nextOnboardingStep ? null : (
           /* Estado vazio elegante */
           <div className="bg-wine-50 border border-wine-100/80 rounded-2xl p-8 flex flex-col items-center text-center gap-3">
             <div className="w-12 h-12 rounded-full bg-wine-100 flex items-center justify-center text-wine-400">

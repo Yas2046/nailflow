@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-interface OnboardingStatus {
+export interface OnboardingStatus {
   perfil: boolean;
   servicos: boolean;
   horarios: boolean;
@@ -14,14 +13,14 @@ interface OnboardingStatus {
   total: number;
 }
 
-interface Step {
+export interface Step {
   key: keyof Omit<OnboardingStatus, 'concluidos' | 'total'>;
   label: string;
   hint: string;
   to: string;
 }
 
-const REQUIRED_STEPS: Step[] = [
+export const REQUIRED_STEPS: Step[] = [
   { key: 'perfil',   label: 'Perfil',   hint: 'Informe seu telefone de contato',           to: '/configuracoes?tab=perfil' },
   { key: 'servicos', label: 'Serviços', hint: 'Cadastre os serviços que você oferece',     to: '/servicos' },
   { key: 'horarios', label: 'Horários', hint: 'Defina seus dias e horários de atendimento', to: '/configuracoes?tab=disponibilidade' },
@@ -30,6 +29,10 @@ const REQUIRED_STEPS: Step[] = [
 ];
 
 const OPTIONAL_STEP: Step = { key: 'clientes', label: 'Clientes', hint: 'Cadastre suas clientes', to: '/clientes' };
+
+export function getNextStep(status: OnboardingStatus): Step | undefined {
+  return REQUIRED_STEPS.find((s) => !status[s.key]);
+}
 
 function hiddenKey(professionalId: string) {
   return `nailflow_onboarding_hidden_${professionalId}`;
@@ -87,15 +90,9 @@ function StepRow({ step, done, highlight }: { step: Step; done: boolean; highlig
   );
 }
 
-export default function OnboardingChecklist() {
+export default function OnboardingChecklist({ status }: { status: OnboardingStatus | null }) {
   const { professional } = useAuth();
-  const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [hidden, setHidden] = useState(() => (professional ? readHidden(professional.id) : true));
-
-  useEffect(() => {
-    if (!professional || professional.isAdmin || hidden) return;
-    api.get<OnboardingStatus>('/onboarding/status').then(setStatus).catch(() => {});
-  }, [professional, hidden]);
 
   if (!professional || professional.isAdmin || hidden || !status) return null;
   if (status.concluidos >= status.total) return null;
@@ -106,7 +103,7 @@ export default function OnboardingChecklist() {
   }
 
   const pct = Math.round((status.concluidos / status.total) * 100);
-  const nextKey = REQUIRED_STEPS.find((s) => !status[s.key])?.key;
+  const nextKey = getNextStep(status)?.key;
 
   return (
     <section className="bg-white rounded-2xl border border-wine-100/80 shadow-sm overflow-hidden">
