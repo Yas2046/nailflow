@@ -7,6 +7,7 @@ interface Professional {
   email: string;
   businessName: string;
   isAdmin?: boolean;
+  slug?: string;
 }
 
 interface AuthContextValue {

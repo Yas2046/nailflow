@@ -23,6 +23,7 @@ export async function getOnboardingStatus(req, res, next) {
       `SELECT
          p.is_admin,
          p.wa_instance_name,
+         p.slug,
          COALESCE(TRIM(p.phone_whatsapp), '') <> '' AS perfil,
          EXISTS (SELECT 1 FROM services s WHERE s.professional_id = p.id AND s.active) AS servicos,
          EXISTS (SELECT 1 FROM weekly_availability w WHERE w.professional_id = p.id AND w.is_working) AS horarios,
@@ -35,16 +36,18 @@ export async function getOnboardingStatus(req, res, next) {
     if (row.is_admin) return res.status(403).json({ error: 'Onboarding não se aplica ao admin.' });
 
     const whatsapp = await isWhatsAppConnected(row.wa_instance_name);
-    const concluidos = [row.perfil, row.servicos, row.horarios, whatsapp].filter(Boolean).length;
+    const link = Boolean(row.slug);
+    const concluidos = [row.perfil, row.servicos, row.horarios, whatsapp, link].filter(Boolean).length;
 
     res.json({
       perfil: row.perfil,
       servicos: row.servicos,
       horarios: row.horarios,
       whatsapp,
+      link,
       clientes: row.clientes,
       concluidos,
-      total: 4,
+      total: 5,
     });
   } catch (err) {
     next(err);

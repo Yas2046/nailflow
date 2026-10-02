@@ -8,6 +8,7 @@ interface OnboardingStatus {
   servicos: boolean;
   horarios: boolean;
   whatsapp: boolean;
+  link: boolean;
   clientes: boolean;
   concluidos: number;
   total: number;
@@ -25,6 +26,7 @@ const REQUIRED_STEPS: Step[] = [
   { key: 'servicos', label: 'Serviços', hint: 'Cadastre os serviços que você oferece',     to: '/servicos' },
   { key: 'horarios', label: 'Horários', hint: 'Defina seus dias e horários de atendimento', to: '/configuracoes?tab=disponibilidade' },
   { key: 'whatsapp', label: 'WhatsApp', hint: 'Conecte seu WhatsApp ao NailFlow',          to: '/configuracoes?tab=whatsapp' },
+  { key: 'link',     label: 'Seu link', hint: 'Compartilhe com suas clientes',             to: '/perfil' },
 ];
 
 const OPTIONAL_STEP: Step = { key: 'clientes', label: 'Clientes', hint: 'Cadastre suas clientes', to: '/clientes' };

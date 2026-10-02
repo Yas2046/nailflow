@@ -64,7 +64,7 @@ export async function logout(req, res) {
 export async function me(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin FROM professionals WHERE id = $1',
+      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin, slug FROM professionals WHERE id = $1',
       [req.professionalId]
     );
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
