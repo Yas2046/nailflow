@@ -1,5 +1,5 @@
 import { pool } from '../config/db.js';
-import { getAvailableSlots } from '../utils/availability.js';
+import { getAvailableSlots, customerNotBefore } from '../utils/availability.js';
 import { getZonedParts, timeStringToUtcOnDate, zonedTimeToUtc, BUSINESS_TIMEZONE } from '../utils/timezone.js';
 
 export async function getDashboardSummary(req, res, next) {
@@ -151,7 +151,7 @@ export async function getDashboardSummary(req, res, next) {
 
     // slots disponíveis hoje
     const duration = shortestServiceResult.rows[0]?.duration_minutes || 40;
-    const availableToday = await getAvailableSlots(professionalId, todayStart, duration);
+    const availableToday = await getAvailableSlots(professionalId, todayStart, duration, { notBefore: customerNotBefore() });
 
     // ── mês atual: agrega por status ─────────────────────────────────────────
     const monthMap = {};

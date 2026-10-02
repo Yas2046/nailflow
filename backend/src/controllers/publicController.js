@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { pool } from '../config/db.js';
-import { getAvailableSlots, checkSlotAvailability } from '../utils/availability.js';
+import { getAvailableSlots, checkSlotAvailability, customerNotBefore, clock } from '../utils/availability.js';
 import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
 import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
 import { HttpError } from '../middleware/errorHandler.js';
@@ -37,12 +37,13 @@ async function buildAvailabilityResponse(professional, requestedDays, overrideDu
   const days = Math.min(requestedDays, horizon);
 
   const result = [];
-  const now = new Date();
+  const now = clock.now();
+  const notBefore = customerNotBefore();
   const todaySpMidnight = timeStringToUtcOnDate(getZonedParts(now), '00:00');
 
   for (let i = 0; i < days; i++) {
     const date = new Date(todaySpMidnight.getTime() + i * 24 * 60 * 60 * 1000);
-    const slots = await getAvailableSlots(professional.id, date, duration);
+    const slots = await getAvailableSlots(professional.id, date, duration, { notBefore });
     if (slots.length > 0) {
       const parts = getZonedParts(date);
       const dateStr = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
@@ -218,7 +219,7 @@ export async function createPublicAppointment(req, res, next) {
     // A garantia final contra corrida é a EXCLUDE constraint do Postgres em
     // appointments — esta chamada só existe para dar um erro específico
     // (reason) sem precisar abrir a transação primeiro.
-    const check = await checkSlotAvailability(professional.id, data.serviceId, data.startsAt);
+    const check = await checkSlotAvailability(professional.id, data.serviceId, data.startsAt, null, { notBefore: customerNotBefore() });
     if (!check.available) {
       return res.status(409).json({ error: 'Horário não disponível.', reason: check.reason });
     }

@@ -1,6 +1,6 @@
 import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { checkSlotAvailability, getAvailableSlots } from '../utils/availability.js';
+import { checkSlotAvailability, getAvailableSlots, customerNotBefore } from '../utils/availability.js';
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
@@ -303,7 +303,7 @@ async function getAvailableDaysWithSlots(professionalId, durationMinutes, maxDay
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     d.setHours(12, 0, 0, 0); // use noon so timezone math is safe
-    const slots = await getAvailableSlots(professionalId, d, durationMinutes);
+    const slots = await getAvailableSlots(professionalId, d, durationMinutes, { notBefore: customerNotBefore() });
     if (slots.length > 0) {
       days.push({ date: d, slots });
     }
@@ -342,7 +342,7 @@ function filterSlotsByPeriod(slots, period) {
 async function tryDirectBooking(professionalId, service, dateStr, timeMention) {
   if (!dateStr || !timeMention) return null;
   const naive = `${dateStr}T${String(timeMention.hour).padStart(2, '0')}:${String(timeMention.minute).padStart(2, '0')}:00`;
-  const check = await checkSlotAvailability(professionalId, service.id, naive);
+  const check = await checkSlotAvailability(professionalId, service.id, naive, null, { notBefore: customerNotBefore() });
   if (!check.available) return null;
 
   return {
@@ -784,7 +784,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
           }
         }
 
-        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration, { notBefore: customerNotBefore() });
         const period = extractPeriodMention(rawText) || ctx.slots?.period;
         const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, period) : null;
         if (timeReply) {
@@ -812,7 +812,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
 
     // Load slots for that date
     const d = new Date(dateStr + 'T12:00:00-03:00');
-    const slots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
+    const slots = await getAvailableSlots(professionalId, d, ctx.serviceDuration, { notBefore: customerNotBefore() });
 
     if (slots.length === 0) {
       return reply(
@@ -866,7 +866,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
           }
         }
 
-        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration);
+        const daySlots = await getAvailableSlots(professionalId, mentionedDate, ctx.serviceDuration, { notBefore: customerNotBefore() });
         const newPeriod = extractPeriodMention(rawText) || ctx.slots?.period;
         const timeReply = daySlots.length > 0 ? buildTimeReply(mentionedDate, daySlots, ctx, newPeriod) : null;
         if (timeReply) {
@@ -882,7 +882,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
         const period = extractPeriodMention(rawText);
         if (period && ctx.selectedDate) {
           const d = new Date(ctx.selectedDate + 'T12:00:00-03:00');
-          const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration);
+          const daySlots = await getAvailableSlots(professionalId, d, ctx.serviceDuration, { notBefore: customerNotBefore() });
           const timeReply = buildTimeReply(d, daySlots, ctx, period);
           if (timeReply) {
             return reply(timeReply.message, timeReply.botState, timeReply.context);
@@ -943,7 +943,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
     }
 
     // Validate availability one more time
-    const check = await checkSlotAvailability(professionalId, ctx.serviceId, slotIso);
+    const check = await checkSlotAvailability(professionalId, ctx.serviceId, slotIso, null, { notBefore: customerNotBefore() });
     if (!check.available) {
       return reply(
         `Esse horário não está mais disponível. 😕 Vamos escolher outro?\n\n${
@@ -977,7 +977,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       const client = await findOrCreateClient(professionalId, phone, pushName || 'Cliente WhatsApp');
 
       // Validate one last time
-      const check = await checkSlotAvailability(professionalId, ctx.serviceId, ctx.selectedSlot);
+      const check = await checkSlotAvailability(professionalId, ctx.serviceId, ctx.selectedSlot, null, { notBefore: customerNotBefore() });
       if (!check.available) {
         const days = await getAvailableDaysWithSlots(professionalId, ctx.serviceDuration);
         if (days.length === 0) {
@@ -989,7 +989,9 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
           return `${i + 1}. ${formatDateBR(d.date)}`;
         });
         return reply(
-          `Esse horário acabou de ser ocupado! 😕 Vamos escolher outro?\n\n${lines.join('\n')}\n\nDigite o número da data.`,
+          `${check.reason === 'past_time'
+            ? 'Esse horário não está mais disponível para reserva neste momento. 😕 Vamos escolher outro?'
+            : 'Esse horário acabou de ser ocupado! 😕 Vamos escolher outro?'}\n\n${lines.join('\n')}\n\nDigite o número da data.`,
           'AGUARDANDO_DATA',
           { ...ctx, daysMap, slotsMap: undefined, selectedSlot: undefined, selectedDate: undefined }
         );
@@ -1054,7 +1056,7 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
 
     const correctionDate = extractDateMention(rawText);
     if (correctionDate) {
-      const daySlots = await getAvailableSlots(professionalId, correctionDate, ctx.serviceDuration);
+      const daySlots = await getAvailableSlots(professionalId, correctionDate, ctx.serviceDuration, { notBefore: customerNotBefore() });
       const period = extractPeriodMention(rawText) || ctx.slots?.period;
       const timeReply = daySlots.length > 0 ? buildTimeReply(correctionDate, daySlots, ctx, period) : null;
       if (timeReply) {

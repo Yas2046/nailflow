@@ -3,6 +3,20 @@ import { getZonedParts, timeStringToUtcOnDate, parseZonedDateTime } from './time
 
 const SLOT_STEP_MINUTES = 30; // granularidade dos horários sugeridos
 
+// Antecedência mínima para horários oferecidos/aceitos em fluxos de CLIENTE
+// (página pública, bot/WhatsApp, KPI "disponíveis hoje"). A Agenda interna
+// não usa esta regra: a profissional pode lançar atendimentos retroativos.
+export const CUSTOMER_MIN_NOTICE_MINUTES = 30;
+
+// Relógio injetável: os testes substituem `clock.now` para fixar "agora".
+export const clock = { now: () => new Date() };
+
+// Primeiro instante (UTC) que uma cliente pode reservar: agora + antecedência.
+// Comparação sempre por instante, independente do fuso do servidor.
+export function customerNotBefore() {
+  return new Date(clock.now().getTime() + CUSTOMER_MIN_NOTICE_MINUTES * 60000);
+}
+
 function toMinutes(timeStr) {
   const [h, m] = timeStr.split(':').map(Number);
   return h * 60 + m;
@@ -16,6 +30,7 @@ function toMinutes(timeStr) {
  * @param {string} professionalId
  * @param {Date} date - qualquer instante dentro do dia civil em São Paulo que se deseja consultar
  * @param {number} serviceDurationMinutes - duração do serviço a encaixar
+ * @param {{notBefore?: Date}} [options] - notBefore: descarta horários que começam antes desse instante
  * @returns {Promise<Array<{start: Date, end: Date}>>}
  */
 /**
@@ -52,7 +67,7 @@ async function isRecurringException(professionalId, zonedParts) {
   return false;
 }
 
-export async function getAvailableSlots(professionalId, date, serviceDurationMinutes) {
+export async function getAvailableSlots(professionalId, date, serviceDurationMinutes, { notBefore } = {}) {
   // Determina o dia da semana e as fronteiras do dia civil em America/Sao_Paulo.
   // Em containers de produção (UTC), date.getDay() retornaria o dia errado para
   // qualquer Date entre 00:00 SP e 03:00 UTC — janela em que SP ainda está no dia anterior.
@@ -121,7 +136,8 @@ export async function getAvailableSlots(professionalId, date, serviceDurationMin
   for (let start = dayStart; start + serviceDurationMinutes <= dayEnd; start += SLOT_STEP_MINUTES) {
     const end = start + serviceDurationMinutes;
     const overlaps = busyRanges.some(([bStart, bEnd]) => start < bEnd && end > bStart);
-    if (!overlaps) {
+    const tooSoon = notBefore && startOfDay.getTime() + start * 60000 < notBefore.getTime();
+    if (!overlaps && !tooSoon) {
       // Exprime os horários dos slots em UTC, ancorados à meia-noite SP.
       slots.push({
         start: new Date(startOfDay.getTime() + start * 60000),
@@ -169,8 +185,9 @@ function minutesSinceMidnight(date, referenceDayStart) {
  *   lunch_break              - cai dentro do intervalo de almoço
  *   blocked_time             - cai dentro de um bloqueio pontual
  *   appointment_overlap     - conflita com outro agendamento ativo
+ *   past_time               - só com `notBefore`: começa antes da antecedência mínima
  */
-export async function checkSlotAvailability(professionalId, serviceId, startsAtInput, excludeAppointmentId = null) {
+export async function checkSlotAvailability(professionalId, serviceId, startsAtInput, excludeAppointmentId = null, { notBefore } = {}) {
   const { rows: serviceRows } = await pool.query(
     'SELECT duration_minutes, active FROM services WHERE id = $1 AND professional_id = $2',
     [serviceId, professionalId]
@@ -186,6 +203,9 @@ export async function checkSlotAvailability(professionalId, serviceId, startsAtI
   const startsAt = parseZonedDateTime(startsAtInput);
   if (Number.isNaN(startsAt.getTime())) {
     return { available: false, reason: 'invalid_datetime' };
+  }
+  if (notBefore && startsAt < notBefore) {
+    return { available: false, reason: 'past_time' };
   }
   const endsAt = new Date(startsAt.getTime() + service.duration_minutes * 60000);
 
