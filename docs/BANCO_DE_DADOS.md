@@ -234,6 +234,24 @@ Grupos de agendamentos recorrentes.
 
 ---
 
+### `admin_audit_log` (migration 019)
+
+Histórico das ações administrativas **concluídas** (`block`, `unblock`, `update`, `delete`), gravado por `logAdminAction()` (`backend/src/utils/auditLog.js`) só depois do sucesso da ação. Consultado pela tela `/admin/auditoria` (`GET /admin/audit-log`, somente leitura; a Auditoria v1 de 2026-10-03 **não criou migration**).
+
+| Coluna | Tipo | Observação |
+|---|---|---|
+| id | uuid | PK |
+| actor_id | uuid | admin que executou; **sem FK** (o registro sobrevive à exclusão da conta) |
+| actor_email | varchar(160) | denormalizado de propósito |
+| action | varchar(20) | CHECK: `block`, `unblock`, `update`, `delete` |
+| target_id | uuid | profissional afetada; **sem FK** |
+| target_business_name | varchar(120) | denormalizado de propósito |
+| created_at | timestamptz | data/hora da ação |
+
+Índices: PK, `idx_admin_audit_log_actor`, `idx_admin_audit_log_target`. **Não são armazenados:** valores antes/depois, motivo, IP, nome do administrador (só o e-mail) e tentativas com falha. A imutabilidade é só da API (não há rota de escrita); não há trigger/permissão no banco.
+
+**Limpeza de 2026-10-03:** os 104 registros existentes eram todos de testes antigos (admins `admin_block_test@`, `admin_delete_test@` e `admin_edit_test@nailflow.com`; nenhum de admin real) e foram apagados após backup (`/var/backups/nailflow/manual/admin_audit_log_pre-cleanup_20261003-233014.{csv,sql}`, fora do Git, modo 600). Desde então, todo registro é de ação administrativa real.
+
 ## Migrations
 
 Não há executor de migrations: a ordem abaixo é aplicada manualmente com `psql`, com o dono do banco (ou superusuário).

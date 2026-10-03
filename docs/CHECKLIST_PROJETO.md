@@ -1,6 +1,6 @@
 # NailFlow — Checklist Geral do Projeto
 
-> Consolida, desde o início do projeto até 2026-10-03 (`main` em `50906f5`), o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
+> Consolida, desde o início do projeto até 2026-10-03 (`main` em `12dcff7`, mais o commit de documentação desta etapa), o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
 > Legenda: `[x]` concluído · `[~]` parcialmente concluído · `[ ]` pendente/não feito.
 > Fonte: documentos em `docs/` e histórico de commits. Não repete detalhe técnico já coberto nesses documentos — só aponta para eles.
 
@@ -111,9 +111,16 @@
 - [x] Confirmação exigida antes de ações destrutivas (bloqueio/edição pedem confirmação; exclusão exige digitar o nome exato do negócio)
 - [x] Proteção contra autoexclusão e autobloqueio
 - [x] Proteção contra excluir a última conta admin
-- [x] Layout responsivo da tela Admin (tabela no desktop, cards no mobile)
+- [x] Layout responsivo da tela Admin — nova composição visual em `12dcff7` (2026-10-03): menu lateral (≥ `lg`; abaixo, barra superior com abas), saudação, resumo de profissionais, lista em cards, ações em menu de três pontos, diálogos acessíveis e estados de carregamento/vazio/erro (substitui a tabela do desktop; regras e API das ações inalteradas)
 - [x] Audit log (`admin_audit_log`): registra ator, ação, alvo, data/hora para bloquear/desbloquear/editar/excluir, só em caso de sucesso
-- [ ] Tela de consulta do audit log — o log já é gravado, mas não há UI para consultá-lo
+- [x] **Auditoria v1** (`12dcff7`, 2026-10-03): `GET /admin/audit-log` (somente leitura; JWT + `is_admin`; rate limit 100/5 min; paginação `page`/`pageSize` ≤ 50; filtros `action`, `from`, `to` no fuso de São Paulo; resumo `today`/`last7Days`) e tela `/admin/auditoria` (resumo, filtros por ação e período, lista paginada com detalhe expansível, loading/vazio/erro). 8 testes automatizados novos; sem migration
+- [x] Registra só ações administrativas **concluídas** (`block`, `unblock`, `update`, `delete`); campos: `actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`
+- [x] Limpeza dos 104 registros de teste do `admin_audit_log` (2026-10-03): todos de 3 admins `admin_*_test@nailflow.com`, removidos após backup em `/var/backups/nailflow/manual/` (CSV + SQL, fora do Git); nenhuma outra tabela alterada
+- [x] **Validado em produção** com login real (relatado pela responsável): a Auditoria foi validada manualmente; um **bloqueio** feito pela interface apareceu corretamente. Esse é o **primeiro registro real** do histórico (`block`, `admin@nailflow.internal` → "NailFlow Teste", 2026-10-03) e deve ser preservado; a profissional seguia bloqueada na conferência
+- [ ] Auditoria **não armazena**: antes/depois, motivo, IP, nome do administrador (só e-mail) nem falhas/tentativas recusadas — limitação conhecida da v1
+- [ ] Auditoria sem busca por texto, sem filtro por administrador/profissional e sem exportação
+- [ ] Imutabilidade do log só pela API (sem trigger/permissão no banco)
+- [ ] Busca e filtros de profissionais no `/admin`: aparecem na tela só como visual desativado ("Em breve"), **não funcionam**
 
 ---
 
@@ -194,7 +201,7 @@
 - [x] Tela **Clientes** (listagem, ficha, histórico, tags/notas)
 - [x] Tela **Serviços** (cadastro, badge WhatsApp/Agenda)
 - [x] Tela **Gastos** (registro de despesas da profissional)
-- [x] Tela **Admin** (listagem, editar, bloquear/desbloquear, excluir) — responsiva (cards no mobile)
+- [x] Tela **Admin** (listagem, editar, bloquear/desbloquear, excluir) — nova composição visual (menu lateral, cards, ações em menu, diálogos acessíveis) e aba **Auditoria** (`/admin/auditoria`), em `12dcff7`; responsiva (375 px a desktop)
 - [x] Tela **Perfil/Configurações** (dados da conta, WhatsApp, Disponibilidade, Aparência)
 - [x] Página pública de agendamento (`/p/:slug`)
 - [x] Tema/Aparência (claro/escuro) e toasts
@@ -241,7 +248,7 @@
 - [ ] Configurações de notificação (endpoint dedicado) — não localizado/implementado
 - [ ] Advisories moderados do `react-router-dom` (correção adiada — bump major)
 - [ ] Retenção dos snapshots de exclusão de profissional depende de haver uma nova exclusão para autopodar (sem cron dedicado) — funcional, mas não 100% automática
-- [ ] Tela de consulta do `admin_audit_log`
+- [x] Tela de consulta do `admin_audit_log` — entregue em `12dcff7` (2026-10-03)
 - [ ] Publicar recuperação/troca de senha (depende de conta Brevo/SMTP configurada e autorização)
 - [ ] Migração do PM2 para usuário não-root (backend e n8n)
 - [ ] SSH restrito só a chave
@@ -401,7 +408,7 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] **E2E real aprovado — 4 cenários** (número de teste `553185108190`): (1) automático sem sinal e (2) manual com confirmação pela profissional, aprovados pela responsável (detalhes não reconferidos na revisão da documentação); (3) automático + sinal 50% → `aguardando_pagamento` (1750 de 3500, +2 h) → "Pagamento recebido" pela Agenda real → `confirmado`, 1 único `appointment.confirmed`, repetição idempotente; (4) expiração pelo sweeper real em ~56 s, sem mensagem e sem afetar outras reservas
 - [x] Configuração da Camila restaurada após cada cenário: `manual`, sem sinal, sem Pix, sem tipo/valor; reservas de teste canceladas sem mensagem; agendamento antigo da Simone (05/10 13:00) intacto
 - [x] Contador de "aguardando" na Início — entregue em `3bcbb1a` (ver bloco abaixo)
-- [x] Push do commit `cb07d38` — feito; `main` = `origin/main` (`50906f5` em 2026-10-03)
+- [x] Push do commit `cb07d38` — feito; `main` = `origin/main` (`50906f5` em 2026-10-03; `12dcff7` depois da Auditoria v1)
 - [ ] Aviso à cliente quando a reserva expira (hoje não envia; ver M14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [ ] Investigação das respostas do bot de 2026-10-03 (#14772/#14773): eram mensagens reais recebidas do número de teste, respondidas conforme o fluxo existente do bot; **não é possível determinar quem as digitou nem se há relação causal com o cenário 4** (ver M15)
 
@@ -409,7 +416,7 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] Início: card "Precisa da sua ação" com a contagem de reservas aguardando confirmação e aguardando pagamento, o próximo vencimento e até 5 pedidos (cliente, serviço, dia/hora, status e vencimento), alimentado pelo bloco `aguardando` de `GET /dashboard`; só conta reservas com validade em curso (agendamentos `pendente` criados na Agenda, sem validade, ficam de fora do card); o card não aparece quando não há pendências
 - [x] Atalho para a Agenda: cada pedido leva a `/agenda?data=AAAA-MM-DD&abrir=<id>`; a Agenda abre no dia do pedido e abre o detalhe (Confirmar/Recusar/Pagamento recebido) procurando o `id` apenas na lista da própria profissional; o parâmetro vale uma vez e é removido da URL
 - [x] Página pública: ao escolher um horário (e ao ir para a revisão) a tela rola até o formulário, com a confirmação visual "Horário escolhido: serviço · dia e hora"; respeita `prefers-reduced-motion`; a lógica de disponibilidade não mudou. A página pede `days=6` (mostra só os próximos dias)
-- [x] Testes: `dashboard-awaiting.test.js` (4 testes: contagem, ordem por vencimento, exclusões, isolamento entre profissionais); suíte atual **288 testes, 276 passando, 12 falhas conhecidas** (I14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
+- [x] Testes: `dashboard-awaiting.test.js` (4 testes: contagem, ordem por vencimento, exclusões, isolamento entre profissionais); suíte (à época) **288 testes, 276 passando, 12 falhas conhecidas** (I14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [x] **Validado em produção, página pública no celular (375×812):** serviço antes do horário, scroll até o formulário (totalmente visível), "Horário escolhido", revisão, envio (201) e tela de sucesso, sem overflow horizontal
 - [x] **Validação manual da Home e da Agenda, relatada pela responsável (após o deploy de `3bcbb1a`):** o card "Precisa da sua ação" apareceu com contadores e validade corretos; "Ver na Agenda" abriu o agendamento correto; os botões do detalhe funcionaram; e o parâmetro `abrir` foi removido da URL depois do uso (M21 em [`PENDENCIAS.md`](./PENDENCIAS.md)). É um relato da responsável; as evidências **independentes** (testes `dashboard-awaiting`, consulta do card no banco e logs do Nginx de 2026-10-03, 16:03–16:04 UTC, com `POST /appointments/:id/confirm` → 200) apenas o corroboram
 
@@ -417,6 +424,11 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] `appointment.public_created` só é disparado quando a profissional tem `wa_instance_name` (sem fallback para outra instância); o agendamento segue normalmente na Agenda e na Início
 - [x] `professionalPhone` normalizado para `55` + número no ponto de envio (aceita máscara, `+55`, número sem DDI e zero de tronco; não duplica o `55`; vazio/inválido vira `null`), sem alterar o telefone salvo
 - [x] **E2E de produção** na `studio-simone-teles` (sem instância): reserva pela página pública → 201, `pendente`, aparece na Agenda/Início; **nenhuma execução** de "Notificações" e nenhuma chamada de envio à Evolution; limpeza da reserva e da ficha de teste feita depois
+
+**Admin — Auditoria v1 e nova composição visual — `12dcff7` (2026-10-03, em produção)**
+- [x] Deploy: push `3e423f6..12dcff7`; `dist` anterior preservado em `dist.bak_20261003-pre-auditoria`; só o backend foi reiniciado (PID 1253738 → 1274349); n8n, Evolution, banco e migrations intocados
+- [x] Suíte (worktree limpo, banco descartável): 296 testes, 284 passando, 12 falhas conhecidas (as mesmas de antes); `tsc` e `vite build` ok
+- [ ] Melhorias futuras do Admin (nada iniciado): busca real e filtros reais de profissionais; antes/depois e motivo na auditoria; filtro por administrador/profissional e exportação; imutabilidade em nível de banco; ver [`PENDENCIAS.md`](./PENDENCIAS.md) (A1–A6)
 
 **Próximas fases — não iniciadas**
 - [ ] Fase 4: bot durante o pagamento (estado fora do prefixo `AGUARDANDO_`)

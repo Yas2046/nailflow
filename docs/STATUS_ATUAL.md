@@ -1,15 +1,16 @@
 # NailFlow — Status Atual (2026-10-03)
 
-## Estado atual — 2026-10-03 (referência: `main` em `50906f5`)
+## Estado atual — 2026-10-03 (referência: `main` em `12dcff7`)
 
 > Este bloco descreve o estado real em 2026-10-03. **Tudo abaixo desta seção, até "O que NÃO está publicado", é histórico até 2026-09-30** (V1/V2, rodadas de segurança, Admin e página pública); foi mantido como registro e só recebeu notas pontuais de estado atual onde ficaria enganoso.
 
 **Git e deploy**
-- **Repositório:** https://github.com/Yas2046/nailflow — branch de trabalho **`main`**, `main` = `origin/main` = `50906f5`, publicada e **em produção** (a `feat/phase5-register` foi integrada à `main` em 2026-10-02 e é só histórico).
+- **Repositório:** https://github.com/Yas2046/nailflow — branch de trabalho **`main`**, `main` = `origin/main` = `12dcff7` (o commit de documentação desta etapa vem depois), publicada e **em produção** (a `feat/phase5-register` foi integrada à `main` em 2026-10-02 e é só histórico).
 - **Commits recentes:**
 
   | Commit | Data | O quê |
   |---|---|---|
+  | `12dcff7` | 2026-10-03 | Painel Admin com nova composição visual + Auditoria v1 (`GET /admin/audit-log` e tela `/admin/auditoria`) |
   | `50906f5` | 2026-10-03 | `public_created` só com instância própria; telefone da profissional normalizado (`55` + número) |
   | `3bcbb1a` | 2026-10-03 | Início com card "Precisa da sua ação", atalho para a Agenda (`?data=&abrir=`) e scroll/confirmação visual na página pública |
   | `501cd55` | 2026-10-03 | Documentação: confirmação e sinal |
@@ -17,7 +18,7 @@
   | `47eccc5` / `47c2886` / `a36626b` | 2026-10-02 | Fase 1A: confirmar/recusar solicitações (Agenda, backend, bot, aviso de recusa) |
   | `6122abc` | 2026-10-02 | Antecedência mínima de 30 min para clientes |
 
-- **Produção:** `nailflow-backend` (PM2) reiniciado em 2026-10-03 (PID 1253738 após o deploy de `50906f5`); frontend publicado com o build de `3bcbb1a` (`dist` anterior preservado em `dist.bak_20261003-pre-home-ux`); banco com as migrations **até a 022** (backups `nailflow_pre-migration-020/021/022_*.dump` em `/var/backups/nailflow/`); n8n com **6 workflows ativos** (Definitivo, Notificações, Solicitação Recusada, Mensagem à Cliente, Abandono e Lembretes — ver [`N8N.md`](./N8N.md)).
+- **Produção:** `nailflow-backend` (PM2) reiniciado em 2026-10-03 (PID 1274349 após o deploy de `12dcff7`; antes, 1253738 com `50906f5`); frontend publicado com o build de `12dcff7` (`dist` anterior preservado em `dist.bak_20261003-pre-auditoria`); banco com as migrations **até a 022** (backups `nailflow_pre-migration-020/021/022_*.dump` em `/var/backups/nailflow/`); n8n com **6 workflows ativos** (Definitivo, Notificações, Solicitação Recusada, Mensagem à Cliente, Abandono e Lembretes — ver [`N8N.md`](./N8N.md)).
 - **WhatsApp/Evolution:** `chip2` **`open`** (é, de propósito, o WhatsApp pessoal da responsável, usado pelo perfil de teste Camila) e `chip2-teste` `connecting`; a `studio-simone-teles` não tem instância. Ver [`WHATSAPP_EVOLUTION.md`](./WHATSAPP_EVOLUTION.md).
 - **Contas em produção:** 4 (`camila-nails-studio` — teste, com `chip2`, bio e tema azul; `teste-nailflow`; `studio-simone-teles`, sem instância; e a conta de administração).
 
@@ -29,7 +30,17 @@
 
 **Validado em produção** (detalhes em [`TESTES_REALIZADOS.md`](./TESTES_REALIZADOS.md)): E2E dos 4 cenários de confirmação/sinal/expiração; página pública no celular; `public_created` sem instância; e a validação manual da Home e da Agenda (card "Precisa da sua ação", "Ver na Agenda", botões e remoção do `abrir` da URL), **relatada pela responsável**. **Não validado:** entrega real do aviso à profissional (telefone cadastrado é placeholder) e envio real de lembrete/abandono com confirmação de recebimento.
 
-**Suíte automatizada:** 288 testes, 276 passando, **12 falhas conhecidas** (9 testes antigos que esperam `body.token` no login e 3 do bot que dependem do dia da semana — I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
+**Admin — nova composição visual e Auditoria v1 (2026-10-03, `12dcff7`)**
+- **Painel Admin redesenhado** (só frontend; regras e chamadas de API das ações preservadas): menu lateral fixo (a partir de `lg`; abaixo, barra superior com abas), saudação com data, resumo de profissionais (indicadores com barras de proporção; contam só contas não admin), lista em cards responsiva (avatar, status, contato, instância, cadastro), ações num menu de três pontos (Editar, Bloquear/Desbloquear, Excluir…), diálogos acessíveis (Esc, foco preso/devolvido), estados de carregamento/vazio/erro com "Tentar novamente" e a nova aba **Auditoria**. A busca e os filtros de profissionais aparecem **só como visual desativado ("Em breve")** — não funcionam.
+- **Tela `/admin/auditoria`:** cartões "Ações hoje" e "Últimos 7 dias"; filtro por ação (Todas/Edição/Bloqueio/Desbloqueio/Exclusão) e por período (presets + datas De/Até); lista do mais recente ao mais antigo, 15 por página, com detalhe expansível por registro (ação, resultado "Concluída", e-mail do admin, IDs, data completa e aviso de que os campos alterados não são armazenados); estados de carregamento, vazio e erro.
+- **Endpoint `GET /admin/audit-log`:** somente leitura, atrás de `requireAdmin` (401 sem login, 403 se não admin) e do rate limit de 100 req/5 min; paginação (`page`, `pageSize` ≤ 50), filtros `action`, `from`, `to` (dias inteiros em `America/Sao_Paulo`) e `summary` (`today`, `last7Days`). Detalhes em [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md). Sem migration.
+- **O que o log registra:** só ações administrativas **concluídas** — `block`, `unblock`, `update`, `delete` — com `actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`. **Não armazena:** valores antes/depois, motivo, IP, nome do administrador (só e-mail) e falhas/tentativas recusadas. Imutabilidade só pela API (sem rota de escrita; sem trigger no banco).
+- **Limpeza prévia dos dados de teste (2026-10-03):** os 104 registros que existiam eram todos de testes antigos (3 admins `admin_*_test@nailflow.com`; nenhum de admin real) e foram removidos numa transação protegida, após backup (`/var/backups/nailflow/manual/admin_audit_log_pre-cleanup_20261003-233014.csv` e `.sql`, fora do Git). Nenhuma outra tabela foi alterada.
+- **Deploy:** push `3e423f6..12dcff7`; `frontend/dist` anterior preservado em `dist.bak_20261003-pre-auditoria`; só o `nailflow-backend` foi reiniciado (PID 1253738 → 1274349, necessário para a nova rota). Sem alteração em n8n, Evolution, banco ou migrations.
+- **Validação em produção:** backend saudável; `/admin`, `/admin/auditoria` e `/login` respondem 200; `GET /admin/audit-log` sem login → 401. **Validação manual com login real, relatada pela responsável:** a Auditoria foi validada manualmente; um **bloqueio** de profissional feito pela própria interface funcionou e apareceu na Auditoria. Conferência somente leitura no banco: o log tem 1 registro (`block`, ator `admin@nailflow.internal`, alvo "NailFlow Teste", 2026-10-03 23:43 +02) — é o **primeiro registro real do histórico e deve ser preservado**. Observação: no momento desta documentação a profissional "NailFlow Teste" **continuava bloqueada** (`blocked_at` preenchido); desbloqueá-la, se desejado, gera um registro `unblock` legítimo.
+- **Limitações atuais da Auditoria:** sem antes/depois, motivo, IP, nome do admin ou falhas; sem busca por texto (profissional/admin); sem exportação; sem filtro por administrador ou profissional; paginação por deslocamento; valores de "hoje"/"7 dias" calculados no fuso de São Paulo.
+
+**Suíte automatizada:** 296 testes, 284 passando (inclui os 8 novos de `admin-audit-log-list`, rodados em worktree limpo com banco descartável; **a suíte não é executada na árvore de produção**), **12 falhas conhecidas** (9 testes antigos que esperam `body.token` no login e 3 do bot que dependem do dia da semana — I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
 
 **Pendências e limitações atuais:** ver [`PENDENCIAS.md`](./PENDENCIAS.md) — em especial M16–M20 (bot responde a DMs no número conectado, "Notificações" sem guarda para instância nula em `confirmed`/`cancelled`, `DELETE /appointments/:id` sem guarda de status, sem aviso interno para reservas do bot, 409 da página pública sem scroll até o erro), F9 e M10 (foto no Perfil).
 
@@ -142,7 +153,7 @@ Antes de hoje, o Admin só listava profissionais (leitura). Agora:
 - `actor_email` e `target_business_name` ficam denormalizados de propósito, pelo mesmo motivo
 - Função reutilizável `logAdminAction()` (`backend/src/utils/auditLog.js`), chamada nos 4 fluxos acima **só após sucesso confirmado** (no `delete`, só depois do `COMMIT`) — nesta primeira versão, tentativas/falhas não são registradas
 - Sem senha, hash, token, `token_version` ou chave de API em nenhum registro
-- Ainda **sem tela de auditoria** no Admin (fica para uma etapa futura, se decidido)
+- ~~Ainda sem tela de auditoria~~ — a tela `/admin/auditoria` foi entregue em 2026-10-03 (`12dcff7`); ver o bloco "Admin — nova composição visual e Auditoria v1" acima
 
 ### Segurança — revisão completa do estado atual
 
@@ -162,12 +173,12 @@ Nada do trabalho de hoje envolveu WhatsApp/n8n/Evolution além da chamada de exc
 
 - Rate limiting nos endpoints `/admin/professionals/*` (bloquear/editar/excluir) — hoje protegidos só por JWT + `is_admin` (ver [`PENDENCIAS.md`](./PENDENCIAS.md), item M5 — **resolvido em 2026-10-01**, `26ae97f`)
 - `react-router-dom`: 2 advisories moderados reconfirmados, decisão de não corrigir agora mantida (item I15)
-- Tela de histórico/auditoria no Admin — o log já é gravado, mas não há UI para consultá-lo ainda
+- ~~Tela de histórico/auditoria no Admin~~ — entregue em 2026-10-03 (`12dcff7`)
 
 ### Próximos passos sugeridos
 
 1. Validação prática do WhatsApp (C1–C3 em [`PENDENCIAS.md`](./PENDENCIAS.md)) — (em 2026-09-29, dependia de autorização e reconexão do `chip2`; feito em 2026-09-30 e 2026-10-01)
-2. Decidir se/quando construir uma tela de consulta do `admin_audit_log`
+2. ~~Decidir se/quando construir uma tela de consulta do `admin_audit_log`~~ — feita em 2026-10-03 (`12dcff7`)
 3. Avaliar o upgrade major do `react-router-dom` como tarefa própria, com sua rodada de testes
 
 ---

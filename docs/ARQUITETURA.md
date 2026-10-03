@@ -169,7 +169,10 @@ Cada profissional tem:
 ## Área administrativa
 
 - Conta marcada com `professionals.is_admin = true` (não há tela para promover admin; a marcação é feita no banco)
-- Login pelo mesmo formulário; ao entrar, o admin é levado ao `/admin`, com layout próprio (`AdminLayout`: cabeçalho + sair, **sem** a navegação da profissional). Uma profissional comum que acesse `/admin` é redirecionada
+- Login pelo mesmo formulário; ao entrar, o admin é levado ao `/admin`, com layout próprio (`AdminLayout`, **sem** a navegação da profissional). Uma profissional comum que acesse `/admin` é redirecionada
+- **Layout (desde 2026-10-03, `12dcff7`):** menu lateral fixo a partir de `lg` (Profissionais e Auditoria, via `NavLink`) e, abaixo de `lg`, barra superior com abas; cartão do administrador e botão de sair no menu. Rotas: `/admin` (Profissionais) e `/admin/auditoria`
+- **`/admin` (Profissionais):** saudação e data, indicadores (total de contas de profissionais, ativas, bloqueadas, sem WhatsApp — contam só contas não admin; "sem WhatsApp" = sem `wa_instance_name`) e lista em cards com avatar, status, contato, instância e data de cadastro. Ações (Editar, Bloquear/Desbloquear, Excluir…) ficam num menu de três pontos e abrem diálogos acessíveis (`role="dialog"`, Esc, foco preso e devolvido). Estados de carregamento, vazio e erro com "Tentar novamente". A busca e os filtros exibidos são **apenas visuais e desativados** ("Em breve"). Regras e chamadas de API das ações não mudaram (exclusão exige digitar o nome do negócio; sem autoação; foto ≤ 10 MB)
+- **`/admin/auditoria`:** consulta somente leitura ao `admin_audit_log` via `GET /admin/audit-log` (ver [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md)): cartões "Ações hoje" e "Últimos 7 dias", filtro por ação e por período, lista paginada (15 por página) com detalhe expansível por registro, estados de carregamento/vazio/erro
 - `GET /admin/professionals` (middleware `requireAdmin`: JWT válido + `is_admin` conferido no banco) lista as profissionais **sem** `password_hash` nem `avatar_b64`
 - O admin não acessa nem altera dados operacionais (agendamentos, clientes, serviços, gastos) de outras profissionais
 

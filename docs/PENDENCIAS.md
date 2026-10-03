@@ -179,6 +179,20 @@
 
 ---
 
+### 🟡 Admin — melhorias futuras (registradas em 2026-10-03, após `12dcff7`; nada iniciado)
+
+**A1. Busca real de profissionais no `/admin`** — a caixa de busca existe só como visual desativado ("Em breve"); não filtra nada.
+
+**A2. Filtros reais no painel de profissionais** — os chips (ativas, bloqueadas, sem WhatsApp etc.) são visuais e desativados.
+
+**A3. Enriquecer o histórico de auditoria** — hoje não guarda valores antes/depois, motivo, IP, nome do administrador (só e-mail) nem falhas/tentativas recusadas (`actor_email` e `target_business_name` são denormalizados de propósito). Exige alterar a gravação (`logAdminAction`) e, provavelmente, migration; os registros já existentes não ganhariam os campos novos.
+
+**A4. Auditoria: busca/filtros/exportação** — sem busca por texto, sem filtro por administrador ou profissional, sem exportação (CSV); paginação por deslocamento (suficiente para o volume atual).
+
+**A5. Imutabilidade do log em nível de banco** — hoje só a API não tem rota de escrita; não há trigger nem restrição de permissão que impeça `UPDATE`/`DELETE` direto via SQL.
+
+**A6. Promover conta a admin pela interface** — hoje só por SQL (já registrado no checklist). Junto: revisar outras robustezas do Admin (ex.: M9 — página pública de conta bloqueada continua acessível).
+
 ### 🟢 Futuro
 
 **F1. Campanhas de WhatsApp** (envio em massa / reativação de clientes inativas) — não implementado
@@ -230,6 +244,7 @@
 
 | Item | Quando | Como |
 |---|---|---|
+| Sem tela para consultar o `admin_audit_log` | 2026-10-03 | Auditoria v1 (`12dcff7`): `GET /admin/audit-log` somente leitura + `/admin/auditoria` (filtros, paginação, detalhe); validada em produção com login real; 104 registros de teste antigos removidos antes, após backup |
 | `POST nailflow/notificacoes` → 404 | até 2026-09-22 | Workflow "Notificações" ativado; webhook registrado |
 | Commitar Bloco 5 CRM + rotas WhatsApp | V1 (`d82603c`) | Versionados |
 | Bot sem resposta após escolher serviço (`$1` ausente) | 2026-09-24 | Query corrigida; versionada em `b26d682` |

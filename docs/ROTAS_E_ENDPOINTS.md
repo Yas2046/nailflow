@@ -182,10 +182,13 @@ Resposta: `{ perfil, servicos, horarios, whatsapp, clientes, concluidos, total: 
 | POST | `/admin/professionals/:id/unblock` | JWT + `is_admin` | Desbloqueia e incrementa `token_version` (invalida tokens emitidos antes do desbloqueio, exige novo login) (2026-09-29) |
 | GET | `/admin/professionals/:id/delete-preview` | JWT + `is_admin` | Contagens (clientes, agendamentos, serviços, recorrências, mensagens, despesas) antes de excluir (2026-09-29) |
 | DELETE | `/admin/professionals/:id` | JWT + `is_admin` | Exclusão definitiva: snapshot em disco → exclui instância na Evolution se houver (aborta sem tocar no banco se falhar) → `DELETE` em transação (cascade apaga tudo que pertence à profissional). Exige digitar o `business_name` exato no corpo (`businessNameConfirmation`); não permite excluir a própria conta nem a última conta admin (2026-09-29) |
+| GET | `/admin/audit-log` | JWT + `is_admin` | **Auditoria v1 (2026-10-03, `12dcff7`) — somente leitura.** Lista o `admin_audit_log`, do mais recente para o mais antigo (`created_at DESC, id DESC`). Parâmetros: `page` (padrão 1), `pageSize` (padrão 20, máx. 50), `action` (`block`/`unblock`/`update`/`delete`; vazio ou `all` = sem filtro), `from`/`to` (`AAAA-MM-DD`, dias inteiros no fuso `America/Sao_Paulo`, inclusivos; `from` > `to` → 400). Resposta: `{ items, page, pageSize, total, totalPages, summary: { today, last7Days } }`; cada item traz só `id`, `action`, `actorId`, `actorEmail`, `targetId`, `targetBusinessName`, `createdAt`. Parâmetros inválidos → 400 com mensagem em português |
 
-Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admin → 403. Desde 2026-09-29 também expõe `req.actorEmail` (usado pelo audit log).
+Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admin → 403; sem login → 401. Desde 2026-09-29 também expõe `req.actorEmail` (usado pelo audit log). Todas as rotas `/admin/*`, inclusive `/admin/audit-log`, ficam atrás de `requireAdmin` e do rate limit de 100 req/5 min por IP.
 
-Toda ação de sucesso em `block`/`unblock`/`update`/`delete` grava 1 linha em `admin_audit_log` (`actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`) — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md). Falhas/tentativas não são registradas nesta primeira versão.
+Toda ação de sucesso em `block`/`unblock`/`update`/`delete` grava 1 linha em `admin_audit_log` (`actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`) — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md). Falhas/tentativas não são registradas.
+
+**`GET /admin/audit-log` é a única rota de auditoria e é só de leitura:** não existe `POST`/`PUT`/`PATCH`/`DELETE` em `/admin/audit-log` (respondem 404 para admin autenticado; testado). A imutabilidade do log é garantida **só pela API** — não há trigger nem permissão no banco que impeçam alteração direta via SQL.
 
 ---
 

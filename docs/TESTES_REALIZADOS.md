@@ -276,6 +276,21 @@ Número de teste da responsável (`553185108190`, cliente "Simone Teles") na pro
 
 ---
 
+## Admin — Auditoria v1 (2026-10-03, `12dcff7`)
+
+| Teste | Resultado | O que foi comprovado |
+|---|---|---|
+| **Testes automatizados novos** (`admin-audit-log-list.test.js`, 8) 🧪 | ✅ passaram | 401 sem login e 403 para não admin; ordem do mais recente ao mais antigo e conjunto exato de campos (sem dados sensíveis); paginação; filtro por ação (`all`/vazio sem filtro); filtro de período em dias inteiros de São Paulo; resumo; 400 para parâmetros inválidos; `POST`/`PUT`/`PATCH`/`DELETE` em `/admin/audit-log` → 404 e log inalterado. Rodados em worktree limpo, banco descartável, **sem** o `.env` de produção |
+| Suíte completa 🧪 | ✅ sem regressão | 296 testes, 284 passando, 12 falhas conhecidas (as mesmas de antes: 9 de `body.token` + 3 do bot dependentes de data). `tsc` e `vite build` ok; sem overflow horizontal em 375×812, 768 e 1024 px (prévia com API simulada) |
+| Prévia visual com dados fictícios (API simulada, só na prévia) | ✅ revisada pela responsável | Estados preenchido, paginação, filtros, detalhe expansível, vazio e erro; prévia encerrada depois |
+| Limpeza do `admin_audit_log` 🌐 | ✅ concluída | 104 → 0 registros, todos de `admin_*_test@nailflow.com`; backup CSV+SQL em `/var/backups/nailflow/manual/` verificado (104 linhas cada); demais tabelas idênticas |
+| **Deploy e checks em produção** 🌐 | ✅ passaram | Backend saudável; `/admin`, `/admin/auditoria`, `/login` 200; `GET /admin/audit-log` sem login → 401 |
+| **Validação manual com login real** 🌐 (relatada pela responsável) | ✅ aprovada | Auditoria validada manualmente; um bloqueio feito pela interface funcionou e apareceu na Auditoria; conferido somente leitura no banco: 1 registro (`block`, `admin@nailflow.internal` → "NailFlow Teste"), o primeiro registro real |
+
+**Incidente (2026-10-03):** a suíte backend foi executada inadvertidamente na árvore de produção. O `.env` de produção continha integrações externas (n8n/Evolution), e a execução gerou cerca de 45 execuções fictícias no n8n. Não houve entrega de mensagem pelo WhatsApp nem alteração no banco de produção (a suíte usou um banco descartável). As validações posteriores foram feitas em cópias isoladas (worktree sem `.env` e banco descartável). As execuções fictícias permanecem no histórico do n8n.
+
+---
+
 ## Testes PENDENTES (não realizados)
 
 > Atualizado em 2026-10-03: as quatro primeiras linhas já foram realizadas (indicado na coluna Observação) e ficam aqui como histórico.

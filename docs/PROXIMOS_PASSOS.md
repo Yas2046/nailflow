@@ -1,6 +1,6 @@
 # NailFlow — Próximos Passos
 
-> Atualizado em 2026-10-03 (`main` em `50906f5`). Sequência ordenada por dependência. Não pule etapas.
+> Atualizado em 2026-10-03 (`main` em `12dcff7`). Sequência ordenada por dependência. Não pule etapas.
 > Toda mudança em produção, n8n, Evolution ou banco exige autorização explícita.
 
 ## Onde estamos (2026-10-03) e o que vem agora
@@ -12,7 +12,8 @@ O V1/V2, a integração ao `main`, a reconexão do `chip2`, a validação real d
 2. **Conectar o WhatsApp de cada profissional** (sem instância ela não recebe avisos nem envia mensagens) e decidir o que fazer com números pessoais conectados — o bot responde a qualquer mensagem privada (M16)
 3. **Validações que faltam:** entrega real do aviso interno à profissional com um número real (F9); envio real de lembrete/abandono com confirmação de recebimento
 4. **Pendências reais após o congelamento** (M16–M20 e demais em [`PENDENCIAS.md`](./PENDENCIAS.md)): guarda de instância nula no workflow "Notificações", guarda de status em `DELETE /appointments/:id`, aviso interno para reservas do bot, scroll até o erro 409 na página pública, aviso à cliente quando a reserva expira (M14)
-5. Backlog (nada disso está em andamento): publicar recuperação/troca de senha (depende do Brevo), PM2 sem root, SSH só por chave, bot em linguagem natural (F10), Pix automático
+5. Admin (nada iniciado, ver A1–A6 em [`PENDENCIAS.md`](./PENDENCIAS.md)): busca e filtros reais de profissionais; antes/depois e motivo na auditoria; filtros/exportação da Auditoria; imutabilidade do log no banco; promoção de admin pela UI
+6. Backlog (nada disso está em andamento): publicar recuperação/troca de senha (depende do Brevo), PM2 sem root, SSH só por chave, bot em linguagem natural (F10), Pix automático
 
 ---
 
@@ -31,6 +32,7 @@ O V1/V2, a integração ao `main`, a reconexão do `chip2`, a validação real d
 - ✅ Recorrência de agendamento "Por X dias" (além de "Até uma data"), badge WhatsApp/Somente Agenda em Serviços, Agenda sem limite de antecedência (horizonte externo separado, só WhatsApp/página pública) (2026-09-29)
 - ✅ Admin: bloquear/desbloquear, editar e excluir profissionais (com snapshot pré-exclusão e exclusão sincronizada da instância Evolution), audit log de todas as ações administrativas, tela Admin responsiva no mobile (2026-09-29)
 - ✅ (2026-09-30 a 2026-10-03) Página pública de agendamento completa; integração da `feat/phase5-register` ao `main`; `chip2` reconectado e agendamento/cancelamento validados com cliente real; Fase 1A (confirmar/recusar solicitações); pacote `cb07d38` (confirmação manual/automática, sinal por Pix manual, expiração, `message.send`) com 4 E2E em produção; `3bcbb1a` (card "Precisa da sua ação", atalho para a Agenda, scroll da página pública); `50906f5` (`public_created` sem instância e telefone normalizado); consolidação final da documentação
+- ✅ (2026-10-03) Admin: nova composição visual (menu lateral, cards, ações em menu, diálogos acessíveis) e **Auditoria v1** (`GET /admin/audit-log` + `/admin/auditoria`), `12dcff7`, em produção e validada com login real; 104 registros de teste da `admin_audit_log` removidos antes (backup em `/var/backups/nailflow/manual/`)
 - ✅ Revisão completa de segurança do estado atual (auth, isolamento/IDOR, SQLi/XSS/CSRF/CORS, headers, secrets, rate limiting, dependências, migrations 016–019) — nenhum problema real encontrado (2026-09-29)
 
 ---
