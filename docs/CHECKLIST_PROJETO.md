@@ -224,7 +224,7 @@
 ## 11. Documentação / Git / deploy
 
 - [x] Documentação organizada em `docs/` (arquitetura, infraestrutura, banco, rotas, bot, WhatsApp, n8n, testes, pendências, próximos passos, instalação)
-- [x] Branch de trabalho: `main` — em 2026-10-02 `main` = `origin/main`, publicada e em produção (código em produção até `47c2886`, Fase 1A). `feat/phase5-register` foi integrada à `main` e fica apenas como histórico
+- [x] Branch de trabalho: `main` — em 2026-10-02 `main` = `origin/main`, publicada e em produção (código em produção até `47c2886`, Fase 1A; em 2026-10-03 produção roda também o commit local `cb07d38`, ainda não enviado ao `origin`). `feat/phase5-register` foi integrada à `main` e fica apenas como histórico
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). Restart confirmado em 2026-10-02 (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
@@ -246,15 +246,15 @@
 - [ ] SSH restrito só a chave
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02 (ver seção 11)
 - [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados) — o workflow "Notificações" também foi editado manualmente na interface em 2026-10-01 (F9) e ainda não foi re-exportado para o repositório
-- [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder que a Evolution rejeita (`exists: false`); falta um teste com número de WhatsApp real para considerar a F9 100% validada
+- [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder (`5531999999999`) que a Evolution rejeita (`exists: false` / "Bad request"); falha **reconfirmada** nos E2E de 2026-10-03 (ex.: execução #14769, `appointment.public_created`), sem efeito sobre a reserva nem sobre a mensagem à cliente; falta um teste com número de WhatsApp real para considerar a F9 100% validada
 - [ ] A branch `feat/phase5-register` local continua à frente de `origin/feat/phase5-register`, mas todo o conteúdo já está na `main` publicada; decidir só se vale enviar ou remover a branch antiga (não afeta produção)
 - [ ] A página pública de uma conta **bloqueada** (`blocked_at`) continua acessível: `getProfessionalBySlug` não checa o bloqueio — decisão adiada em 2026-10-02 (não é bloqueador do V1)
 - [ ] Perfil: "Salvar foto" ainda envia a identidade completa e falha sem WhatsApp cadastrado; o backend já aceita foto sozinha desde 2026-10-02, falta só o frontend enviar apenas `avatar_b64`
 - [ ] A antecedência mínima de 30 min para clientes é uma constante (`CUSTOMER_MIN_NOTICE_MINUTES`), não configurável por profissional
 - [ ] Nenhuma profissional configurou foto, apresentação ou cor da página pública em produção ainda; a página mostra o cabeçalho padrão (LogoMark, tema vinho)
 - [ ] **Fase 1A — agendamentos anteriores à migration 021 têm `source` nulo**: recusar um deles funciona, mas a cliente **não** recebe WhatsApp (por desenho: só `public`/`bot` avisam). Só solicitações novas, feitas depois de 2026-10-02 21:04, avisam a cliente
-- [ ] **Fase 1A — documentação técnica de apoio** ainda sem a Fase 1A: `BANCO_DE_DADOS.md` (migration 021) e `N8N.md` (workflow "Solicitação Recusada", webhook novo e variável `N8N_WEBHOOK_REJECTED_URL`)
-- [ ] **Fase 1A — a cliente não recebe mensagem ao *solicitar* o horário pela página pública** ("recebemos sua solicitação"): a página já mostra o aviso na tela, mas não há WhatsApp de recebimento (previsto para a Fase 1B)
+- [x] Documentação técnica de apoio: `BANCO_DE_DADOS.md` (migrations 021/022) e `N8N.md` (workflows, webhooks, variáveis) atualizados em 2026-10-03. Ainda sem revisão: `ROTAS_E_ENDPOINTS.md`, `FLUXOS_DO_BOT.md`, `STATUS_ATUAL.md`, `TESTES_REALIZADOS.md` (ver M12)
+- [x] A cliente recebe WhatsApp ao *solicitar* o horário pela página pública — entregue no pacote `cb07d38`
 
 ---
 
@@ -389,10 +389,21 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] **Validação real em produção**: confirmação pela Agenda → WhatsApp recebido; nova solicitação pela página pública aparece como "Aguardando confirmação"; recusa pela Agenda → solicitação cancelada → WhatsApp de recusa recebido
 - Publicação: push `6122abc..47c2886`; `frontend/dist` anterior preservado em `dist.bak_20261002-pre-fase1a`
 
+**Fases 1B + 2 + sinal Pix manual — concluídas, em produção e validadas por E2E (2026-10-02/03; commit local `cb07d38`, ainda não enviado)**
+- [x] Migration 022 aplicada em produção após backup `/var/backups/nailflow/nailflow_pre-migration-022_2026-10-02_222934.dump` (detalhes em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md))
+- [x] Modo de confirmação por profissional (`manual` → `pendente` com reserva de 24 h; `automatic` sem sinal → `confirmado`; `automatic` com sinal → `aguardando_pagamento` com reserva de 2 h); a API proíbe sinal no modo manual
+- [x] Sinal: percentual (30/50/100) ou valor fixo, calculado no servidor (`deposit_cents`), chave Pix da profissional; "Pagamento recebido" na Agenda (`POST /appointments/:id/mark-paid`, atômico e idempotente) → `confirmado`, `paid_at`, `expires_at` nulo
+- [x] Expiração: sweeper de 60 s e `expireDueHolds` antes de criar/alterar; expirar = `cancelado` + `cancel_reason='expired'`, sem mensagem à cliente; disponibilidade ignora holds vencidos
+- [x] Aba "Agendamento" em Configurações; página pública com bloco Pix (copiar chave); mensagens à cliente pelo canal genérico `message.send` → workflow `NfMensagemCliente01` ("NailFlow — Mensagem à Cliente", publicado após backup do banco do n8n; ver [`N8N.md`](./N8N.md))
+- [x] Mensagem de "recebemos sua solicitação" à cliente (antes pendente da Fase 1B)
+- [x] **E2E real aprovado — 4 cenários** (número de teste `553185108190`): (1) automático sem sinal e (2) manual com confirmação pela profissional, aprovados pela responsável (detalhes não reconferidos na revisão da documentação); (3) automático + sinal 50% → `aguardando_pagamento` (1750 de 3500, +2 h) → "Pagamento recebido" pela Agenda real → `confirmado`, 1 único `appointment.confirmed`, repetição idempotente; (4) expiração pelo sweeper real em ~56 s, sem mensagem e sem afetar outras reservas
+- [x] Configuração da Camila restaurada após cada cenário: `manual`, sem sinal, sem Pix, sem tipo/valor; reservas de teste canceladas sem mensagem; agendamento antigo da Simone (05/10 13:00) intacto
+- [ ] Contador de "aguardando" na Início (previsto na 1B, não feito)
+- [ ] Publicar o commit `cb07d38` (push) — local `main` à frente de `origin/main` em 1 commit
+- [ ] Aviso à cliente quando a reserva expira (hoje não envia; ver M14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
+- [ ] Investigação das respostas do bot de 2026-10-03 (#14772/#14773): eram mensagens reais recebidas do número de teste, respondidas conforme o fluxo existente do bot; **não é possível determinar quem as digitou nem se há relação causal com o cenário 4** (ver M15)
+
 **Próximas fases — não iniciadas**
-- [ ] Fase 1B: mensagem de "recebemos sua solicitação" à cliente; canal genérico de mensagens (`message.send`) a definir; contador de "aguardando" na Início
-- [ ] Fase 2: modo de confirmação (manual/automático) e reserva temporária com expiração (`expires_at`, `hold_minutes`, varredura periódica; expirar = `cancelado` + `cancel_reason='expired'`)
-- [ ] Fase 3: sinal por Pix manual (`aguardando_pagamento`, chave Pix, 30%/50%/100%/valor fixo, "pagamento recebido" pela profissional)
 - [ ] Fase 4: bot durante o pagamento (estado fora do prefixo `AGUARDANDO_`)
 - [ ] Fase 5: lembretes e mensagens pós-atendimento
 - [ ] Futuro: Pix automático/cartão (tabela `payments` e gateway)

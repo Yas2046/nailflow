@@ -22,6 +22,8 @@
 | NailFlow — Notificações | jgCnaeacHYMH6SRT | webhook `nailflow/notificacoes` (Header Auth) | Avisa a cliente sobre confirmação/cancelamento | `7eb7fd01` | ✅ ativo, webhook registrado |
 | NailFlow — Abandono de Conversa | rQ7S8XcAiiTCgXEr | Schedule (15 min) | Detecta conversas abandonadas e notifica | `d566c2fe` | ✅ corrigido em 2026-09-27; execuções com sucesso |
 | NailFlow — Lembretes de Agendamento | crVRWCDoVzCEWSgz | Schedule (30 min) | Envia lembrete ~24h antes | `9da88cb4` | ✅ corrigido em 2026-09-27; execuções com sucesso |
+| NailFlow — Solicitação Recusada | NfSolRecusada0001 | webhook `nailflow/solicitacao-recusada` (Header Auth) | Avisa a cliente que a solicitação foi recusada (evento `appointment.rejected`) | — | ✅ publicado em 2026-10-02 (Fase 1A) |
+| NailFlow — Mensagem à Cliente | NfMensagemCliente01 | webhook `nailflow/mensagem-cliente` (Header Auth) | Canal genérico de mensagem à cliente (evento `message.send`): recebimento da solicitação e instruções de sinal Pix | — | ✅ publicado em 2026-10-02 (commit `cb07d38`) |
 
 Todos usam o nome da instância de forma dinâmica (`waInstance`, a partir de `GET /bot/instances` ou do payload) — nenhum tem instância fixa.
 
@@ -43,6 +45,8 @@ Todos usam o nome da instância de forma dinâmica (`waInstance`, a partir de `G
 |---|---|---|
 | `whatsapp-nailflow` | POST | WhatsApp NailFlow — Definitivo (exige `X-NailFlow-Webhook-Secret`) |
 | `nailflow/notificacoes` | POST | NailFlow — Notificações (exige `X-NailFlow-Webhook-Secret`) |
+| `nailflow/solicitacao-recusada` | POST | NailFlow — Solicitação Recusada (exige `X-NailFlow-Webhook-Secret`) |
+| `nailflow/mensagem-cliente` | POST | NailFlow — Mensagem à Cliente (exige `X-NailFlow-Webhook-Secret`) |
 | `nailflow/mensagem-recebida` | POST | NailFlow — WhatsApp Principal (INATIVO) |
 | `evolution-chip2` | POST | WhatsApp Teste — oi/olá (INATIVO) |
 
@@ -112,6 +116,18 @@ A variável `N8N_API_KEY` no `.env` do backend **não é usada** em nenhum arqui
 
 ---
 
+## Eventos do backend → n8n (`notifyN8n`)
+
+O backend dispara `POST` fire-and-forget com `X-NailFlow-Webhook-Secret` (`N8N_NOTIFY_SECRET`) e corpo `{event, payload, sentAt}`. A URL de cada evento vem de uma variável do `.env`:
+
+| Evento | Variável | Destino |
+|---|---|---|
+| `appointment.confirmed` / `appointment.cancelled` / `appointment.public_created` | `N8N_WEBHOOK_CONFIRMED_URL` / `N8N_WEBHOOK_CANCELLED_URL` | `nailflow/notificacoes` |
+| `appointment.rejected` | `N8N_WEBHOOK_REJECTED_URL` | `nailflow/solicitacao-recusada` |
+| `message.send` | `N8N_WEBHOOK_MESSAGE_URL` | `nailflow/mensagem-cliente` |
+
+`message.send` leva `payload = {kind: appointment_requested | payment_instructions, waInstance, clientPhone, clientName, text}`; o workflow só envia `payload.text` (≤ 1000 caracteres), valida `clientPhone` (10–15 dígitos) e `waInstance`, e usa a credencial Evolution já existente. Quem monta o texto é o backend. Expirar uma reserva e a confirmação por "Pagamento recebido" não usam `message.send`: a confirmação usa `appointment.confirmed`; a expiração não envia nada.
+
 ## Arquivos de workflows exportados
 
 Localização: `/var/www/nailflow/n8n/workflows/`
@@ -120,6 +136,8 @@ Localização: `/var/www/nailflow/n8n/workflows/`
 |---|---|
 | `nailflow_abandono_de_conversa.json` | **Export atual** de "NailFlow — Abandono de Conversa", versão publicada `d566c2fe-8330-44e6-91f8-a24729b6af11` |
 | `nailflow_lembretes_de_agendamento.json` | **Export atual** de "NailFlow — Lembretes de Agendamento", versão publicada `9da88cb4-4a6a-4938-ba8a-b50957d24bb5` |
+| `nailflow_solicitacao_recusada.json` | Workflow "NailFlow — Solicitação Recusada" (`NfSolRecusada0001`), versionado na Fase 1A |
+| `nailflow_mensagem_cliente.json` | Workflow "NailFlow — Mensagem à Cliente" (`NfMensagemCliente01`), versionado em `cb07d38`; credenciais só por referência (sem segredos) |
 | `whatsapp_nailflow_definitivo.json` | Export antigo do workflow principal — **não reflete** a versão publicada atual (sem Header Auth) |
 | `WB-lembretes.json` | Export antigo dos lembretes |
 | `WA-whatsapp-principal.json` | Versão anterior (não usar) |
@@ -161,6 +179,14 @@ O workflow "NailFlow — Notificações" foi ativado (última execução com suc
 - Execução 11225 do Abandono (2026-09-27 13:45 UTC): as 2 instâncias processadas pela saída `loop` (`chip2`, depois `chip2-teste`), "Buscar abandonados" rodou uma vez por instância sem erro, o loop terminou pela saída `done`; nenhum envio
 - Consulta somente leitura de 2026-09-27: de 13:45 a 17:15 UTC, 15 execuções do Abandono e 7 dos Lembretes (a partir de 14:00), todas `success`
 - **Não validado ainda:** os loops internos com itens reais (na execução 11225 não havia abandonos; os Lembretes não foram conferidos node a node) e o envio real de lembrete/abandono — o `chip2` e o `chip2-teste` estão desconectados
+
+### ⚠️ Aviso interno à profissional falha com telefone placeholder (F9)
+
+O evento `appointment.public_created` (aviso à profissional de uma nova reserva pela página pública) falha no node de envio com "Bad request" quando o `phone_whatsapp` da profissional é o número placeholder da conta de teste (`5531999999999`, rejeitado pela Evolution). Reproduzido nos cenários E2E de 2026-10-03 (ex.: execução #14769). Não afeta a mensagem à cliente nem o status da reserva; some com um telefone real cadastrado (ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
+
+### ℹ️ Execuções do "Definitivo" que param em "Extrair Dados"
+
+O webhook `whatsapp-nailflow` assina `MESSAGES_UPSERT` e recebe também mensagens de **grupos** (`@g.us`), figurinhas e reações. O node "Extrair Dados" as descarta e a execução termina como `success` sem resposta (ex.: #14759–#14765, mensagens de um grupo de WhatsApp, em 2026-10-03). É esperado, não é erro. O campo `data.status` vem como `DELIVERY_ACK` em **todas** as mensagens recebidas (inclusive texto real da cliente); não indica evento de entrega/leitura.
 
 ### ⚠️ Status "success" sem trabalho
 Uma execução "success" não garante que a chamada ao backend aconteceu: com as saídas trocadas, os crons terminaram "success" sem fazer nada. Ao validar, conferir node a node.

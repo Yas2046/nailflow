@@ -32,6 +32,13 @@ Profissionais cadastradas no sistema. Cada profissional é um tenant isolado.
 | avatar_b64 | text | nullable, foto de perfil em base64 (migration 013) |
 | is_admin | boolean | NOT NULL, default `false` — conta de administração (migration 010) |
 | booking_horizon_days | smallint | NOT NULL, default `60` — antecedência máxima da agenda em dias; a API aceita 7 a 365 (migration 007) |
+| confirmation_mode | varchar(10) | NOT NULL, default `'manual'`; CHECK: `manual` / `automatic` (migration 022) |
+| deposit_required | boolean | NOT NULL, default `false` — cobra sinal (migration 022) |
+| deposit_type | VARCHAR(10) | nullable — `percentage` / `fixed` (migration 022) |
+| deposit_value | integer | nullable — percentual (30/50/100) ou valor fixo em centavos (migration 022) |
+| pix_key | varchar(77) | nullable — chave Pix informada à cliente nas instruções de sinal; **não é exposta** em nenhuma rota pública, só na resposta da reserva com sinal e na mensagem (migration 022) |
+
+CHECK `professionals_deposit_check` (migration 022): só valida a coerência de `deposit_type`/`deposit_value` — ambos nulos, ou `percentage` com valor de 1 a 100, ou `fixed` com valor maior que 0. O CHECK **não** exige `pix_key`; a exigência de chave Pix, o limite de percentuais (30/50/100) e a proibição de sinal no modo `manual` estão na API (`PUT /auth/booking-settings`).
 | created_at / updated_at | timestamptz | automático |
 
 ---
@@ -78,14 +85,21 @@ Agendamentos.
 | service_id | uuid | FK → services |
 | starts_at | timestamptz | |
 | ends_at | timestamptz | |
-| status | varchar(20) | pendente / confirmado / cancelado / concluido / nao_compareceu |
+| status | varchar(20) | pendente (exibido como "Aguardando confirmação") / aguardando_pagamento / confirmado / cancelado / concluido / nao_compareceu |
 | notes | text | nullable |
+| cancel_reason | varchar(20) | nullable — `rejected` (recusa pela profissional), `expired` (reserva vencida); migration 021 |
+| source | varchar(10) | nullable — `public` / `bot` (CHECK); nulo = painel/legado; só `public`/`bot` avisam a cliente na recusa; migration 021 |
+| expires_at | timestamptz | nullable — fim da reserva temporária (24 h em `pendente`, 2 h em `aguardando_pagamento`); nulo ao confirmar; índice `idx_appointments_expires_at`; migration 022 |
+| deposit_cents | integer | nullable — sinal calculado no servidor (percentual arredondado ao centavo; valor fixo limitado ao preço); migration 022 |
+| paid_at | timestamptz | nullable — quando a profissional marcou "Pagamento recebido"; migration 022 |
 | price_cents_snapshot | integer | preço no momento do agendamento |
 | reminder_sent | boolean | default false — lembrete 24h enviado? |
 | recurring_group_id | uuid | nullable — FK → recurring_groups |
 | created_at / updated_at | timestamptz | |
 
 **Constraint importante:** exclusão por `gist` evita sobreposição de horários para a mesma profissional (ignora status 'cancelado').
+
+**Reservas temporárias (migration 022):** uma reserva vencida e ainda não varrida continuaria ocupando a constraint; por isso o backend roda `expireDueHolds` antes de criar/alterar agendamentos, a disponibilidade ignora holds vencidos (`expiredHoldSql`) e um sweeper (`startHoldSweeper`, a cada 60 s, `FOR UPDATE SKIP LOCKED`) cancela as vencidas com `cancel_reason='expired'`. Expirar **não** envia mensagem à cliente.
 
 ---
 
@@ -255,7 +269,9 @@ psql $DATABASE_URL -f backend/db/migrations/014_expenses.sql
 | 017 | Foreign keys compostas `(id, professional_id)` cross-tenant (`appointments`→`clients`/`services`/`recurring_groups`, `message_history`→`clients`) |
 | 018 | `services.available_on_whatsapp BOOLEAN NOT NULL DEFAULT true` |
 | 019 | Tabela `admin_audit_log` (audit log de ações administrativas — ver [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md)); sem FK obrigatória para `professionals` (o registro precisa sobreviver à exclusão do ator ou do alvo) |
-| 020 | Colunas `professionals.bio` (VARCHAR 280, apresentação da página pública) e `professionals.public_theme` (VARCHAR 20, padrão `vinho`, CHECK em `vinho`/`verde`/`azul`, independente do tema do painel). **Ainda não aplicada no banco de produção** — aplicar antes de publicar o backend |
+| 020 | Colunas `professionals.bio` (VARCHAR 280, apresentação da página pública) e `professionals.public_theme` (VARCHAR 20, padrão `vinho`, CHECK em `vinho`/`verde`/`azul`, independente do tema do painel). Aplicada em produção em 2026-10-02 (backup `nailflow_pre-migration-020_2026-10-02_191104.dump`) |
+| 021 | `appointments.cancel_reason` (VARCHAR 20) e `appointments.source` (VARCHAR 10, CHECK `public`/`bot` ou nulo). Aplicada em produção em 2026-10-02 (backup `nailflow_pre-migration-021_2026-10-02_210443.dump`) |
+| 022 | `022_confirmation_modes_and_holds.sql` — `professionals.confirmation_mode`, `deposit_required`, `deposit_type`, `deposit_value`, `pix_key` e CHECK `professionals_deposit_check`; `appointments.expires_at`, `deposit_cents`, `paid_at` e índice `idx_appointments_expires_at`; status ganha `aguardando_pagamento`. Aplicada em produção em 2026-10-02 (commit `cb07d38`) após backup `/var/backups/nailflow/nailflow_pre-migration-022_2026-10-02_222934.dump` |
 
 ### Migration obsoleta: `002_bot_tables.sql`
 
