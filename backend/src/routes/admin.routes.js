@@ -4,6 +4,7 @@ import {
   listProfessionals, blockProfessional, unblockProfessional, updateProfessional,
   getDeleteProfessionalPreview, deleteProfessional,
 } from '../controllers/adminController.js';
+import { listAuditLog } from '../controllers/adminAuditController.js';
 import { requireAdmin } from '../middleware/auth.js';
 
 const adminRateLimit = rateLimit({
@@ -22,6 +23,9 @@ const router = Router();
 
 router.use(requireAdmin);
 router.use(adminRateLimit);
+
+// Histórico de ações administrativas: somente leitura (nenhuma rota de escrita).
+router.get('/audit-log', listAuditLog);
 
 router.get('/professionals', listProfessionals);
 router.get('/professionals/:id/delete-preview', getDeleteProfessionalPreview);
