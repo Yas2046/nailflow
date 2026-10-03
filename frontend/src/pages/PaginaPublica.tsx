@@ -211,6 +211,16 @@ export default function PaginaPublica() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
   const [pixCopied, setPixCopied] = useState(false);
+  // Container de dados/revisão: ao escolher o horário (e ao ir para a revisão)
+  // a tela rola até ele, senão a cliente não vê que o formulário apareceu
+  // no fim da lista de dias.
+  const formRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedSlot || !formRef.current) return;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    formRef.current.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  }, [selectedSlot, step]);
 
   async function copyPixKey(key: string) {
     try {
@@ -595,9 +605,19 @@ export default function PaginaPublica() {
 
         {/* ── dados da cliente / revisão ───────────────────────────────────── */}
         {selectedServiceId && selectedSlot && (
-          <div className="mb-10">
+          <div ref={formRef} className="mb-10 scroll-mt-4">
             {step === 'form' && (
               <div className="bg-white border border-wine-100 rounded-xl p-5">
+                <div className="flex items-start gap-2.5 rounded-lg bg-wine-50 border border-wine-100 px-3 py-2.5 mb-4" role="status">
+                  <span className="mt-0.5 w-4 h-4 rounded-full bg-wine-600 flex items-center justify-center shrink-0" aria-hidden="true">
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                  <p className="text-sm text-wine-700 leading-snug">
+                    <span className="font-medium">Horário escolhido:</span> {selectedService?.name} · {formatSlotFull(selectedSlot)}
+                  </p>
+                </div>
                 <p className="text-xs font-semibold text-ink/40 uppercase tracking-widest mb-4">Seus dados</p>
                 <div className="flex flex-col gap-3">
                   <label className="block">

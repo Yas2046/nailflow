@@ -93,6 +93,84 @@ function IconClock() {
   );
 }
 
+// ── Aguardando ação (pedidos pendentes de confirmação/pagamento) ──────────────
+
+function localDateParam(iso: string) {
+  const d = new Date(iso);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+// Leva à Agenda no dia do agendamento e já abre o detalhe (Confirmar/Recusar/Pagamento recebido).
+function agendaLink(item: { id: string; startsAt: string }) {
+  return `/agenda?data=${localDateParam(item.startsAt)}&abrir=${item.id}`;
+}
+function formatWhen(iso: string) {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  return `${day} às ${formatTime(iso)}`;
+}
+function formatDeadline(iso: string) {
+  const min = Math.max(1, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
+  if (min < 60) return `em ${min} min`;
+  if (min < 24 * 60) return `em ${Math.floor(min / 60)} h`;
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${formatTime(iso)}`;
+}
+
+function AwaitingCard({ data }: { data: DashboardSummary['aguardando'] }) {
+  const total = data.confirmacao + data.pagamento;
+  if (total === 0) return null;
+  const parts: string[] = [];
+  if (data.confirmacao > 0) parts.push(`${data.confirmacao} aguardando confirmação`);
+  if (data.pagamento > 0) parts.push(`${data.pagamento} aguardando pagamento`);
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden shadow-sm" role="region" aria-label="Pedidos que precisam da sua ação">
+      <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-widest font-semibold text-amber-700">Precisa da sua ação</p>
+          <p className="font-display text-lg text-wine-800 leading-snug mt-1">{parts.join(' · ')}</p>
+          {data.proximoVencimento && (
+            <p className="text-xs text-amber-800 mt-1 flex items-center gap-1.5">
+              <IconClock />
+              Próximo vencimento {formatDeadline(data.proximoVencimento)}
+            </p>
+          )}
+        </div>
+        <Link
+          to={agendaLink(data.itens[0])}
+          className="shrink-0 flex items-center gap-1.5 text-sm font-semibold text-white bg-wine-600 hover:bg-wine-700 transition-colors rounded-xl px-4 py-2"
+        >
+          Ver na Agenda
+          <IconArrowRight />
+        </Link>
+      </div>
+      <ul className="border-t border-amber-200/70 divide-y divide-amber-200/60">
+        {data.itens.map((item) => (
+          <li key={item.id}>
+            <Link to={agendaLink(item)} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-amber-100/50 transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink/80 truncate">{item.clientName}</p>
+                <p className="text-xs text-ink/50 truncate">{item.serviceName} · {formatWhen(item.startsAt)}</p>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <StatusBadge status={item.status} small />
+                <span className="text-[10px] text-amber-800">vence {formatDeadline(item.expiresAt)}</span>
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {total > data.itens.length && (
+        <p className="px-5 py-2.5 text-xs text-amber-800 border-t border-amber-200/70">
+          e mais {total - data.itens.length} {total - data.itens.length === 1 ? 'pedido' : 'pedidos'} — abra a Agenda para ver todos.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── LoadingSkeleton ───────────────────────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -185,6 +263,8 @@ export default function Inicio() {
             </Link>
           </div>
         )}
+
+        {data.aguardando && <AwaitingCard data={data.aguardando} />}
 
         <OnboardingChecklist status={onboarding} />
 

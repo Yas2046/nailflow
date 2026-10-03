@@ -59,6 +59,20 @@ export interface WeeklyAvailabilityDay {
 }
 
 export interface DashboardSummary {
+  // Reservas feitas pela cliente que aguardam ação da profissional (com validade em curso).
+  aguardando: {
+    confirmacao: number;
+    pagamento: number;
+    proximoVencimento: string | null;
+    itens: Array<{
+      id: string;
+      clientName: string;
+      serviceName: string;
+      startsAt: string;
+      status: AppointmentStatus;
+      expiresAt: string;
+    }>;
+  };
   agendamentosHoje: Array<{
     id: string;
     clientName: string;

@@ -42,6 +42,7 @@ export async function getDashboardSummary(req, res, next) {
       topServicosResult,
       sixMonthsResult,
       gastosResult,
+      awaitingResult,
     ] = await Promise.all([
       // agendamentos de hoje (exceto cancelados)
       pool.query(
@@ -140,6 +141,25 @@ export async function getDashboardSummary(req, res, next) {
          ORDER BY 1 ASC`,
         [professionalId, sixMonthsAgoDate]
       ),
+
+      // reservas que ainda precisam de ação da profissional: aguardando
+      // confirmação ou pagamento, com validade (expires_at) ainda em curso.
+      // Só entram pedidos feitos pela cliente (têm validade); agendamentos
+      // criados na Agenda como "pendente" não expiram e ficam de fora.
+      pool.query(
+        `SELECT a.id, a.status, a.starts_at, a.expires_at,
+                c.name AS client_name, s.name AS service_name
+         FROM appointments a
+         JOIN clients c ON c.id = a.client_id
+         JOIN services s ON s.id = a.service_id
+         WHERE a.professional_id = $1
+           AND a.status IN ('pendente', 'aguardando_pagamento')
+           AND a.expires_at IS NOT NULL AND a.expires_at > $2
+           AND a.ends_at > $2
+         ORDER BY a.expires_at ASC, a.starts_at ASC
+         LIMIT 200`,
+        [professionalId, now]
+      ),
     ]);
 
     // ── hoje ──────────────────────────────────────────────────────────────────
@@ -169,7 +189,24 @@ export async function getDashboardSummary(req, res, next) {
       variacao = Math.round(((faturamentoRealizado - prevMesFaturamento) / prevMesFaturamento) * 100);
     }
 
+    // ── aguardando ação (ordenado pelo vencimento mais próximo) ───────────────
+    const awaiting = awaitingResult.rows;
+    const aguardando = {
+      confirmacao: awaiting.filter((a) => a.status === 'pendente').length,
+      pagamento: awaiting.filter((a) => a.status === 'aguardando_pagamento').length,
+      proximoVencimento: awaiting[0]?.expires_at ?? null,
+      itens: awaiting.slice(0, 5).map((a) => ({
+        id: a.id,
+        clientName: a.client_name,
+        serviceName: a.service_name,
+        startsAt: a.starts_at,
+        status: a.status,
+        expiresAt: a.expires_at,
+      })),
+    };
+
     res.json({
+      aguardando,
       // ── dados já existentes ────────────────────────────────────────────────
       agendamentosHoje: todayAppts.map((a) => ({
         id: a.id,

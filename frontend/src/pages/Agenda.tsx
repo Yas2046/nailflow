@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { api } from '../services/api';
 import type { Appointment, Service, WeeklyAvailabilityDay } from '../types';
@@ -86,10 +87,21 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// "?data=AAAA-MM-DD" (dia local) vindo do atalho da Início; ignora valor inválido.
+function parseDateParam(value: string | null): Date | null {
+  const m = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export default function Agenda() {
   usePageTitle('Agenda');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Atalho da Início: "?data=...&abrir=<id>" abre o dia e o detalhe do agendamento.
+  const [deepLink] = useState(() => ({ date: parseDateParam(searchParams.get('data')), openId: searchParams.get('abrir') }));
   const [view, setView]             = useState<ViewMode>('dia');
-  const [currentDate, setCurrentDate] = useState(startOfDay(new Date()));
+  const [currentDate, setCurrentDate] = useState(deepLink.date ?? startOfDay(new Date()));
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [blocked, setBlocked]       = useState<BlockedTime[]>([]);
   const [weeklyAvailability, setWeeklyAvailability] = useState<WeeklyAvailabilityDay[]>([]);
@@ -104,6 +116,19 @@ export default function Agenda() {
   useEffect(() => {
     api.get<WeeklyAvailabilityDay[]>('/availability').then(setWeeklyAvailability).catch(() => {});
     api.get<Service[]>('/services').then(setServices).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!deepLink.date && !deepLink.openId) return;
+    setSearchParams({}, { replace: true }); // o atalho vale só uma vez
+    const { date, openId } = deepLink;
+    if (!date || !openId) return;
+    api.get<Appointment[]>(`/appointments?from=${date.toISOString()}&to=${addDays(date, 1).toISOString()}`)
+      .then((list) => {
+        const target = list.find((a) => a.id === openId);
+        if (target) setModalState({ type: 'edit', appointment: target });
+      })
+      .catch(() => {});
   }, []);
 
   const rangeStart = useMemo(() => {
