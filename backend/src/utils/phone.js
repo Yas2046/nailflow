@@ -23,6 +23,17 @@ export function normalizeClientPhone(raw) {
   return normalizeBrPhone(digits);
 }
 
+// Número da profissional no formato de envio da Evolution: só dígitos, com DDI 55
+// (aceita máscara, "+55", zero de tronco e número sem DDI). Não mexe no que está salvo
+// no banco e mantém o 9 como foi cadastrado. Devolve null quando não dá para montar
+// um número brasileiro (vazio, curto ou longo demais), para o aviso ser descartado.
+export function whatsappNumberForSending(raw) {
+  const digits = String(raw ?? '').replace(/\D/g, '').replace(/^0+/, '');
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) return digits;
+  return null;
+}
+
 // 55 + DDD (sem zero) + 8 dígitos.
 export function isValidBrPhone(normalized) {
   return /^55[1-9]{2}\d{8}$/.test(normalized);

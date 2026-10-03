@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { pool } from '../config/db.js';
 import { getAvailableSlots, checkSlotAvailability, customerNotBefore, clock } from '../utils/availability.js';
 import { getZonedParts, timeStringToUtcOnDate } from '../utils/timezone.js';
-import { normalizeClientPhone, isValidBrPhone, findClientByPhone } from '../utils/phone.js';
+import { normalizeClientPhone, isValidBrPhone, findClientByPhone, whatsappNumberForSending } from '../utils/phone.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
 import { expireDueHolds, initialBookingState, formatWhen, calculateDepositCents, paymentInstructionsText } from '../utils/bookingRules.js';
@@ -274,16 +274,22 @@ export async function createPublicAppointment(req, res, next) {
 
       // Notifica a profissional pelo WhatsApp (fire-and-forget: uma falha
       // aqui nunca desfaz nem atrasa a resposta do agendamento já criado).
-      notifyN8n('appointment.public_created', {
-        professionalId: professional.id,
-        professionalPhone: professional.phone_whatsapp,
-        waInstance: professional.wa_instance_name,
-        clientName: data.clientName,
-        clientPhone: phone,
-        serviceName: service.name,
-        startsAt: apptRows[0].starts_at,
-        endsAt: apptRows[0].ends_at,
-      });
+      // Só avisa quem tem a própria instância conectada: sem `wa_instance_name`
+      // não há por onde enviar e não existe instância reserva — o aviso é
+      // descartado aqui (o agendamento segue normalmente na Agenda/Início).
+      const professionalInstance = String(professional.wa_instance_name ?? '').trim();
+      if (professionalInstance) {
+        notifyN8n('appointment.public_created', {
+          professionalId: professional.id,
+          professionalPhone: whatsappNumberForSending(professional.phone_whatsapp),
+          waInstance: professionalInstance,
+          clientName: data.clientName,
+          clientPhone: phone,
+          serviceName: service.name,
+          startsAt: apptRows[0].starts_at,
+          endsAt: apptRows[0].ends_at,
+        });
+      }
 
       // Mensagem à cliente (o backend decide o texto; o n8n só entrega):
       //   pendente    → "recebemos sua solicitação, aguardando confirmação"

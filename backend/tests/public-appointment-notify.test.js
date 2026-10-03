@@ -16,6 +16,7 @@ let authCookie;
 let professionalId;
 let serviceId;
 let originalFetch;
+let originalInstance;
 let capturedCalls = [];
 const realFetch = global.fetch;
 
@@ -39,6 +40,9 @@ after(async () => {
   delete process.env.N8N_WEBHOOK_PUBLIC_CREATED_URL;
   if (dbAvailable) {
     const { pool } = await import('../src/config/db.js');
+    if (professionalId) {
+      await pool.query('UPDATE professionals SET wa_instance_name = $1 WHERE id = $2', [originalInstance ?? null, professionalId]);
+    }
     if (serviceId) {
       await pool.query('DELETE FROM appointments WHERE service_id = $1', [serviceId]);
       await pool.query('DELETE FROM services WHERE id = $1', [serviceId]);
@@ -98,6 +102,12 @@ test('criar agendamento pela página pública dispara appointment.public_created
   process.env.N8N_WEBHOOK_PUBLIC_CREATED_URL = 'http://n8n-test/public-created';
   mockFetch();
 
+  // O aviso só sai para quem tem instância própria: a conta da seed não tem
+  // (restaurada no `after`).
+  const { pool } = await import('../src/config/db.js');
+  originalInstance = (await pool.query('SELECT wa_instance_name FROM professionals WHERE id = $1', [professionalId])).rows[0].wa_instance_name;
+  await pool.query('UPDATE professionals SET wa_instance_name = $1 WHERE id = $2', ['inst-f9-teste', professionalId]);
+
   const avail = await req('GET', `/public/camila-nails-studio/availability?days=30&serviceId=${serviceId}`);
   assert.equal(avail.status, 200);
   const firstDay = avail.body.days.find((d) => d.slots.length > 0);
@@ -120,6 +130,7 @@ test('criar agendamento pela página pública dispara appointment.public_created
 
   const { payload } = capturedCalls[0].body;
   assert.equal(payload.professionalId, professionalId, 'deve notificar somente a profissional dona do agendamento');
+  assert.equal(payload.waInstance, 'inst-f9-teste', 'deve usar a instância da própria profissional');
   assert.equal(payload.clientName, 'Cliente Teste F9');
   assert.equal(payload.serviceName, 'Serviço Notificação F9');
   assert.equal(payload.startsAt, startsAt);
