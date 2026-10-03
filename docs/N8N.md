@@ -14,16 +14,16 @@
 
 ## Workflows
 
-### Ativos (verificado em 2026-09-27)
+### Ativos (verificado em 2026-10-03 no banco do n8n: 6 workflows ativos; versões publicadas = `activeVersionId`)
 
 | Nome | ID | Gatilho | Função | Versão publicada | Estado |
 |---|---|---|---|---|---|
-| WhatsApp NailFlow — Definitivo | 3yBtUtgMlKsXh3mw | webhook `whatsapp-nailflow` (Header Auth) | Processa mensagens recebidas das instâncias | `74585f0a` | ✅ ativo; sem mensagens desde a desconexão do `chip2` |
-| NailFlow — Notificações | jgCnaeacHYMH6SRT | webhook `nailflow/notificacoes` (Header Auth) | Avisa a cliente sobre confirmação/cancelamento | `7eb7fd01` | ✅ ativo, webhook registrado |
+| WhatsApp NailFlow — Definitivo | 3yBtUtgMlKsXh3mw | webhook `whatsapp-nailflow` (Header Auth) | Processa mensagens recebidas das instâncias | `6ca0c1a3` | ✅ ativo; recebe mensagens do `chip2` (`open`) — ver "Execuções do Definitivo que param em Extrair Dados" |
+| NailFlow — Notificações | jgCnaeacHYMH6SRT | webhook `nailflow/notificacoes` (Header Auth) | Avisa a **cliente** sobre confirmação (`appointment.confirmed`) e cancelamento (`appointment.cancelled`) e a **profissional** sobre novo agendamento pela página pública (`appointment.public_created`, F9; editado manualmente na interface em 2026-10-01) | `a862d701` | ✅ ativo, webhook registrado; **sem guarda própria para `waInstance` nula** (ver "Notificações e instância nula") |
 | NailFlow — Abandono de Conversa | rQ7S8XcAiiTCgXEr | Schedule (15 min) | Detecta conversas abandonadas e notifica | `d566c2fe` | ✅ corrigido em 2026-09-27; execuções com sucesso |
 | NailFlow — Lembretes de Agendamento | crVRWCDoVzCEWSgz | Schedule (30 min) | Envia lembrete ~24h antes | `9da88cb4` | ✅ corrigido em 2026-09-27; execuções com sucesso |
-| NailFlow — Solicitação Recusada | NfSolRecusada0001 | webhook `nailflow/solicitacao-recusada` (Header Auth) | Avisa a cliente que a solicitação foi recusada (evento `appointment.rejected`) | — | ✅ publicado em 2026-10-02 (Fase 1A) |
-| NailFlow — Mensagem à Cliente | NfMensagemCliente01 | webhook `nailflow/mensagem-cliente` (Header Auth) | Canal genérico de mensagem à cliente (evento `message.send`): recebimento da solicitação e instruções de sinal Pix | — | ✅ publicado em 2026-10-02 (commit `cb07d38`) |
+| NailFlow — Solicitação Recusada | NfSolRecusada0001 | webhook `nailflow/solicitacao-recusada` (Header Auth) | Avisa a cliente que a solicitação foi recusada (evento `appointment.rejected`) | `73a60c8b` | ✅ publicado em 2026-10-02 (Fase 1A) |
+| NailFlow — Mensagem à Cliente | NfMensagemCliente01 | webhook `nailflow/mensagem-cliente` (Header Auth) | Canal genérico de mensagem à cliente (evento `message.send`): recebimento da solicitação e instruções de sinal Pix | `c3749877` | ✅ publicado em 2026-10-02 (commit `cb07d38`) |
 
 Todos usam o nome da instância de forma dinâmica (`waInstance`, a partir de `GET /bot/instances` ou do payload) — nenhum tem instância fixa.
 
@@ -128,6 +128,16 @@ O backend dispara `POST` fire-and-forget com `X-NailFlow-Webhook-Secret` (`N8N_N
 
 `message.send` leva `payload = {kind: appointment_requested | payment_instructions, waInstance, clientPhone, clientName, text}`; o workflow só envia `payload.text` (≤ 1000 caracteres), valida `clientPhone` (10–15 dígitos) e `waInstance`, e usa a credencial Evolution já existente. Quem monta o texto é o backend. Expirar uma reserva e a confirmação por "Pagamento recebido" não usam `message.send`: a confirmação usa `appointment.confirmed`; a expiração não envia nada.
 
+**`appointment.public_created`** (aviso à profissional de um agendamento feito pela página pública; payload: `professionalId`, `professionalPhone`, `waInstance`, `clientName`, `clientPhone`, `serviceName`, `startsAt`, `endsAt`):
+- Desde `50906f5` (2026-10-03) o **backend não envia o evento** quando a profissional não tem `wa_instance_name` (nulo, vazio ou só espaços). Nesse caso o n8n nem é chamado — nenhuma execução, nenhum erro e nenhuma chamada à Evolution —, e o agendamento segue normalmente na Agenda e na Início. **Não há fallback** para outra instância: cada profissional usa exclusivamente a própria.
+- O `professionalPhone` vai normalizado no ponto de envio (`whatsappNumberForSending`, `utils/phone.js`): só dígitos, com DDI `55` (aceita máscara, `+55`, número sem DDI e zero de tronco; não duplica o `55`; vazio ou inválido vira `null`, e o workflow descarta o aviso). O telefone salvo no banco não é alterado.
+- O workflow "Notificações" em si **não foi alterado**: a guarda está no backend, não no workflow.
+- Validado em produção apenas no caminho sem instância (2026-10-03, `studio-simone-teles`); a normalização foi validada por testes automatizados.
+
+### Notificações e instância nula
+
+Os workflows "Mensagem à Cliente" e "Solicitação Recusada" descartam o evento com `sem_instancia` quando `waInstance` está vazia (execução com sucesso, sem envio). O "Notificações" **não tem essa guarda**: em `appointment.confirmed` e `appointment.cancelled` com `waInstance` nula, o node de envio chama `…/message/sendText/null`, a Evolution responde 404 e a execução fica com erro — nada é enviado e nenhuma outra instância é usada. Para `public_created` isso é evitado pelo backend (acima). Pendência registrada em [`PENDENCIAS.md`](./PENDENCIAS.md) (M17); corrigir exigiria publicar uma nova versão do workflow.
+
 ## Arquivos de workflows exportados
 
 Localização: `/var/www/nailflow/n8n/workflows/`
@@ -178,11 +188,11 @@ O workflow "NailFlow — Notificações" foi ativado (última execução com suc
 **Validação real:**
 - Execução 11225 do Abandono (2026-09-27 13:45 UTC): as 2 instâncias processadas pela saída `loop` (`chip2`, depois `chip2-teste`), "Buscar abandonados" rodou uma vez por instância sem erro, o loop terminou pela saída `done`; nenhum envio
 - Consulta somente leitura de 2026-09-27: de 13:45 a 17:15 UTC, 15 execuções do Abandono e 7 dos Lembretes (a partir de 14:00), todas `success`
-- **Não validado ainda:** os loops internos com itens reais (na execução 11225 não havia abandonos; os Lembretes não foram conferidos node a node) e o envio real de lembrete/abandono — o `chip2` e o `chip2-teste` estão desconectados
+- **Não validado ainda:** os loops internos com itens reais (na execução 11225 não havia abandonos; os Lembretes não foram conferidos node a node) e o envio real de lembrete/abandono — o `chip2` e o `chip2-teste` estavam desconectados (estado de 2026-09-27; em 2026-10-03 o `chip2` está `open` e o `chip2-teste` `connecting`)
 
 ### ⚠️ Aviso interno à profissional falha com telefone placeholder (F9)
 
-O evento `appointment.public_created` (aviso à profissional de uma nova reserva pela página pública) falha no node de envio com "Bad request" quando o `phone_whatsapp` da profissional é o número placeholder da conta de teste (`5531999999999`, rejeitado pela Evolution). Reproduzido nos cenários E2E de 2026-10-03 (ex.: execução #14769). Não afeta a mensagem à cliente nem o status da reserva; some com um telefone real cadastrado (ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
+O evento `appointment.public_created` (aviso à profissional de uma nova reserva pela página pública) falha no node de envio com "Bad request" quando o `phone_whatsapp` da profissional é o número placeholder da conta de teste (`5531999999999`, rejeitado pela Evolution); é o caso atual da Camila, cuja instância `chip2` (o WhatsApp pessoal da responsável) é usada **de propósito** pelo perfil de teste. Reproduzido nos cenários E2E de 2026-10-03 (ex.: execução #14769). Não afeta a mensagem à cliente nem o status da reserva; some com um telefone real cadastrado (ver F9 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
 
 ### ℹ️ Execuções do "Definitivo" que param em "Extrair Dados"
 

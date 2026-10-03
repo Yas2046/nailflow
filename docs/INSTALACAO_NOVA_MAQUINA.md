@@ -160,10 +160,18 @@ psql $DATABASE_URL -f db/migrations/011_conversation_bot_columns.sql
 psql $DATABASE_URL -f db/migrations/012_clients_tags.sql
 psql $DATABASE_URL -f db/migrations/013_professionals_avatar.sql
 psql $DATABASE_URL -f db/migrations/014_expenses.sql
+psql $DATABASE_URL -f db/migrations/015_unique_wa_instance_name.sql
+psql $DATABASE_URL -f db/migrations/016_professional_blocking.sql
+psql $DATABASE_URL -f db/migrations/017_cross_tenant_foreign_keys.sql
+psql $DATABASE_URL -f db/migrations/018_service_available_on_whatsapp.sql
+psql $DATABASE_URL -f db/migrations/019_admin_audit_log.sql
+psql $DATABASE_URL -f db/migrations/020_public_profile.sql
+psql $DATABASE_URL -f db/migrations/021_appointment_cancel_reason_source.sql
+psql $DATABASE_URL -f db/migrations/022_confirmation_modes_and_holds.sql
 ```
 
 - A migration 002 oficial é **`db/migrations/002_evolution_api_tables.sql`** (tabelas do bot). **Não execute `db/migrations/_historico/002_bot_tables.sql`**: é uma versão obsoleta, guardada só como histórico, que cria as tabelas do bot num formato incompatível com o código.
-- As migrations **007–014 fazem parte da sequência atual**: 007–010 são necessárias para Disponibilidade (antecedência e fechamentos) e para a área administrativa; 011 para o bot; 012 para o CRM (tags); 013 para a foto do Perfil; 014 para Gastos e Dashboard. Detalhes em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md).
+- As migrations **007–022 fazem parte da sequência atual**: 007–010 são necessárias para Disponibilidade (antecedência e fechamentos) e para a área administrativa; 011 para o bot; 012 para o CRM (tags); 013 para a foto do Perfil; 014 para Gastos e Dashboard; 015–019 para unicidade da instância, bloqueio de contas, isolamento entre profissionais, visibilidade de serviços no WhatsApp e o audit log do Admin; 020 para o perfil da página pública; 021–022 para a confirmação/recusa de solicitações, as reservas com validade e o sinal por Pix. Detalhes em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md).
 - Não há executor de migrations: aplicar com `psql`, com o dono do banco.
 - **Seed (opcional):** depois de todas as migrations, `npm run db:seed` cria a conta de exemplo `camila@nailflow.com` / `senha123` com serviços, expediente e clientes fictícias.
 
@@ -190,9 +198,9 @@ npm test        # node --test tests/*.test.js
 
 > ⚠️ Os testes **gravam no banco** apontado por `DATABASE_URL`: rode-os sempre num banco descartável, nunca no de produção. Deixe vazias as URLs do n8n (`N8N_WEBHOOK_CONFIRMED_URL`, `N8N_WEBHOOK_CANCELLED_URL`) e aponte `EVOLUTION_API_URL` para um endereço inexistente, para nenhuma chamada sair da máquina.
 >
-> Para rodar a suíte completa, o banco descartável precisa estar montado com `schema.sql` → migrations 002, 001, 003–014 → `seed.sql` (o teste de login usa a conta do seed).
+> Para rodar a suíte completa, o banco descartável precisa estar montado com `schema.sql` → migrations 002, 001, 003–022 → `seed.sql` (o teste de login usa a conta do seed).
 >
-> Resultado atual (2026-09-27): **57 testes, 57 passam**, conferido em dois bancos descartáveis.
+> Resultado atual (2026-10-03, `main` em `50906f5`): **288 testes, 276 passam e 12 falham** — as 12 falhas conhecidas (9 testes antigos que esperam `body.token` no login e 3 do bot que dependem do dia da semana; ver I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)), conferidas em banco descartável montado com a sequência acima. Histórico: em 2026-09-27 a suíte tinha 57 testes e 57 passavam, em dois bancos descartáveis.
 
 ---
 

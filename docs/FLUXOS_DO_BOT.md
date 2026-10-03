@@ -46,7 +46,7 @@ INICIO
   └── → MENU
 
 MENU  (1 Agendar · 2 Cancelar · 3 Ver meus agendamentos · 4 Falar com a profissional)
-  ├── "1" ou agendar → AGUARDANDO_SERVICO → AGUARDANDO_DATA → AGUARDANDO_HORARIO → confirmar → cria agendamento
+  ├── "1" ou agendar → AGUARDANDO_SERVICO → AGUARDANDO_DATA → AGUARDANDO_HORARIO → confirmar → cria agendamento (status conforme a configuração da profissional — ver "Agendamento criado pelo bot")
   ├── "2" ou cancelar → lista agendamentos → confirmar → cancela
   ├── "3" → lista os agendamentos da cliente
   ├── "4" ou falar com a profissional → ATENDIMENTO_HUMANO
@@ -55,7 +55,7 @@ MENU  (1 Agendar · 2 Cancelar · 3 Ver meus agendamentos · 4 Falar com a profi
   └── → permanece em MENU
 
 AGUARDANDO_CONFIRMACAO_AGENDAMENTO   (classifyReply 'booking')
-  ├── sim → cria agendamento → notifica n8n (nailflow/notificacoes) → MENU
+  ├── sim → cria agendamento (`pendente`, `confirmado` ou `aguardando_pagamento`) e responde com a mensagem correspondente → MENU
   ├── não → MENU
   └── ambíguo/inválido → pede de novo
 
@@ -64,7 +64,7 @@ AGUARDANDO_CANCELAMENTO
   └── "cancelar" / "0" → MENU
 
 AGUARDANDO_CONFIRMACAO_CANCELAMENTO  (classifyReply 'cancel')
-  ├── sim → cancela agendamento → notifica n8n (nailflow/notificacoes) → MENU
+  ├── sim → cancela agendamento (`status = 'cancelado'` só se ele pertence à cliente; sem evento para o n8n) → MENU
   ├── não → mantém o agendamento → MENU
   └── ambíguo/inválido → pede de novo
 
@@ -89,7 +89,28 @@ Desde 2026-09-27 as três confirmações acima usam `backend/src/utils/replyClas
   | `cancel` (confirmar cancelamento) | s, sim, ss, yes, ok, confirma, confirmo, pode, cancela, cancelar | n, não, nope, negativo; frases "manter", "mantém", "não cancela" |
   | `repeat` (repetir último serviço) | s, sim, ss, yes, ok, quero, pode, bora, vamos, claro, isso; "com certeza" | n, não, nope, negativo; "outro(s)/outra(s)/opções…", "ver opções", "menu" |
 - **Motivo:** antes, respostas como "segunda seria melhor" ou "sei lá" podiam ser tomadas como confirmação (começam com "s")
-- Testes: ver [`TESTES_REALIZADOS.md`](./TESTES_REALIZADOS.md), Teste 13. Ainda **sem teste real pelo WhatsApp** (instâncias desconectadas)
+- Testes: ver [`TESTES_REALIZADOS.md`](./TESTES_REALIZADOS.md), Teste 13 (automatizado). O fluxo de agendamento e o de cancelamento foram **validados pelo WhatsApp real com uma cliente em 2026-10-01** (C2 e C3 em [`PENDENCIAS.md`](./PENDENCIAS.md)), depois da reconexão do `chip2`; a mensagem real que passa pelo webhook foi confirmada em 2026-09-30 (C1)
+
+## Agendamento criado pelo bot
+
+Ao confirmar com "sim", o bot cria o agendamento com o mesmo critério da página pública (`initialBookingState` em `utils/bookingRules.js`, conforme a configuração da profissional em Configurações → Agendamento):
+
+| Configuração | Status criado | Validade (`expires_at`) | Resposta do bot |
+|---|---|---|---|
+| Confirmação **manual** | `pendente` ("Aguardando confirmação") | 24 h | "Recebi sua solicitação! … está aguardando a confirmação da profissional. Assim que ela confirmar, eu te aviso por aqui." |
+| **Automática**, sem sinal | `confirmado` | sem validade | "Prontinho! … confirmado para <data> às <hora>." |
+| **Automática com sinal** | `aguardando_pagamento` | 2 h | Instruções de Pix: serviço, data e hora, valor do sinal (`deposit_cents`, calculado no servidor), chave Pix da profissional e prazo de 2 horas |
+
+- **A resposta do bot é a própria mensagem enviada à cliente**: o bot **não** dispara evento para o n8n nem usa o webhook `nailflow/notificacoes` (nem na criação nem no cancelamento); o n8n só envia o texto devolvido por `POST /bot/process` e registra a mensagem com `POST /bot/record-sent`.
+- O agendamento criado pelo bot nasce com `source = 'bot'`; recusar uma solicitação sua pela Agenda avisa a cliente (`appointment.rejected`), e confirmar ou "Pagamento recebido" dispara `appointment.confirmed` (ver [`N8N.md`](./N8N.md)).
+- A reserva que vence sem confirmação/pagamento é cancelada pelo sweeper (`cancelado` + `cancel_reason = 'expired'`) **sem mensagem à cliente**.
+- A profissional **não** recebe o aviso interno de "novo agendamento" quando a reserva vem do bot (esse aviso, `appointment.public_created`, existe só para a página pública).
+
+## Limitações conhecidas
+
+- Atendimento por menu numerado e atalhos de intenção ("ver", "cancelar", "desistir"); texto livre fora disso recebe "Não entendi" com o menu e, na 3ª tentativa, vai para `ATENDIMENTO_HUMANO`. A conversa em linguagem natural (F10) não está implementada — ver [`PENDENCIAS.md`](./PENDENCIAS.md).
+- O bot responde a **qualquer mensagem privada** recebida na instância conectada (só mensagens de grupo são ignoradas pelo n8n). No perfil de teste, o `chip2` é o WhatsApp pessoal da responsável (ver [`WHATSAPP_EVOLUTION.md`](./WHATSAPP_EVOLUTION.md)).
+- Fichas antigas de cliente gravadas sem o `55` não são encontradas pelo bot (comportamento preservado).
 
 ## Telefone da cliente
 
@@ -180,4 +201,4 @@ O workflow **"NailFlow — Lembretes de Agendamento"** (cron, a cada 30 min):
 5. Backend atualiza `reminder_sent = true` → previne duplicata
 
 - **Falhou de 2026-09-21 17:30 UTC até 2026-09-27**; **corrigido em 2026-09-27** — saídas do loop, Always Output Data e condição de "Tem lembretes?" (`{{ $json.id }}` não vazio, avaliada item a item). Detalhes em [`N8N.md`](./N8N.md)
-- Execuções `success` desde 14:00 UTC de 2026-09-27; **nenhum lembrete real enviado após a correção** (o `chip2` e o `chip2-teste` estão desconectados, então um envio não chegaria a ninguém)
+- Execuções `success` desde 14:00 UTC de 2026-09-27; em 2026-10-03, 144 de 144 execuções dos últimos 3 dias terminaram em `success`. Há 8 agendamentos com `reminder_sent = true` (o último atualizado em 2026-10-02), mas **não há registro de validação de recebimento de um lembrete real** — o único lembrete que o fluxo atual pode enviar sai da própria instância de cada profissional (hoje só o `chip2` da Camila está conectado)

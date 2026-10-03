@@ -32,6 +32,10 @@ Profissionais cadastradas no sistema. Cada profissional é um tenant isolado.
 | avatar_b64 | text | nullable, foto de perfil em base64 (migration 013) |
 | is_admin | boolean | NOT NULL, default `false` — conta de administração (migration 010) |
 | booking_horizon_days | smallint | NOT NULL, default `60` — antecedência máxima da agenda em dias; a API aceita 7 a 365 (migration 007) |
+| blocked_at | timestamptz | nullable — conta bloqueada (checado a cada requisição autenticada; migration 016) |
+| token_version | integer | NOT NULL, default `1` — invalidação de sessões (o JWT carrega a versão; sobe no desbloqueio; migration 016) |
+| bio | varchar(280) | nullable — apresentação exibida na página pública (migration 020) |
+| public_theme | varchar(20) | NOT NULL, default `'vinho'`; CHECK `professionals_public_theme_check`: `vinho` / `verde` / `azul` — cor da página pública, independente do tema do painel (migration 020) |
 | confirmation_mode | varchar(10) | NOT NULL, default `'manual'`; CHECK: `manual` / `automatic` (migration 022) |
 | deposit_required | boolean | NOT NULL, default `false` — cobra sinal (migration 022) |
 | deposit_type | VARCHAR(10) | nullable — `percentage` / `fixed` (migration 022) |
@@ -70,6 +74,7 @@ Serviços oferecidos por cada profissional.
 | price_cents | integer | em centavos (ex: 8000 = R$80,00) |
 | duration_minutes | integer | |
 | active | boolean | default true |
+| available_on_whatsapp | boolean | NOT NULL, default `true` — se `false`, o serviço continua na Agenda mas não é oferecido pelo bot nem pela página pública (migration 018) |
 | created_at / updated_at | timestamptz | |
 
 ---
@@ -251,7 +256,17 @@ psql $DATABASE_URL -f backend/db/migrations/011_conversation_bot_columns.sql
 psql $DATABASE_URL -f backend/db/migrations/012_clients_tags.sql
 psql $DATABASE_URL -f backend/db/migrations/013_professionals_avatar.sql
 psql $DATABASE_URL -f backend/db/migrations/014_expenses.sql
+psql $DATABASE_URL -f backend/db/migrations/015_unique_wa_instance_name.sql
+psql $DATABASE_URL -f backend/db/migrations/016_professional_blocking.sql
+psql $DATABASE_URL -f backend/db/migrations/017_cross_tenant_foreign_keys.sql
+psql $DATABASE_URL -f backend/db/migrations/018_service_available_on_whatsapp.sql
+psql $DATABASE_URL -f backend/db/migrations/019_admin_audit_log.sql
+psql $DATABASE_URL -f backend/db/migrations/020_public_profile.sql
+psql $DATABASE_URL -f backend/db/migrations/021_appointment_cancel_reason_source.sql
+psql $DATABASE_URL -f backend/db/migrations/022_confirmation_modes_and_holds.sql
 ```
+
+A lista acima reproduz a ordem usada para montar um banco novo (e os bancos descartáveis dos testes); em produção cada migration foi aplicada uma vez, manualmente, e as de 020 a 022 sempre depois de um backup (`/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`). O seed (`backend/db/seed.sql`) vem depois de todas.
 
 | Migration | Conteúdo |
 |---|---|

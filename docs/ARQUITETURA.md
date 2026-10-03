@@ -67,8 +67,17 @@ As portas 3333 (backend) e 5678 (n8n) estão **bloqueadas externamente pelo UFW*
 
 ### 3. Backend → n8n (notificação de agendamento)
 
-- Ao confirmar/cancelar agendamento, o backend chama `N8N_WEBHOOK_CONFIRMED_URL` / `N8N_WEBHOOK_CANCELLED_URL` (path `nailflow/notificacoes`) com o cabeçalho `X-NailFlow-Webhook-Secret` (valor de `N8N_NOTIFY_SECRET`, enviado por `utils/notifyN8n.js`)
-- O workflow **"NailFlow — Notificações"** está ativo e com o webhook registrado; a mensagem é enviada pela instância da profissional (`waInstance` no payload)
+- O backend avisa o n8n por `POST` fire-and-forget (`utils/notifyN8n.js`), depois de gravar no banco, com o cabeçalho `X-NailFlow-Webhook-Secret` (valor de `N8N_NOTIFY_SECRET`) e o corpo `{event, payload, sentAt}`. Uma falha no n8n nunca desfaz nem atrasa a resposta da API. Eventos atuais e a variável de URL de cada um:
+
+  | Evento | Quando | Variável | Workflow / path |
+  |---|---|---|---|
+  | `appointment.confirmed` | confirmar (Agenda), edição que muda o status para `confirmado`, "Pagamento recebido" ou reserva pública em modo automático sem sinal | `N8N_WEBHOOK_CONFIRMED_URL` | "Notificações" — `nailflow/notificacoes` |
+  | `appointment.cancelled` | cancelamento pela Agenda (`DELETE /appointments/:id`) | `N8N_WEBHOOK_CANCELLED_URL` | "Notificações" — `nailflow/notificacoes` |
+  | `appointment.public_created` | nova reserva pela página pública (aviso à **profissional**; só se ela tiver `wa_instance_name`) | `N8N_WEBHOOK_PUBLIC_CREATED_URL` | "Notificações" — `nailflow/notificacoes` |
+  | `appointment.rejected` | recusa de solicitação pela Agenda (só se a origem for `public` ou `bot`) | `N8N_WEBHOOK_REJECTED_URL` | "Solicitação Recusada" — `nailflow/solicitacao-recusada` |
+  | `message.send` | mensagem à cliente montada pelo backend: "recebemos sua solicitação" ou instruções de Pix (reserva pública) | `N8N_WEBHOOK_MESSAGE_URL` | "Mensagem à Cliente" — `nailflow/mensagem-cliente` |
+
+- Cada mensagem sai pela instância da própria profissional (`waInstance` no payload), nunca por outra; o bot não usa esses eventos (a resposta dele é a própria mensagem) e a expiração de uma reserva não envia nada. Detalhes dos workflows e do comportamento sem instância em [`N8N.md`](./N8N.md)
 
 ### 4. n8n → Backend (crons de lembretes e abandono)
 

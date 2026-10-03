@@ -1,13 +1,48 @@
-# NailFlow — Status Atual (2026-09-30)
+# NailFlow — Status Atual (2026-10-03)
 
-## Git
+## Estado atual — 2026-10-03 (referência: `main` em `50906f5`)
+
+> Este bloco descreve o estado real em 2026-10-03. **Tudo abaixo desta seção, até "O que NÃO está publicado", é histórico até 2026-09-30** (V1/V2, rodadas de segurança, Admin e página pública); foi mantido como registro e só recebeu notas pontuais de estado atual onde ficaria enganoso.
+
+**Git e deploy**
+- **Repositório:** https://github.com/Yas2046/nailflow — branch de trabalho **`main`**, `main` = `origin/main` = `50906f5`, publicada e **em produção** (a `feat/phase5-register` foi integrada à `main` em 2026-10-02 e é só histórico).
+- **Commits recentes:**
+
+  | Commit | Data | O quê |
+  |---|---|---|
+  | `50906f5` | 2026-10-03 | `public_created` só com instância própria; telefone da profissional normalizado (`55` + número) |
+  | `3bcbb1a` | 2026-10-03 | Início com card "Precisa da sua ação", atalho para a Agenda (`?data=&abrir=`) e scroll/confirmação visual na página pública |
+  | `501cd55` | 2026-10-03 | Documentação: confirmação e sinal |
+  | `cb07d38` | 2026-10-02 | Confirmação manual/automática, reserva com expiração, sinal por Pix manual, mensagens à cliente (`message.send`) |
+  | `47eccc5` / `47c2886` / `a36626b` | 2026-10-02 | Fase 1A: confirmar/recusar solicitações (Agenda, backend, bot, aviso de recusa) |
+  | `6122abc` | 2026-10-02 | Antecedência mínima de 30 min para clientes |
+
+- **Produção:** `nailflow-backend` (PM2) reiniciado em 2026-10-03 (PID 1253738 após o deploy de `50906f5`); frontend publicado com o build de `3bcbb1a` (`dist` anterior preservado em `dist.bak_20261003-pre-home-ux`); banco com as migrations **até a 022** (backups `nailflow_pre-migration-020/021/022_*.dump` em `/var/backups/nailflow/`); n8n com **6 workflows ativos** (Definitivo, Notificações, Solicitação Recusada, Mensagem à Cliente, Abandono e Lembretes — ver [`N8N.md`](./N8N.md)).
+- **WhatsApp/Evolution:** `chip2` **`open`** (é, de propósito, o WhatsApp pessoal da responsável, usado pelo perfil de teste Camila) e `chip2-teste` `connecting`; a `studio-simone-teles` não tem instância. Ver [`WHATSAPP_EVOLUTION.md`](./WHATSAPP_EVOLUTION.md).
+- **Contas em produção:** 4 (`camila-nails-studio` — teste, com `chip2`, bio e tema azul; `teste-nailflow`; `studio-simone-teles`, sem instância; e a conta de administração).
+
+**Funcionalidades entregues desde 2026-09-30**
+- Página pública: serviços, criação de agendamento, perfil personalizável (bio, tema, foto), antecedência mínima de 30 min, scroll até o formulário e "Horário escolhido"; mostra só os próximos dias (`days=6`).
+- Agendamento: `pendente` ("Aguardando confirmação"), `aguardando_pagamento`, `confirmado`; confirmação manual ou automática por profissional; sinal por Pix manual (percentual 30/50/100 ou valor fixo, chave Pix, "Pagamento recebido" na Agenda); reservas com validade (24 h aguardando confirmação, 2 h aguardando pagamento) e expiração automática (sweeper de 60 s) sem mensagem à cliente. Ver [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md) e [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md).
+- Início/Agenda: card "Precisa da sua ação" (contagem, próximo vencimento, atalho que abre o detalhe do pedido); Confirmar/Recusar/Pagamento recebido no detalhe.
+- Mensagens: recebimento da solicitação, instruções de Pix, confirmação, recusa e cancelamento pelo n8n; o bot cria reservas com o mesmo critério e responde com as próprias mensagens ([`FLUXOS_DO_BOT.md`](./FLUXOS_DO_BOT.md)); o aviso interno à profissional (F9) só sai para quem tem instância.
+
+**Validado em produção** (detalhes em [`TESTES_REALIZADOS.md`](./TESTES_REALIZADOS.md)): E2E dos 4 cenários de confirmação/sinal/expiração; página pública no celular; `public_created` sem instância; e a validação manual da Home e da Agenda (card "Precisa da sua ação", "Ver na Agenda", botões e remoção do `abrir` da URL), **relatada pela responsável**. **Não validado:** entrega real do aviso à profissional (telefone cadastrado é placeholder) e envio real de lembrete/abandono com confirmação de recebimento.
+
+**Suíte automatizada:** 288 testes, 276 passando, **12 falhas conhecidas** (9 testes antigos que esperam `body.token` no login e 3 do bot que dependem do dia da semana — I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
+
+**Pendências e limitações atuais:** ver [`PENDENCIAS.md`](./PENDENCIAS.md) — em especial M16–M20 (bot responde a DMs no número conectado, "Notificações" sem guarda para instância nula em `confirmed`/`cancelled`, `DELETE /appointments/:id` sem guarda de status, sem aviso interno para reservas do bot, 409 da página pública sem scroll até o erro), F9 e M10 (foto no Perfil).
+
+---
+
+## Git (histórico até 2026-09-30)
 
 - **Repositório:** https://github.com/Yas2046/nailflow
-- **Branch de trabalho:** `feat/phase5-register`
-- **Último commit:** `adf5164` — feat(public): filtrar disponibilidade por serviço
-- **Sincronização:** `feat/phase5-register` = `origin/feat/phase5-register`
+- **Branch de trabalho (em 2026-09-30):** `feat/phase5-register`
+- **Último commit (em 2026-09-30):** `adf5164` — feat(public): filtrar disponibilidade por serviço
+- **Sincronização (em 2026-09-30):** `feat/phase5-register` = `origin/feat/phase5-register`
 - **Working tree:** limpo após os commits de 2026-09-30 (retirada do fluxo público legado sem slug, listagem pública de serviços, criação de agendamento pela página pública, fluxo completo de agendamento no frontend, disponibilidade filtrada por serviço)
-- **Atenção — `main`:** o `main` local e o `origin/main` estão divergentes entre si e **não contêm a V1 nem a V2**. A integração ao `main` ainda não foi feita.
+- **Atenção — `main` (em 2026-09-30):** o `main` local e o `origin/main` estavam divergentes entre si e não continham a V1 nem a V2. **Resolvido em 2026-10-02** (integração concluída; `main` publicada).
 
 ### Histórico recente
 
@@ -119,19 +154,19 @@ Revisão dedicada em 2026-09-29, cobrindo autenticação/sessões, isolamento po
 - **Headers/secrets/rate limiting**: HSTS/CSP/X-Frame-Options/etc. confirmados ao vivo via `curl` em produção; `X-Powered-By` oculto para tráfego externo; porta 3333 do Node bloqueada pelo firewall (UFW `default deny incoming`, só 22/80/443 liberados); `.env` em `600`, fora do Git; rate limit presente em login/registro
 - **Dependências**: `npm audit` do backend limpo (0 vulnerabilidades); frontend com 2 vulnerabilidades **moderadas** em `react-router-dom` (não corrigidas agora — exigem bump major/breaking change; ver [`PENDENCIAS.md`](./PENDENCIAS.md), item I15)
 
-### WhatsApp — pendência de validação prática (não mudou hoje)
+### WhatsApp — pendência de validação prática (não mudou hoje) — histórico de 2026-09-29; C1–C3 foram **validadas em 2026-09-30 e 2026-10-01** (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
 
 Nada do trabalho de hoje envolveu WhatsApp/n8n/Evolution além da chamada de exclusão de instância já descrita acima (que só executa quando o Admin efetivamente exclui uma profissional com `wa_instance_name` configurado — não foi exercida contra nenhuma conta real). As pendências já registradas continuam de pé: ver [`PENDENCIAS.md`](./PENDENCIAS.md), itens **C1–C3** (validar mensagem real após reconectar, agendamento e cancelamento ponta a ponta pelo WhatsApp).
 
 ### 🟡 Pendências registradas hoje (não bloqueantes)
 
-- Rate limiting nos endpoints `/admin/professionals/*` (bloquear/editar/excluir) — hoje protegidos só por JWT + `is_admin` (ver [`PENDENCIAS.md`](./PENDENCIAS.md), item M5)
+- Rate limiting nos endpoints `/admin/professionals/*` (bloquear/editar/excluir) — hoje protegidos só por JWT + `is_admin` (ver [`PENDENCIAS.md`](./PENDENCIAS.md), item M5 — **resolvido em 2026-10-01**, `26ae97f`)
 - `react-router-dom`: 2 advisories moderados reconfirmados, decisão de não corrigir agora mantida (item I15)
 - Tela de histórico/auditoria no Admin — o log já é gravado, mas não há UI para consultá-lo ainda
 
 ### Próximos passos sugeridos
 
-1. Validação prática do WhatsApp (C1–C3 em [`PENDENCIAS.md`](./PENDENCIAS.md)) — segue dependendo de autorização e reconexão do `chip2`
+1. Validação prática do WhatsApp (C1–C3 em [`PENDENCIAS.md`](./PENDENCIAS.md)) — (em 2026-09-29, dependia de autorização e reconexão do `chip2`; feito em 2026-09-30 e 2026-10-01)
 2. Decidir se/quando construir uma tela de consulta do `admin_audit_log`
 3. Avaliar o upgrade major do `react-router-dom` como tarefa própria, com sua rodada de testes
 
@@ -188,16 +223,16 @@ Implementado em etapas, cada uma validada com `tsc -b`/`vite build` antes de ava
 - `serviceId` inválido/de outra profissional/inativo/oculto/malformado → `400` genérico, sem detalhe interno
 - **8 testes novos** (`public-availability-serviceid.test.js`): comportamento sem `serviceId` inalterado, duração menor vs. maior gerando grades diferentes de fato, isolamento entre profissionais, serviço inativo/oculto rejeitado, `serviceId` inexistente/malformado
 
-### 🟡 Pendências registradas hoje (não bloqueantes)
+### 🟡 Pendências registradas em 2026-09-30 (não bloqueantes) — histórico
 
-- Sem notificação (WhatsApp/n8n) quando uma cliente agenda sozinha pela rota pública — hoje o agendamento só aparece na Agenda/Dashboard; decisão de produto pendente sobre se/como avisar a profissional em tempo real
-- Sem limite configurável de agendamentos futuros por telefone (hoje fixo em 3, hardcoded) — considerar se deve virar configuração por profissional no futuro
+- ~~Sem notificação (WhatsApp/n8n) quando uma cliente agenda sozinha pela rota pública~~ — **resolvido em 2026-10-01** (F9: evento `appointment.public_created`; entrega real ainda sem validação com número real, ver [`PENDENCIAS.md`](./PENDENCIAS.md)); desde 2026-10-03 só sai para profissional com instância própria
+- Sem limite configurável de agendamentos futuros por telefone (hoje fixo em 3, hardcoded) — considerar se deve virar configuração por profissional no futuro (continua assim; M7 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 
-### Próximos passos sugeridos
+### Próximos passos sugeridos (em 2026-09-30) — histórico
 
-1. Decidir sobre notificação da profissional na criação de agendamento público
+1. ~~Decidir sobre notificação da profissional na criação de agendamento público~~ — feito (F9)
 2. Observar os logs de produção nos primeiros dias após uso real da rota nova, dado que é a primeira rota pública de escrita do sistema
-3. Deploy e validação em produção do fluxo de frontend + disponibilidade por serviço (ainda não publicado — só a criação de agendamento e a listagem de serviços, dos commits anteriores, foram implantadas)
+3. ~~Deploy e validação em produção do fluxo de frontend + disponibilidade por serviço~~ — feito: a página pública completa está em produção (ver o bloco "Estado atual" acima)
 
 ---
 
@@ -231,7 +266,7 @@ Regras definidas no `.gitignore` (atualizado em `b26d682`). Sempre adicionar arq
 
 ---
 
-## Estado dos serviços (verificado em 2026-09-25; n8n e Evolution conferidos em 2026-09-27)
+## Estado dos serviços (histórico: verificado em 2026-09-25; n8n e Evolution conferidos em 2026-09-27 — o estado de 2026-10-03 está no bloco "Estado atual" no topo)
 
 | Serviço | Status |
 |---|---|
@@ -241,13 +276,13 @@ Regras definidas no `.gitignore` (atualizado em `b26d682`). Sempre adicionar arq
 | Nginx | active |
 | PostgreSQL 16 | listening em localhost |
 | UFW | active (22, 80, 443) |
-| n8n — 4 workflows ativos | Definitivo, Notificações, Abandono e Lembretes; crons com execuções `success` em 2026-09-27 |
+| n8n — 4 workflows ativos (em 2026-09-27) | Definitivo, Notificações, Abandono e Lembretes; crons com execuções `success` em 2026-09-27. **Em 2026-10-03 são 6 ativos:** + Solicitação Recusada e Mensagem à Cliente |
 
 ### Instâncias WhatsApp
 
-- `chip2` — **desconectado intencionalmente** desde 2026-09-27 (estava `open` em 2026-09-25)
-- `chip2-teste` — instância da conta de teste; **desconectada intencionalmente**
-- Não reconectar sem autorização. Nenhuma mensagem real nem teste real de webhook depois da desconexão
+- **Em 2026-10-03:** `chip2` **`open`** (WhatsApp pessoal da responsável, usado de propósito pelo perfil de teste Camila) e `chip2-teste` `connecting`; ver [`WHATSAPP_EVOLUTION.md`](./WHATSAPP_EVOLUTION.md)
+- Histórico: o `chip2` foi desconectado intencionalmente em 2026-09-27 (estava `open` em 2026-09-25) e reconectado em 2026-09-30, com a primeira mensagem real validada
+- Não conectar, desconectar nem reconectar instâncias sem autorização
 
 ---
 

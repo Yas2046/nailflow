@@ -1,7 +1,7 @@
 # NailFlow — Documentação de Transição
 
 > **Abra este arquivo primeiro ao retomar o projeto em uma nova máquina.**
-> Última atualização: 2026-09-27
+> Última atualização: 2026-10-03 (`main` em `50906f5`)
 
 ---
 
@@ -19,24 +19,25 @@ Sistema de agendamento e automação de atendimento via WhatsApp para profission
 | **V2** | `38b3fe7` | 2026-09-24 | Área administrativa separada (`is_admin`, `/admin`, listagem de profissionais), ajustes em Agenda, Clientes, Dashboard e Gastos |
 | **V2 — mudanças de produção** | `b26d682` | 2026-09-25 | Antecedência máxima por profissional, fechamentos da agenda (data, recorrência mensal e período), limite de navegação na Agenda, onboarding "Primeiros passos", correção do `$1` no bot, migrations 007–010, `.gitignore` reforçado |
 
-**Fechamento técnico da V2 (2026-09-27, em produção, ainda sem commit):** crons corrigidos, webhooks do n8n autenticados por cabeçalho, classificador sim/não no bot, isolamento de `clientId`, normalização de telefone, migrations reproduzíveis (002 oficial + 011–014), seed compatível e suíte automatizada 57/57 em banco descartável.
+**Fechamento técnico da V2 (2026-09-27, em produção, versionado depois):** crons corrigidos, webhooks do n8n autenticados por cabeçalho, classificador sim/não no bot, isolamento de `clientId`, normalização de telefone, migrations reproduzíveis, seed compatível e suíte automatizada em banco descartável.
+
+**Depois da V2 (2026-09-30 a 2026-10-03, em produção):** página pública de agendamento completa (serviços, reserva, perfil personalizável), confirmação manual/automática por profissional, sinal por Pix manual, reservas com validade e expiração automática, card "Precisa da sua ação" na Início com atalho para a Agenda, mensagens à cliente pelo n8n e aviso interno à profissional (só com instância própria). Commits recentes: `cb07d38`, `3bcbb1a`, `50906f5`.
 
 Detalhes por versão: [`STATUS_ATUAL.md`](./STATUS_ATUAL.md).
 
 ---
 
-## Estado atual (2026-09-27)
+## Estado atual (2026-10-03)
 
 | Componente | Estado |
 |---|---|
-| Frontend (painel web) | ✅ em produção |
-| Backend API | ✅ em produção |
-| WhatsApp (`chip2`, `chip2-teste`) | ⏸️ **desconectados intencionalmente** — não reconectar sem autorização |
-| Bot conversacional | ✅ em produção; sem mensagens enquanto as instâncias estão desconectadas (último fluxo validado via `/bot/process` após a correção do `$1`) |
-| n8n — WhatsApp Definitivo e Notificações | ✅ ativos, webhooks com Header Auth (ainda sem mensagem real) |
-| n8n — Abandono de Conversa e Lembretes | ✅ corrigidos em 2026-09-27 (falharam de 2026-09-21 a 2026-09-27); envio real ainda não exercitado |
-| Banco de dados | ✅ saudável; schema reproduzível pelas migrations; seed compatível |
-| Testes automatizados | ✅ 57/57 em banco descartável |
+| Frontend (painel web e página pública) | ✅ em produção (build de `3bcbb1a`) |
+| Backend API | ✅ em produção (`50906f5`) |
+| WhatsApp | ✅ `chip2` conectado (`open`; WhatsApp pessoal da responsável, usado de propósito pelo perfil de teste Camila); `chip2-teste` `connecting`; a `studio-simone-teles` não tem instância — ver [`WHATSAPP_EVOLUTION.md`](./WHATSAPP_EVOLUTION.md) |
+| Bot conversacional | ✅ em produção; agendamento e cancelamento validados com cliente real (2026-10-01); responde a qualquer mensagem privada no número conectado |
+| n8n | ✅ 6 workflows ativos (Definitivo, Notificações, Solicitação Recusada, Mensagem à Cliente, Abandono e Lembretes), webhooks com Header Auth |
+| Banco de dados | ✅ migrations até a 022 aplicadas; schema reproduzível; seed compatível |
+| Testes automatizados | ✅ 276 de 288 passando; as 12 falhas são conhecidas (ver [`PENDENCIAS.md`](./PENDENCIAS.md), I14) |
 | Nginx + HTTPS | ✅ ativo |
 | Firewall (UFW) | ✅ ativo desde 2026-09-25 — públicas só 22, 80 e 443 |
 | Backup automático | ✅ diário às 03h |
@@ -50,7 +51,9 @@ Detalhes por versão: [`STATUS_ATUAL.md`](./STATUS_ATUAL.md).
 - Cadastro e login de profissionais; área administrativa separada para a conta `is_admin`
 - Agendamentos simples e recorrentes
 - Disponibilidade: expediente semanal, intervalo, bloqueios pontuais, **antecedência máxima**, **fechamentos** por data específica, dia da semana recorrente (1ª–5ª/última) e período
-- Página pública de agendamento por slug (`/p/:slug`)
+- Página pública de agendamento por slug (`/p/:slug`): escolha do serviço, depois do horário, dados e revisão; perfil personalizável (apresentação, cor, foto); bloco Pix quando há sinal
+- Confirmação por profissional (Configurações → Agendamento): **manual** (a solicitação fica "Aguardando confirmação" por 24 h) ou **automática**, com **sinal por Pix manual** opcional (30/50/100% ou valor fixo; "Pagamento recebido" na Agenda; reserva de 2 h); reservas que vencem são liberadas sozinhas
+- Início: card "Precisa da sua ação" com os pedidos aguardando confirmação ou pagamento, e atalho que abre o pedido na Agenda
 - Bot WhatsApp: boas-vindas personalizadas, menu, agendamento, cancelamento, consulta, atendimento humano
 - Gestão da instância WhatsApp (criação, QR, status) pela tela Configurações
 - Multi-profissional: cada profissional tem sua instância Evolution e seus dados isolados
@@ -58,8 +61,8 @@ Detalhes por versão: [`STATUS_ATUAL.md`](./STATUS_ATUAL.md).
 ## O que NÃO está disponível / pendente
 
 - **Recuperação de senha ("Esqueci minha senha") e troca de senha logada: NÃO publicadas.** Existe uma implementação isolada, testada apenas em ambiente de teste, em `/opt/nailflow-next` (fora do repositório e fora de produção). O provedor de e-mail (Brevo) **ainda não está configurado**.
-- Validação real pelo WhatsApp depois da reconexão do `chip2` → ver [`PENDENCIAS.md`](./PENDENCIAS.md)
-- Exports de Abandono e Lembretes regenerados das versões publicadas (prontos para versionar); exports do "Definitivo" e do "Notificações" ainda antigos; mudanças de 2026-09-27 ainda sem commit
+- Pendências reais e limitações conhecidas (bot responde a mensagens privadas no número conectado, entrega real do aviso interno à profissional ainda sem validação, guardas do workflow "Notificações" e de `DELETE /appointments/:id` etc.) → ver [`PENDENCIAS.md`](./PENDENCIAS.md)
+- Exports do n8n: Abandono, Lembretes, Solicitação Recusada e Mensagem à Cliente estão versionados; os do "Definitivo" e do "Notificações" ainda são antigos (não refletem as versões publicadas)
 
 ---
 
@@ -68,7 +71,7 @@ Detalhes por versão: [`STATUS_ATUAL.md`](./STATUS_ATUAL.md).
 | O quê | Onde |
 |---|---|
 | Código-fonte | `/var/www/nailflow/` (VPS) + `https://github.com/Yas2046/nailflow` |
-| Branch atual | `feat/phase5-register` |
+| Branch atual | `main` (= `origin/main`) |
 | Variáveis de ambiente | `/var/www/nailflow/backend/.env` e `frontend/.env` (nunca comitar) |
 | Schema do banco | `/var/www/nailflow/backend/db/schema.sql` + `backend/db/migrations/` |
 | Workflows n8n (exportados) | `/var/www/nailflow/n8n/workflows/` |
@@ -85,22 +88,25 @@ O frontend e o backend rodam localmente para desenvolvimento. O VPS continua em 
 
 ---
 
-## Último commit
+## Último commit de código
 
 ```
-b26d682 chore: version V2 production changes
+50906f5 fix(notify): skip public_created without WhatsApp instance and normalize phone
+3bcbb1a feat(home): show pending requests and scroll to booking form
+cb07d38 feat(appointments): add confirmation and manual deposit flow
 ```
 
-Branch `feat/phase5-register` sincronizada com `origin/feat/phase5-register`. As mudanças de 2026-09-27 estão na working tree, **ainda sem commit**.
+Branch `main` = `origin/main`, em produção (a `feat/phase5-register` foi integrada em 2026-10-02 e é só histórico).
 
 ---
 
 ## Próximo passo recomendado
 
-1. Revisar o diff e fazer commit/push das mudanças de 2026-09-27 (incluindo os 2 exports regenerados do n8n)
-2. Quando autorizado, reconectar o `chip2` (pela responsável) e validar a primeira mensagem real
-3. Configurar o Brevo e, com autorização, publicar a recuperação/troca de senha
-4. Integrar V1/V2 ao `main`
+Depois do início do uso real pelas profissionais, **congelar funcionalidades novas por ~2 semanas** e observar o uso. Pontos a acompanhar:
+
+1. Conectar o WhatsApp de cada profissional (ou aceitar que, sem instância, ela só vê os pedidos na Agenda e na Início) e decidir o que fazer com números pessoais conectados (o bot responde a mensagens privadas)
+2. Validar a entrega real do aviso interno à profissional com um número real
+3. Pendências M16–M20 e demais itens em [`PENDENCIAS.md`](./PENDENCIAS.md); recuperação/troca de senha segue **não publicada** (depende do Brevo)
 
 → Ver [`PROXIMOS_PASSOS.md`](./PROXIMOS_PASSOS.md) para a sequência completa.
 

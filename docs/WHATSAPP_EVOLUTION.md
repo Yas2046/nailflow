@@ -16,14 +16,19 @@
 
 ## Instâncias
 
-| Instância | Status |
-|---|---|
-| `chip2` | **desconectada intencionalmente** (desconectada pela responsável em 2026-09-27; `close`) |
-| `chip2-teste` | **desconectada intencionalmente** (`close`) |
+Estado em **2026-10-03** (consulta à Evolution e ao banco):
 
-> Até 2026-09-25 o `chip2` estava `open`. **Não reconectar nenhuma das duas sem autorização.** Depois da última desconexão não houve nenhuma mensagem real nem teste real de webhook — a primeira mensagem após a reconexão do `chip2` será o primeiro teste real da autenticação por cabeçalho (ver abaixo).
+| Instância | Profissional | Status |
+|---|---|---|
+| `chip2` | `camila-nails-studio` (perfil de teste) | **`open`** (conectada) |
+| `chip2-teste` | `teste-nailflow` | `connecting` |
 
-Tecnologia interna: Baileys (protocolo WhatsApp Web nativo). **Uma instância por profissional**: cada profissional aponta para a sua em `professionals.wa_instance_name`, e esse nome (`waInstance`) é a chave de roteamento do bot, dos crons e das notificações.
+- O `chip2` é, **de propósito**, o WhatsApp pessoal da responsável, usado como WhatsApp do perfil de teste da Camila. Isso não é erro de configuração. Como é um número pessoal, o bot responde a qualquer mensagem privada recebida nele (só grupos são ignorados; ver M16 em [`PENDENCIAS.md`](./PENDENCIAS.md)). O telefone cadastrado da Camila (`phone_whatsapp`) é um placeholder, que **não** é o número do `chip2`.
+- A `studio-simone-teles` **não tem instância** (`wa_instance_name` nulo): sem WhatsApp conectado ela não envia nem recebe mensagens automáticas, e nada é enviado por outra instância.
+
+Histórico: o `chip2` estava `open` até 2026-09-25, foi desconectado pela responsável em 2026-09-27 (`close`) e **reconectado em 2026-09-30**, quando a primeira mensagem real após a reconexão foi processada com a autenticação por cabeçalho (ver C1 em [`PENDENCIAS.md`](./PENDENCIAS.md)). Não conectar, desconectar nem reconectar instâncias sem autorização.
+
+Tecnologia interna: Baileys (protocolo WhatsApp Web nativo). **Uma instância por profissional, de forma exclusiva**: cada profissional aponta para a sua em `professionals.wa_instance_name`, e esse nome (`waInstance`) é a chave de roteamento do bot, dos crons e das notificações. A exclusividade é garantida pelo índice único parcial `professionals_wa_instance_name_key` (migration 015: no máximo uma profissional por instância; nulo permitido), pela recusa de nome já usado ao criar a instância (409) e porque o cadastro grava `wa_instance_name = NULL`. Não existe instância padrão nem fallback no backend ou nos workflows: sem `wa_instance_name` não há envio.
 
 ### Webhook configurado (as duas instâncias)
 
@@ -35,7 +40,7 @@ header: X-NailFlow-Webhook-Secret: <valor de N8N_BOT_WEBHOOK_SECRET>
 - Desde 2026-09-27 o webhook de cada instância envia o cabeçalho `X-NailFlow-Webhook-Secret` (campo `headers` do webhook na Evolution). O node "Receber Mensagem" do n8n valida o cabeçalho com uma credencial Header Auth; sem ele, o n8n responde 403
 - Nessa alteração só o `headers` mudou; `url`, `events`, `enabled`, `byEvents` e `base64` continuaram iguais
 - Instâncias criadas pelo painel (`POST /api/whatsapp/evolution-instance`) já recebem o cabeçalho; sem `N8N_BOT_WEBHOOK_SECRET` no `.env`, a criação falha
-- **Rollback**, se a primeira mensagem real após a reconexão não for processada (403): voltar o node "Receber Mensagem" para `authentication = none` e reiniciar o n8n
+- **Rollback**, se a primeira mensagem real após a reconexão não for processada (403): voltar o node "Receber Mensagem" para `authentication = none` e reiniciar o n8n (não foi necessário: a primeira mensagem real, em 2026-09-30, foi processada sem 403)
 
 Este webhook é disparado para **toda mensagem recebida** e processado pelo workflow **"WhatsApp NailFlow — Definitivo"** no n8n. O tráfego passa pelo Nginx (443); a porta 5678 do n8n não é acessível de fora.
 

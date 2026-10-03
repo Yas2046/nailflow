@@ -1,6 +1,6 @@
 # NailFlow — Checklist Geral do Projeto
 
-> Consolida, desde o início do projeto até 2026-10-02, o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
+> Consolida, desde o início do projeto até 2026-10-03 (`main` em `50906f5`), o que já foi construído, corrigido/hardening, validado, o que falta e o que é futuro.
 > Legenda: `[x]` concluído · `[~]` parcialmente concluído · `[ ]` pendente/não feito.
 > Fonte: documentos em `docs/` e histórico de commits. Não repete detalhe técnico já coberto nesses documentos — só aponta para eles.
 
@@ -164,7 +164,7 @@
 - [x] Evolution API rodando (Docker), autenticação por `apikey`
 - [x] Gestão de instância WhatsApp pelo painel (criar/remover instância, QR via canvas, status)
 - [x] Integração backend ↔ Evolution (status, criação/exclusão de instância)
-- [x] n8n com 5 workflows de produção ativos: WhatsApp Definitivo, Notificações, Abandono de Conversa, Lembretes e **Solicitação Recusada** (novo em 2026-10-02, id `NfSolRecusada0001`)
+- [x] n8n com 6 workflows de produção ativos: WhatsApp Definitivo, Notificações, Abandono de Conversa, Lembretes, **Solicitação Recusada** (2026-10-02, id `NfSolRecusada0001`) e **Mensagem à Cliente** (2026-10-02, id `NfMensagemCliente01`, evento `message.send`)
 - [x] Webhooks do n8n autenticados por cabeçalho (`X-NailFlow-Webhook-Secret`)
 - [x] Bot conversacional (máquina de estados completa: agendar, cancelar, consultar, atendimento humano) — ver [`FLUXOS_DO_BOT.md`](./FLUXOS_DO_BOT.md)
 - [x] `conversation_states` e `message_history` implementados e em uso (estado da conversa e log de mensagens)
@@ -182,7 +182,8 @@
 - [~] Conexão WhatsApp via painel (QR pelo sistema): implementada em código, mas **não testada completamente em produção** (a instância principal já estava conectada quando a feature ficou pronta)
 - [x] `chip2` (Camila) reconectado e primeira mensagem real após a reconexão validada (2026-09-30): webhook autenticado (`X-NailFlow-Webhook-Secret`, sem 403), workflow "WhatsApp NailFlow — Definitivo" executado com sucesso, mensagem registrada em `message_history` sem vazamento cross-tenant; envio de teste controlado para a cliente Simone também validado, sem erro
 - [x] Validação prática completa do WhatsApp pós-reconexão (01/10/2026, C2/C3 concluídas): agendamento por linguagem natural (serviço + data + horário em uma mensagem), confirmação e criação do agendamento, cancelamento por data + horário, confirmação e cancelamento real, e retorno ao menu/início após o cancelamento — todos validados com cliente real no WhatsApp
-- [ ] Envio real de lembrete e de aviso de abandono após a correção dos crons de 2026-09-27 — corrigidos e validados sem itens, mas nenhum envio real ainda aconteceu
+- [x] Aviso interno à profissional (`appointment.public_created`) — commit `50906f5` (2026-10-03, em produção): só é enviado quando a profissional tem `wa_instance_name` próprio (sem fallback para outra instância) e o telefone vai normalizado para `55` + número no ponto de envio (`whatsappNumberForSending`), sem alterar o telefone salvo. **Validado em produção** no caminho sem instância (E2E na `studio-simone-teles`: 201, nenhuma execução de "Notificações", nenhuma chamada à Evolution); a normalização foi validada por testes automatizados, não por uma entrega real
+- [ ] Envio real de lembrete e de aviso de abandono após a correção dos crons de 2026-09-27 — os crons rodam com sucesso (144 de 144 execuções dos últimos 3 dias no caso dos lembretes) e há 8 agendamentos com `reminder_sent = true`, mas não há registro de confirmação de recebimento de um lembrete ou aviso reais
 
 ---
 
@@ -224,7 +225,7 @@
 ## 11. Documentação / Git / deploy
 
 - [x] Documentação organizada em `docs/` (arquitetura, infraestrutura, banco, rotas, bot, WhatsApp, n8n, testes, pendências, próximos passos, instalação)
-- [x] Branch de trabalho: `main` — em 2026-10-02 `main` = `origin/main`, publicada e em produção (código em produção até `47c2886`, Fase 1A; em 2026-10-03 produção roda também o commit local `cb07d38`, ainda não enviado ao `origin`). `feat/phase5-register` foi integrada à `main` e fica apenas como histórico
+- [x] Branch de trabalho: `main` — em 2026-10-02 `main` = `origin/main`, publicada e em produção (código em produção até `47c2886`, Fase 1A). **Estado em 2026-10-03: `main` = `origin/main` = `50906f5`**, tudo publicado e em produção: `cb07d38` (confirmação e sinal), `501cd55` (docs), `3bcbb1a` (Início com pendências, atalho para a Agenda e página pública) e `50906f5` (`public_created` sem instância e normalização do telefone). `feat/phase5-register` foi integrada à `main` e fica apenas como histórico
 - [x] Histórico de commits recentes documentado em [`STATUS_ATUAL.md`](./STATUS_ATUAL.md)
 - [x] Processo de deploy documentado (build do frontend, restart do backend quando necessário, migrations aplicadas manualmente)
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02: merge resolvido a favor da feature (commit divergente `985c1f1` confirmado como superado), `origin/main` incluído, histórico publicado (`1f0216a`). Restart confirmado em 2026-10-02 (ver [`PENDENCIAS.md`](./PENDENCIAS.md))
@@ -246,15 +247,16 @@
 - [ ] SSH restrito só a chave
 - [x] Integração de `feat/phase5-register` ao `main` — concluída em 2026-10-02 (ver seção 11)
 - [ ] Regenerar exports do n8n "Definitivo" e "Notificações" (Abandono e Lembretes já regenerados) — o workflow "Notificações" também foi editado manualmente na interface em 2026-10-01 (F9) e ainda não foi re-exportado para o repositório
-- [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder (`5531999999999`) que a Evolution rejeita (`exists: false` / "Bad request"); falha **reconfirmada** nos E2E de 2026-10-03 (ex.: execução #14769, `appointment.public_created`), sem efeito sobre a reserva nem sobre a mensagem à cliente; falta um teste com número de WhatsApp real para considerar a F9 100% validada
+- [ ] **F9 — entrega real da notificação no WhatsApp não validada**: implementação e fluxo backend→n8n→Evolution estão concluídos e validados, mas o `phone_whatsapp` da profissional de teste em produção é um número placeholder (`5531999999999`) que a Evolution rejeita (`exists: false` / "Bad request"); falha **reconfirmada** nos E2E de 2026-10-03 (ex.: execução #14769, `appointment.public_created`), sem efeito sobre a reserva nem sobre a mensagem à cliente; falta um teste com número de WhatsApp real para considerar a F9 100% validada. Desde `50906f5`, o telefone vai normalizado (`55` + número) e o aviso não é enviado para profissional sem `wa_instance_name` (ex.: `studio-simone-teles`); o `chip2` da Camila é usado de propósito pelo perfil de teste
 - [ ] A branch `feat/phase5-register` local continua à frente de `origin/feat/phase5-register`, mas todo o conteúdo já está na `main` publicada; decidir só se vale enviar ou remover a branch antiga (não afeta produção)
 - [ ] A página pública de uma conta **bloqueada** (`blocked_at`) continua acessível: `getProfessionalBySlug` não checa o bloqueio — decisão adiada em 2026-10-02 (não é bloqueador do V1)
 - [ ] Perfil: "Salvar foto" ainda envia a identidade completa e falha sem WhatsApp cadastrado; o backend já aceita foto sozinha desde 2026-10-02, falta só o frontend enviar apenas `avatar_b64`
 - [ ] A antecedência mínima de 30 min para clientes é uma constante (`CUSTOMER_MIN_NOTICE_MINUTES`), não configurável por profissional
-- [ ] Nenhuma profissional configurou foto, apresentação ou cor da página pública em produção ainda; a página mostra o cabeçalho padrão (LogoMark, tema vinho)
+- [x] Personalização da página pública em produção (2026-10-03): a Camila (`camila-nails-studio`) já tem apresentação (`bio`) e tema azul; nenhuma conta enviou foto ainda, e as demais usam o padrão (sem apresentação, tema vinho, cabeçalho padrão com LogoMark)
 - [ ] **Fase 1A — agendamentos anteriores à migration 021 têm `source` nulo**: recusar um deles funciona, mas a cliente **não** recebe WhatsApp (por desenho: só `public`/`bot` avisam). Só solicitações novas, feitas depois de 2026-10-02 21:04, avisam a cliente
-- [x] Documentação técnica de apoio: `BANCO_DE_DADOS.md` (migrations 021/022) e `N8N.md` (workflows, webhooks, variáveis) atualizados em 2026-10-03. Ainda sem revisão: `ROTAS_E_ENDPOINTS.md`, `FLUXOS_DO_BOT.md`, `STATUS_ATUAL.md`, `TESTES_REALIZADOS.md` (ver M12)
+- [x] Documentação técnica de apoio atualizada em 2026-10-03 (consolidação final, estado de `main` em `50906f5`): `BANCO_DE_DADOS.md`, `N8N.md`, `ROTAS_E_ENDPOINTS.md`, `FLUXOS_DO_BOT.md`, `ARQUITETURA.md`, `WHATSAPP_EVOLUTION.md`, `INSTALACAO_NOVA_MAQUINA.md`, `STATUS_ATUAL.md`, `TESTES_REALIZADOS.md`, `README.md` e `PROXIMOS_PASSOS.md` (ver M12 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [x] A cliente recebe WhatsApp ao *solicitar* o horário pela página pública — entregue no pacote `cb07d38`
+- [ ] Pendências reais registradas em 2026-10-03 (detalhe, contexto e severidade em [`PENDENCIAS.md`](./PENDENCIAS.md), M16–M20; nenhuma é bloqueadora): o `chip2` pessoal responde a mensagens privadas; o workflow "Notificações" não valida instância nula em `confirmed`/`cancelled`; `DELETE /appointments/:id` sem guarda de status; sem aviso interno à profissional para reservas feitas pelo bot; o erro 409 da página pública não rola até a mensagem
 
 ---
 
@@ -389,7 +391,7 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] **Validação real em produção**: confirmação pela Agenda → WhatsApp recebido; nova solicitação pela página pública aparece como "Aguardando confirmação"; recusa pela Agenda → solicitação cancelada → WhatsApp de recusa recebido
 - Publicação: push `6122abc..47c2886`; `frontend/dist` anterior preservado em `dist.bak_20261002-pre-fase1a`
 
-**Fases 1B + 2 + sinal Pix manual — concluídas, em produção e validadas por E2E (2026-10-02/03; commit local `cb07d38`, ainda não enviado)**
+**Fases 1B + 2 + sinal Pix manual — concluídas, em produção e validadas por E2E (2026-10-02/03; commit `cb07d38`, publicado em `origin/main` e em produção)**
 - [x] Migration 022 aplicada em produção após backup `/var/backups/nailflow/nailflow_pre-migration-022_2026-10-02_222934.dump` (detalhes em [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md))
 - [x] Modo de confirmação por profissional (`manual` → `pendente` com reserva de 24 h; `automatic` sem sinal → `confirmado`; `automatic` com sinal → `aguardando_pagamento` com reserva de 2 h); a API proíbe sinal no modo manual
 - [x] Sinal: percentual (30/50/100) ou valor fixo, calculado no servidor (`deposit_cents`), chave Pix da profissional; "Pagamento recebido" na Agenda (`POST /appointments/:id/mark-paid`, atômico e idempotente) → `confirmado`, `paid_at`, `expires_at` nulo
@@ -398,10 +400,23 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [x] Mensagem de "recebemos sua solicitação" à cliente (antes pendente da Fase 1B)
 - [x] **E2E real aprovado — 4 cenários** (número de teste `553185108190`): (1) automático sem sinal e (2) manual com confirmação pela profissional, aprovados pela responsável (detalhes não reconferidos na revisão da documentação); (3) automático + sinal 50% → `aguardando_pagamento` (1750 de 3500, +2 h) → "Pagamento recebido" pela Agenda real → `confirmado`, 1 único `appointment.confirmed`, repetição idempotente; (4) expiração pelo sweeper real em ~56 s, sem mensagem e sem afetar outras reservas
 - [x] Configuração da Camila restaurada após cada cenário: `manual`, sem sinal, sem Pix, sem tipo/valor; reservas de teste canceladas sem mensagem; agendamento antigo da Simone (05/10 13:00) intacto
-- [ ] Contador de "aguardando" na Início (previsto na 1B, não feito)
-- [ ] Publicar o commit `cb07d38` (push) — local `main` à frente de `origin/main` em 1 commit
+- [x] Contador de "aguardando" na Início — entregue em `3bcbb1a` (ver bloco abaixo)
+- [x] Push do commit `cb07d38` — feito; `main` = `origin/main` (`50906f5` em 2026-10-03)
 - [ ] Aviso à cliente quando a reserva expira (hoje não envia; ver M14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
 - [ ] Investigação das respostas do bot de 2026-10-03 (#14772/#14773): eram mensagens reais recebidas do número de teste, respondidas conforme o fluxo existente do bot; **não é possível determinar quem as digitou nem se há relação causal com o cenário 4** (ver M15)
+
+**Início com pendências, atalho para a Agenda e página pública — `3bcbb1a` (2026-10-03, em produção)**
+- [x] Início: card "Precisa da sua ação" com a contagem de reservas aguardando confirmação e aguardando pagamento, o próximo vencimento e até 5 pedidos (cliente, serviço, dia/hora, status e vencimento), alimentado pelo bloco `aguardando` de `GET /dashboard`; só conta reservas com validade em curso (agendamentos `pendente` criados na Agenda, sem validade, ficam de fora do card); o card não aparece quando não há pendências
+- [x] Atalho para a Agenda: cada pedido leva a `/agenda?data=AAAA-MM-DD&abrir=<id>`; a Agenda abre no dia do pedido e abre o detalhe (Confirmar/Recusar/Pagamento recebido) procurando o `id` apenas na lista da própria profissional; o parâmetro vale uma vez e é removido da URL
+- [x] Página pública: ao escolher um horário (e ao ir para a revisão) a tela rola até o formulário, com a confirmação visual "Horário escolhido: serviço · dia e hora"; respeita `prefers-reduced-motion`; a lógica de disponibilidade não mudou. A página pede `days=6` (mostra só os próximos dias)
+- [x] Testes: `dashboard-awaiting.test.js` (4 testes: contagem, ordem por vencimento, exclusões, isolamento entre profissionais); suíte atual **288 testes, 276 passando, 12 falhas conhecidas** (I14 em [`PENDENCIAS.md`](./PENDENCIAS.md))
+- [x] **Validado em produção, página pública no celular (375×812):** serviço antes do horário, scroll até o formulário (totalmente visível), "Horário escolhido", revisão, envio (201) e tela de sucesso, sem overflow horizontal
+- [x] **Validação manual da Home e da Agenda, relatada pela responsável (após o deploy de `3bcbb1a`):** o card "Precisa da sua ação" apareceu com contadores e validade corretos; "Ver na Agenda" abriu o agendamento correto; os botões do detalhe funcionaram; e o parâmetro `abrir` foi removido da URL depois do uso (M21 em [`PENDENCIAS.md`](./PENDENCIAS.md)). É um relato da responsável; as evidências **independentes** (testes `dashboard-awaiting`, consulta do card no banco e logs do Nginx de 2026-10-03, 16:03–16:04 UTC, com `POST /appointments/:id/confirm` → 200) apenas o corroboram
+
+**Aviso interno à profissional sem instância e telefone normalizado — `50906f5` (2026-10-03, em produção)**
+- [x] `appointment.public_created` só é disparado quando a profissional tem `wa_instance_name` (sem fallback para outra instância); o agendamento segue normalmente na Agenda e na Início
+- [x] `professionalPhone` normalizado para `55` + número no ponto de envio (aceita máscara, `+55`, número sem DDI e zero de tronco; não duplica o `55`; vazio/inválido vira `null`), sem alterar o telefone salvo
+- [x] **E2E de produção** na `studio-simone-teles` (sem instância): reserva pela página pública → 201, `pendente`, aparece na Agenda/Início; **nenhuma execução** de "Notificações" e nenhuma chamada de envio à Evolution; limpeza da reserva e da ficha de teste feita depois
 
 **Próximas fases — não iniciadas**
 - [ ] Fase 4: bot durante o pagamento (estado fora do prefixo `AGUARDANDO_`)

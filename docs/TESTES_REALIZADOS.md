@@ -1,12 +1,13 @@
 # NailFlow — Testes Realizados
 
-> Testes realizados durante as sessões de desenvolvimento (até 2026-09-27).
-> Os testes de 2026-09-24/25 estão na seção "V2 — mudanças de produção"; os de 2026-09-27, na seção "Fechamento técnico da V2".
+> Testes realizados durante as sessões de desenvolvimento (até 2026-10-03, `main` em `50906f5`).
+> Os testes de 2026-09-24/25 estão na seção "V2 — mudanças de produção"; os de 2026-09-27, na seção "Fechamento técnico da V2"; os de 2026-10-02/03 (confirmação, sinal, expiração, página pública e aviso sem instância), na seção "Rodada de 2026-10-02/03 — produção".
 
 **Tipos de validação usados neste documento:**
 - 🧪 **Banco descartável** — banco criado só para o teste e apagado ao final; nada toca produção
 - 🔍 **Somente leitura em produção** — apenas `SELECT`, `pg_dump -s` ou leitura do banco do n8n; nenhum dado alterado
-- 📱 **WhatsApp real** — mensagem real passando pela Evolution. **Nenhum teste deste tipo foi feito depois de 2026-09-25**; o `chip2` e o `chip2-teste` estão desconectados intencionalmente
+- 📱 **WhatsApp real** — mensagem real passando pela Evolution. Entre 2026-09-25 e 2026-09-27 nenhum teste deste tipo foi feito (o `chip2` ficou desconectado de propósito); **depois da reconexão do `chip2` (2026-09-30) houve testes reais** — primeira mensagem (2026-09-30), agendamento e cancelamento com cliente real (2026-10-01), confirmação/recusa (2026-10-02) e os E2E de 2026-10-03 (ver "Rodada de 2026-10-02/03 — produção")
+- 🌐 **Produção com dados de teste** — fluxo real em produção (backend, banco, n8n, Evolution) usando a profissional de teste e o número de teste da responsável, com limpeza das reservas de teste ao final
 - Conferências estáticas (leitura de código, exports ou configuração) são indicadas como tal e não contam como teste executado
 
 ---
@@ -75,9 +76,11 @@
 
 Executados com `npm test` (`node --test tests/*.test.js`) 🧪 **sempre em banco descartável**, com as URLs do n8n vazias e `EVOLUTION_API_URL` apontando para um endereço inexistente (os testes gravam no banco de `DATABASE_URL`).
 
-**Estado atual (2026-09-27): 57 testes — 57 passam, 0 falham**, em dois bancos descartáveis (A e B) montados com `schema.sql` → migrations 002, 001, 003–014 → `seed.sql`, com resultado idêntico teste a teste. Ver Teste 17.
+**Estado atual (2026-10-03, `main` em `50906f5`): 288 testes — 276 passam, 12 falham** (as **12 falhas conhecidas**: 9 testes antigos que esperam `body.token` no login — `auth-flow` 2, `availability-check` 1, `price-snapshot` 6 — e 3 do bot em `bot-contextual` que dependem do dia da semana; ver I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)). Rodada em banco descartável montado com `schema.sql` → migrations 002, 001, 003–022 → `seed.sql`; nenhuma das 12 é regressão de produção, e nenhuma falha nova apareceu nos arquivos de confirmação, sinal, página pública, dashboard e aviso interno.
 
-- Arquivos: `health`, `auth-flow`, `availability-check`, `availability-slots`, `price-snapshot`, `rate-limit`, `notify-n8n`, `nullable-fields`, `phone` (novo), `reply-classifier` (novo)
+**Histórico (2026-09-27): 57 testes — 57 passam, 0 falham**, em dois bancos descartáveis (A e B) montados com `schema.sql` → migrations 002, 001, 003–014 → `seed.sql`, com resultado idêntico teste a teste. Ver Teste 17.
+
+- Arquivos (em 2026-09-27): `health`, `auth-flow`, `availability-check`, `availability-slots`, `price-snapshot`, `rate-limit`, `notify-n8n`, `nullable-fields`, `phone` (novo), `reply-classifier` (novo). Adicionados depois: testes de administração (`admin-*`), página pública (`public-*`), antecedência mínima (`customer-min-notice`), confirmação/recusa (`appointment-confirmation`), regras de reserva e expiração (`booking-rules`), sinal por Pix (`deposit-flow`), bot contextual (`bot-contextual`, `conversation-context`), card da Início (`dashboard-awaiting`, 4 testes) e aviso interno sem instância/telefone normalizado (`public-created-instance`, 5 testes, e 3 testes novos em `phone`)
 - Histórico: até a correção de 2026-09-27 a suíte tinha 30 falhas antigas (seed e setups de teste sem `slug`); ver Teste 17
 
 ---
@@ -251,14 +254,38 @@ Sequência de correções (só em `backend/db/seed.sql` e `backend/tests/`; nenh
 
 ---
 
+## Rodada de 2026-10-02/03 — produção (🌐 dados de teste)
+
+Número de teste da responsável (`553185108190`, cliente "Simone Teles") na profissional de teste `camila-nails-studio`, salvo indicação. A configuração da Camila foi alterada temporariamente em cada cenário e **restaurada** (`manual`, sem sinal, sem Pix, sem tipo/valor); as reservas de teste foram canceladas sem mensagem, e o agendamento antigo da Simone (05/10 13:00) ficou intacto.
+
+| Teste | Resultado | O que foi comprovado |
+|---|---|---|
+| **E2E cenário 1 — automático sem sinal** | ✅ aprovado pela responsável | A mensagem de confirmação chegou ao WhatsApp de teste (confirmado por ela). Demais detalhes não reconferidos na consolidação |
+| **E2E cenário 2 — manual** | ✅ aprovado pela responsável | Reserva `pendente` e confirmação pela profissional; o passo de confirmação foi feito chamando a função real do controller, sem login (desvio declarado; a rota autenticada tem testes automatizados). Demais detalhes não reconferidos |
+| **E2E cenário 3 — automático + sinal 50%** | ✅ passou | Nasceu `aguardando_pagamento`, `deposit_cents` 1750 de 3500, validade de 2 h; resposta pública só com os campos esperados; 1 mensagem de instruções (Pix fictício) pelo `NfMensagemCliente01`; "Pagamento recebido" pela **interface real** da Agenda (`POST …/mark-paid` → 200 no Nginx) → `confirmado`, `paid_at` preenchido, `expires_at` nulo; exatamente 1 `appointment.confirmed` (#14766) e 1 mensagem de confirmação; repetição idempotente (`changed:false`, sem mensagem — feita chamando a função real do controller, sem passar pela interface) |
+| **E2E cenário 4 — expiração** | ✅ passou | `expires_at` forçado ao passado só nessa reserva; o sweeper real cancelou em ~56 s com `cancel_reason='expired'`, `paid_at` nulo; horário liberado; nenhuma mensagem de confirmação ou cancelamento; nenhuma outra reserva afetada |
+| Investigação das execuções #14772/#14773 | ✅ conclusão registrada | Mensagens reais recebidas ("Arrasou", "Top de mais"), respondidas pelo fluxo normal do bot; quem as digitou e a relação com o cenário 4 **não foram determinados** (M15 em [`PENDENCIAS.md`](./PENDENCIAS.md)) |
+| **Smoke — página pública no celular** (375×812, `camila-nails-studio`) | ✅ passou | Serviço antes do horário; scroll até o formulário (totalmente visível); "Horário escolhido"; revisão; envio → 201; tela de sucesso; sem overflow horizontal; reserva `pendente` com validade de 24 h e mensagem de recebimento enviada |
+| **E2E — `public_created` sem instância** (`studio-simone-teles`, `wa_instance_name` nulo) | ✅ passou | Reserva pela página pública → 201, `pendente`, visível na Agenda/Início; **0 execuções** de "Notificações" e nenhuma chamada de envio à Evolution (o evento `message.send` à cliente chegou ao n8n e terminou em `sem_instancia`, sem envio); nenhum outro agendamento afetado. A reserva, a ficha do cliente fictício e o agendamento cancelado foram removidos depois |
+
+**Validação manual da Home e da Agenda (relatada pela responsável, após o deploy de `3bcbb1a`, 2026-10-03):** o card "Precisa da sua ação" apareceu com contadores e validade corretos; "Ver na Agenda" abriu o agendamento correto; os botões do detalhe funcionaram; e o parâmetro `abrir` foi removido da URL depois do uso. Este registro é o **relato da responsável**; ele não vem de observação automatizada. As evidências **independentes** que o corroboram estão separadas: testes automatizados (`dashboard-awaiting`), consulta do card no banco e logs do Nginx de 2026-10-03 (16:03–16:04 UTC: carga da Início, Agenda aberta no dia 08/10, `POST /appointments/:id/confirm` → 200).
+
+**Não validado (não registrar como "passou"):**
+- Entrega real do aviso interno à profissional (`public_created`): o telefone cadastrado da Camila é placeholder; a normalização do telefone foi validada **só por testes automatizados**.
+- Recebimento real de um lembrete ou aviso de abandono enviados pelos crons.
+
+---
+
 ## Testes PENDENTES (não realizados)
+
+> Atualizado em 2026-10-03: as quatro primeiras linhas já foram realizadas (indicado na coluna Observação) e ficam aqui como histórico.
 
 | Cenário | Prioridade | Observação |
 |---|---|---|
-| Primeira mensagem real após reconectar o `chip2` (webhook com Header Auth) | 🔴 Crítico | Se der 403, o bot fica mudo — ver rollback em [`N8N.md`](./N8N.md) |
-| Agendamento completo pelo WhatsApp com cliente real | 🔴 Crítico | Validado apenas via `/bot/process` com telefone de teste (2026-09-24) |
-| Cancelamento pelo WhatsApp | 🔴 Crítico | |
-| Confirmação sim/não pelo WhatsApp com o novo classificador | 🔴 Crítico | Só testes automatizados |
+| Primeira mensagem real após reconectar o `chip2` (webhook com Header Auth) | 🔴 Crítico | **Realizado em 2026-09-30** (C1). Se der 403, o bot fica mudo — ver rollback em [`N8N.md`](./N8N.md) |
+| Agendamento completo pelo WhatsApp com cliente real | 🔴 Crítico | **Realizado em 2026-10-01** (C2). Antes: validado apenas via `/bot/process` com telefone de teste (2026-09-24) |
+| Cancelamento pelo WhatsApp | 🔴 Crítico | **Realizado em 2026-10-01** (C3) |
+| Confirmação sim/não pelo WhatsApp com o novo classificador | 🔴 Crítico | Exercitada nos fluxos reais C2/C3 (2026-10-01); o classificador em si tem testes automatizados |
 | Lembrete de agendamento enviado | 🟠 Importante | Cron corrigido; envio real ainda não exercitado |
 | Mensagem de abandono enviada | 🟠 Importante | Cron corrigido; envio real ainda não exercitado |
 | Notificação de confirmação/cancelamento pelo painel com o cabeçalho | 🟠 Importante | |
