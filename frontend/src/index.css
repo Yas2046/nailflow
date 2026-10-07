@@ -115,3 +115,29 @@ select.input {
   padding-right: 2.25rem;
   cursor: pointer;
 }
+
+/* ─── Guia rápido: versão para imprimir (/ajuda/imprimir) ────────────────────
+   Fica aqui (e não em <style> embutido) porque a CSP do site só aceita CSS
+   externo. Tudo escopado em .guia-imprimir para não afetar a impressão de
+   outras telas. */
+@page guia {
+  size: A4;
+  margin: 11mm 14mm;
+}
+
+@media print {
+  .guia-imprimir {
+    page: guia;
+    font-size: 13px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .guia-imprimir .guia-passo {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .guia-imprimir .guia-passo-novo {
+    break-before: page;
+    page-break-before: always;
+  }
+}

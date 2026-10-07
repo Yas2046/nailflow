@@ -3,22 +3,12 @@ import { GUIA_PASSOS, GUIA_SUBTITULO, GUIA_TITULO } from '../content/guiaRapido'
 import { GuiaShell } from '../components/GuiaPecas';
 import GuiaCorpo from '../components/GuiaCorpo';
 
-// Folha de estilo só da impressão: A4, margens, cores preservadas e sem fundo creme.
-const ESTILO_IMPRESSAO = `
-@media print {
-  @page { size: A4; margin: 11mm 14mm; }
-  html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .guia-imprimir { font-size: 13px; }
-  .guia-passo { break-inside: avoid; page-break-inside: avoid; }
-  .guia-passo-novo { break-before: page; page-break-before: always; }
-}
-`;
-
 // Versão do guia em uma única página, própria para imprimir ou "Salvar como PDF" no navegador.
+// As regras de impressão (A4, uma etapa por página, cores preservadas) ficam em index.css,
+// sob `.guia-imprimir`: a CSP do site bloqueia <style> embutido.
 export default function AjudaImprimir() {
   return (
     <GuiaShell>
-      <style>{ESTILO_IMPRESSAO}</style>
       <div className="guia-imprimir space-y-10 print:space-y-7">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <Link to="/ajuda" className="text-sm text-ink/45 hover:text-wine-700 transition-colors">
