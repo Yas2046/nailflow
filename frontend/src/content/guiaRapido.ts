@@ -70,7 +70,7 @@ export const GUIA_PASSOS: GuiaPasso[] = [
     resumo: 'Leva só um minutinho: você precisa de um e-mail e de uma senha.',
     itens: [
       `No celular ou no computador, abra o NailFlow no navegador: **${ENDERECO_NAILFLOW}**. Na tela de entrada, clique em **Criar conta** (logo abaixo do botão Entrar).`,
-      'Escreva o **Nome do negócio**, por exemplo: Studio Camila Nails.',
+      'Escreva o **Nome do negócio**, por exemplo: Studio Camila Beleza.',
       'Confira o **Link da sua página pública**. Ele é sugerido a partir do nome do negócio; use só letras minúsculas, números e hífens (mínimo de 3 caracteres).',
       'Informe seu **E-mail** e crie uma **Senha** com pelo menos 8 caracteres.',
       'Clique em **Criar conta**. Em seguida você volta para a tela de entrada: digite o mesmo e-mail e a mesma senha e clique em **Entrar**.',
@@ -113,9 +113,9 @@ export const GUIA_PASSOS: GuiaPasso[] = [
     resumo: 'Cadastre o que você oferece para a agenda saber quanto tempo cada atendimento leva e quanto custa.',
     itens: [
       'No menu, abra **Serviços** e clique em **+ Novo serviço**.',
-      'Escreva o **Nome**, por exemplo: Esmaltação em gel, Alongamento em fibra ou Manutenção.',
+      'Escreva o **Nome**, por exemplo: Corte e escova, Coloração ou Design de sobrancelhas.',
       'Se quiser, acrescente uma **Descrição** curta.',
-      'Informe o **Preço** e a **Duração (min)**. Exemplo: 120 minutos para um alongamento.',
+      'Informe o **Preço** e a **Duração (min)**. Exemplo: 120 minutos para uma coloração.',
       'Deixe **Serviço ativo** ligado para ele poder ser agendado.',
       '**Aparece no WhatsApp** define se o serviço é oferecido às clientes na sua página de agendamento (e no WhatsApp, se você conectá-lo). Desligado, ele fica como **Somente Agenda**: só você consegue agendá-lo.',
       'Clique em **Salvar**.',
@@ -137,7 +137,7 @@ export const GUIA_PASSOS: GuiaPasso[] = [
     itens: [
       'No menu, abra **Clientes** e clique em **+ Nova cliente**.',
       'Preencha o **Nome** e o **Telefone** (código do país + DDD + número, sem espaços). Exemplo: 5531912345678.',
-      'Em **Observações** (opcional), anote o que vale lembrar: alergias, preferências de cor, formato das unhas.',
+      'Em **Observações** (opcional), anote o que vale lembrar: alergias, preferências e cuidados especiais.',
       'Clique em **Cadastrar**.',
       'Para encontrar uma cliente depois, use a busca **Buscar por nome ou telefone…** ou os filtros **Todas**, **Novas**, **Recorrentes** e **Inativas** (sem atendimento há 60 dias ou mais).',
     ],

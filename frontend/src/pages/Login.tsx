@@ -40,7 +40,7 @@ export default function Login() {
           <div>
             <p className="font-display text-4xl text-cream tracking-tight mb-3">NailFlow</p>
             <p className="text-wine-100/55 text-sm max-w-[200px] leading-relaxed">
-              Agenda profissional para quem transforma unhas em arte.
+              Agenda profissional para quem transforma beleza em experiências.
             </p>
           </div>
         </div>

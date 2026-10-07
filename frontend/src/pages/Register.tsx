@@ -80,7 +80,7 @@ export default function Register() {
           <div>
             <p className="font-display text-4xl text-cream tracking-tight mb-3">NailFlow</p>
             <p className="text-wine-100/55 text-sm max-w-[200px] leading-relaxed">
-              Agenda profissional para quem transforma unhas em arte.
+              Agenda profissional para quem transforma beleza em experiências.
             </p>
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function Register() {
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
                 className="input"
-                placeholder="Ex: Studio Camila Nails"
+                placeholder="Ex: Studio Camila Beleza"
                 autoComplete="organization"
               />
             </div>
@@ -137,7 +137,7 @@ export default function Register() {
                     setSlugEdited(true);
                   }}
                   className="flex-1 py-2.5 pr-3 text-sm bg-transparent outline-none text-ink placeholder:text-ink/30"
-                  placeholder="studio-camila-nails"
+                  placeholder="studio-camila-beleza"
                   autoComplete="off"
                   spellCheck={false}
                 />
