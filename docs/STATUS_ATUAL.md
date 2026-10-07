@@ -1,11 +1,11 @@
 # NailFlow — Status Atual (2026-10-03)
 
-## Estado atual — 2026-10-03 (referência: `main` em `12dcff7`)
+## Estado atual — 2026-10-03 (referência: `main` em `a326ec8`)
 
 > Este bloco descreve o estado real em 2026-10-03. **Tudo abaixo desta seção, até "O que NÃO está publicado", é histórico até 2026-09-30** (V1/V2, rodadas de segurança, Admin e página pública); foi mantido como registro e só recebeu notas pontuais de estado atual onde ficaria enganoso.
 
 **Git e deploy**
-- **Repositório:** https://github.com/Yas2046/nailflow — branch de trabalho **`main`**, `main` = `origin/main` = `12dcff7` (o commit de documentação desta etapa vem depois), publicada e **em produção** (a `feat/phase5-register` foi integrada à `main` em 2026-10-02 e é só histórico).
+- **Repositório:** https://github.com/Yas2046/nailflow — branch de trabalho **`main`**, `main` = `origin/main` = `a326ec8` (o commit de documentação desta etapa vem depois), publicada e **em produção** (a `feat/phase5-register` foi integrada à `main` em 2026-10-02 e é só histórico).
 - **Commits recentes:**
 
   | Commit | Data | O quê |
