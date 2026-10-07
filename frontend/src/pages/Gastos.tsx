@@ -454,7 +454,7 @@ export default function Gastos() {
                 <input
                   ref={descRef}
                   className="input"
-                  placeholder="Ex: Esmalte base coat"
+                  placeholder="Ex: Produtos para finalização"
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   maxLength={200}

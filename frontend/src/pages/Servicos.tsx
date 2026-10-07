@@ -279,7 +279,7 @@ export default function Servicos() {
                   className="input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex.: Manicure, Pedicure…"
+                  placeholder="Ex.: Corte e escova, Coloração…"
                   autoFocus={isNew}
                 />
               </label>

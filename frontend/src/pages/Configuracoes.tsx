@@ -298,7 +298,7 @@ function PainelWhatsApp() {
               type="text"
               value={instanceNameInput}
               onChange={e => { setInstanceNameInput(e.target.value); setCreateError(null); }}
-              placeholder="ex: minha-manicure"
+              placeholder="ex: studio-camila-beleza"
               maxLength={80}
               className="input"
               autoFocus
