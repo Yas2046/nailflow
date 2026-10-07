@@ -5,14 +5,6 @@ import { GUIA_PASSOS, getPasso } from '../content/guiaRapido';
 import { GuiaShell } from '../components/GuiaPecas';
 import GuiaCorpo from '../components/GuiaCorpo';
 
-function IconSeta({ volta = false }: { volta?: boolean }) {
-  return (
-    <svg className={`w-4 h-4 ${volta ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
-    </svg>
-  );
-}
-
 export default function AjudaPasso() {
   const { passo: slug } = useParams();
   const { professional } = useAuth();
@@ -36,7 +28,7 @@ export default function AjudaPasso() {
       <article className="space-y-7">
         <div>
           <Link to="/ajuda" className="text-sm text-ink/45 hover:text-wine-700 transition-colors">
-            ← Guia rápido
+            ← Voltar para o guia
           </Link>
 
           <div className="mt-4 flex items-center gap-3">
@@ -82,18 +74,26 @@ export default function AjudaPasso() {
         {/* anterior / próximo */}
         <nav className="flex items-center justify-between gap-3 pt-6 border-t border-wine-100/70" aria-label="Navegar entre as etapas">
           {anterior ? (
-            <Link to={`/ajuda/${anterior.slug}`} className="btn-secondary">
-              <IconSeta volta /> Anterior
+            <Link
+              to={`/ajuda/${anterior.slug}`}
+              className="btn-secondary"
+              aria-label={`Etapa anterior: ${anterior.titulo}`}
+              title={anterior.titulo}
+            >
+              ← Anterior
             </Link>
           ) : (
             <span />
           )}
-          {proximo ? (
-            <Link to={`/ajuda/${proximo.slug}`} className="btn-primary">
-              Próximo: {proximo.titulo} <IconSeta />
+          {proximo && (
+            <Link
+              to={`/ajuda/${proximo.slug}`}
+              className="btn-primary"
+              aria-label={`Próxima etapa: ${proximo.titulo}`}
+              title={proximo.titulo}
+            >
+              Próxima →
             </Link>
-          ) : (
-            <Link to="/ajuda" className="btn-secondary">Voltar ao início do guia</Link>
           )}
         </nav>
       </article>
