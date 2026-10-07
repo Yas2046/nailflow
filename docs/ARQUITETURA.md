@@ -153,6 +153,20 @@ Configuração por profissional (7 a 365 dias, padrão 60), definida em Configur
 
 ---
 
+## Guia Rápido ("Ajuda")
+
+Guia para a profissional que está começando, do cadastro ao primeiro agendamento. É só frontend: não usa backend nem banco.
+
+- **Páginas públicas** (não exigem login, para poder enviar o guia a quem ainda não tem conta): `/ajuda` (início, com os cartões "Está começando agora?" e a lista das 8 etapas), `/ajuda/:etapa` (uma etapa) e `/ajuda/imprimir` (todas as etapas numa página própria para imprimir ou "Salvar como PDF" pelo navegador, uma etapa por página A4)
+- **Conteúdo centralizado** em `frontend/src/content/guiaRapido.ts` (etapas, textos, legenda dos status). O endereço do NailFlow citado no guia fica na constante `ENDERECO_NAILFLOW` do mesmo arquivo (hoje `nailflow.duckdns.org`); se o domínio mudar, troca-se só ali
+- **`components/GuiaCorpo.tsx`** concentra o conteúdo de uma etapa, compartilhado entre a versão web (`pages/AjudaPasso.tsx`) e a de impressão (`pages/AjudaImprimir.tsx`); `components/GuiaPecas.tsx` reúne as peças visuais (cabeçalho público, moldura das imagens, avisos, listas)
+- **Imagens:** capturas das telas reais do NailFlow, com dados fictícios, em `frontend/public/guia/` (se uma imagem faltar, a moldura mostra "Imagem em breve")
+- **Integração com o card "Primeiros passos" existente** (não há um segundo checklist): link "Ver guia rápido" no card (`OnboardingChecklist.tsx`) e no cartão "Vamos configurar sua agenda" do Início
+- **Acesso dentro do sistema:** item "Ajuda" no rodapé do menu lateral e ícone `?` na barra superior do celular (`Layout.tsx`)
+- Para quem já está logada, cada etapa mostra um botão que abre a tela correspondente; para quem não está, as etapas 2 e 8 oferecem "Criar minha conta" / "Já tenho conta"
+
+---
+
 ## Multi-tenancy
 
 Cada profissional tem:
