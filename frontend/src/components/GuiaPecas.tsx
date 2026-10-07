@@ -59,7 +59,7 @@ export function GuiaShell({ children }: { children: ReactNode }) {
       <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 print:py-0 print:px-0 print:max-w-none">{children}</main>
 
       <footer className="py-6 text-center text-xs text-ink/30 print:hidden">
-        NailFlow · Agenda profissional para quem transforma unhas em arte.
+        NailFlow · Transformando beleza em experiências.
       </footer>
     </div>
   );
