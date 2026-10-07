@@ -18,6 +18,7 @@ import PaginaPublica from './pages/PaginaPublica';
 import Configuracoes from './pages/Configuracoes';
 import Admin from './pages/Admin';
 import AdminAuditoria from './pages/AdminAuditoria';
+import AdminContaVisaoGeral from './pages/admin/AdminContaVisaoGeral';
 import Ajuda from './pages/Ajuda';
 import AjudaPasso from './pages/AjudaPasso';
 import AjudaImprimir from './pages/AjudaImprimir';
@@ -43,6 +44,7 @@ export default function App() {
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/auditoria" element={<AdminAuditoria />} />
+            <Route path="/admin/conta" element={<AdminContaVisaoGeral />} />
           </Route>
 
           {/* área profissional */}

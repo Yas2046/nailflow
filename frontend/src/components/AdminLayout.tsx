@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Outlet, Navigate, NavLink } from 'react-router-dom';
+import { Outlet, Navigate, NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from './LogoMark';
 
@@ -27,9 +27,18 @@ function IconClipboard() {
   );
 }
 
-const NAV: Array<{ to: string; label: string; icon: ReactNode }> = [
+function IconUser() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0" />
+    </svg>
+  );
+}
+
+const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
   { to: '/admin', label: 'Profissionais', icon: <IconUsers /> },
   { to: '/admin/auditoria', label: 'Auditoria', icon: <IconClipboard /> },
+  { to: '/admin/conta', label: 'Minha conta', icon: <IconUser />, end: false },
 ];
 
 export default function AdminLayout() {
@@ -65,7 +74,7 @@ export default function AdminLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end
+              end={item.end ?? true}
               className={({ isActive }) =>
                 `relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
                   isActive ? 'bg-white/12 text-white' : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
@@ -84,13 +93,15 @@ export default function AdminLayout() {
         </nav>
 
         <div className="m-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3.5 flex items-center gap-3">
-          <span className="w-9 h-9 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm shrink-0" aria-hidden="true">
-            {initial}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-white truncate leading-tight">{professional.name}</p>
-            <p className="text-[11px] text-wine-100/50 truncate leading-tight mt-0.5">{professional.email}</p>
-          </div>
+          <Link to="/admin/conta" aria-label="Minha conta" className="flex items-center gap-3 min-w-0 flex-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
+            <span className="w-9 h-9 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm shrink-0" aria-hidden="true">
+              {initial}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white truncate leading-tight">{professional.name}</p>
+              <p className="text-[11px] text-wine-100/50 truncate leading-tight mt-0.5">{professional.email}</p>
+            </div>
+          </Link>
           <button
             onClick={logout}
             title="Sair da conta"
@@ -115,9 +126,9 @@ export default function AdminLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="w-8 h-8 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm" aria-hidden="true">
+            <Link to="/admin/conta" aria-label="Minha conta" className="w-8 h-8 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
               {initial}
-            </span>
+            </Link>
             <button
               onClick={logout}
               title="Sair da conta"
@@ -133,14 +144,14 @@ export default function AdminLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end
+              end={item.end ?? true}
               className={({ isActive }) =>
-                `flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
+                `flex-1 min-w-0 sm:flex-none inline-flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
                   isActive ? 'bg-white/15 text-white ring-1 ring-gold-400/40' : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
-              {item.icon}
+              <span className="hidden min-[430px]:inline-flex">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
