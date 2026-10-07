@@ -113,9 +113,14 @@ export default function OnboardingChecklist({ status }: { status: OnboardingStat
             <h2 className="font-display text-lg sm:text-xl text-wine-700 leading-tight">Primeiros passos</h2>
             <p className="text-xs text-ink/45 mt-1">Configure o essencial para começar a receber agendamentos.</p>
           </div>
-          <button onClick={hide} className="shrink-0 text-xs text-ink/35 hover:text-wine-700 transition-colors">
-            Ocultar por enquanto
-          </button>
+          <div className="shrink-0 flex flex-col items-end gap-1">
+            <Link to="/ajuda" className="text-xs font-semibold text-wine-700 hover:text-wine-800 transition-colors">
+              Ver guia rápido
+            </Link>
+            <button onClick={hide} className="text-xs text-ink/35 hover:text-wine-700 transition-colors">
+              Ocultar por enquanto
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 flex items-center gap-3">

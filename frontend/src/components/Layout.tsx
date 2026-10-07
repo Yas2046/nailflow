@@ -1,4 +1,4 @@
-import { NavLink, Outlet, Navigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { WhatsAppInstanceConfig, WhatsAppStatus } from '../types';
@@ -156,6 +156,17 @@ export default function Layout() {
           ))}
         </nav>
 
+        {/* ajuda / guia rápido */}
+        <div className="px-3 pb-3">
+          <Link
+            to="/ajuda"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-wine-100/70 hover:bg-white/10 hover:text-white transition-all"
+          >
+            <span className="shrink-0 opacity-70 w-5 h-5 rounded-full border border-current flex items-center justify-center text-[11px] font-semibold leading-none" aria-hidden="true">?</span>
+            Ajuda
+          </Link>
+        </div>
+
         {/* badge WhatsApp desconectado */}
         {waDisconnected && (
           <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-rose-500/20 border border-rose-400/30 flex items-center gap-2">
@@ -193,7 +204,14 @@ export default function Layout() {
           {waDisconnected && (
             <span title="WhatsApp desconectado" className="w-2 h-2 rounded-full bg-rose-400 animate-pulse shrink-0" />
           )}
-          <p className="font-display text-xs italic text-cream/80 truncate max-w-[140px]">{professional.businessName}</p>
+          <p className="font-display text-xs italic text-cream/80 truncate max-w-[120px]">{professional.businessName}</p>
+          <Link
+            to="/ajuda"
+            aria-label="Ajuda: guia rápido"
+            className="shrink-0 w-6 h-6 rounded-full border border-cream/40 text-cream/80 hover:text-white hover:border-white flex items-center justify-center text-xs font-semibold leading-none"
+          >
+            ?
+          </Link>
         </div>
       </div>
 

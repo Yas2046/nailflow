@@ -18,6 +18,9 @@ import PaginaPublica from './pages/PaginaPublica';
 import Configuracoes from './pages/Configuracoes';
 import Admin from './pages/Admin';
 import AdminAuditoria from './pages/AdminAuditoria';
+import Ajuda from './pages/Ajuda';
+import AjudaPasso from './pages/AjudaPasso';
+import AjudaImprimir from './pages/AjudaImprimir';
 
 export default function App() {
   return (
@@ -30,6 +33,11 @@ export default function App() {
           <Route path="/agenda-publica" element={<PaginaPublica />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
+          {/* guia rápido — público, não exige login */}
+          <Route path="/ajuda" element={<Ajuda />} />
+          <Route path="/ajuda/imprimir" element={<AjudaImprimir />} />
+          <Route path="/ajuda/:passo" element={<AjudaPasso />} />
 
           {/* área admin — layout próprio */}
           <Route element={<AdminLayout />}>

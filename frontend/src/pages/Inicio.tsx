@@ -254,13 +254,18 @@ export default function Inicio() {
             <p className="text-wine-300 text-sm mt-1.5 max-w-md">
               Em poucos passos você já pode receber agendamentos pela sua página pública.
             </p>
-            <Link
-              to={nextOnboardingStep.to}
-              className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2.5"
-            >
-              Continuar: {nextOnboardingStep.label}
-              <IconArrowRight />
-            </Link>
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <Link
+                to={nextOnboardingStep.to}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2.5"
+              >
+                Continuar: {nextOnboardingStep.label}
+                <IconArrowRight />
+              </Link>
+              <Link to="/ajuda" className="text-sm font-medium text-cream/85 hover:text-white underline underline-offset-4 decoration-cream/30 transition-colors">
+                Ver guia rápido
+              </Link>
+            </div>
           </div>
         )}
 
