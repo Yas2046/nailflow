@@ -208,9 +208,9 @@ export default function Layout() {
           <Link
             to="/ajuda"
             aria-label="Ajuda: guia rápido"
-            className="shrink-0 w-6 h-6 rounded-full border border-cream/40 text-cream/80 hover:text-white hover:border-white flex items-center justify-center text-xs font-semibold leading-none"
+            className="shrink-0 px-2.5 py-1 rounded-full border border-cream/40 text-cream/90 hover:text-white hover:border-white text-xs font-medium leading-none"
           >
-            ?
+            Ajuda
           </Link>
         </div>
       </div>
