@@ -671,7 +671,7 @@ export default function Perfil() {
             maxLength={MAX_BIO}
             rows={3}
             onChange={(e) => setBioDraft(e.target.value)}
-            placeholder="Ex.: Nail designer em Belo Horizonte. Alongamento, esmaltação em gel e nail art."
+            placeholder="Ex.: Profissional de beleza em Belo Horizonte. Serviços de beleza e cuidados pessoais."
             className="w-full text-sm text-ink bg-transparent border border-wine-200 rounded-lg px-3 py-2 focus:outline-none focus:border-wine-600 resize-none"
           />
           <p className="text-[11px] text-ink/35 text-right mt-1">{bioDraft.length}/{MAX_BIO}</p>
