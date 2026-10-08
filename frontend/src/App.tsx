@@ -21,6 +21,7 @@ import AdminAuditoria from './pages/AdminAuditoria';
 import AdminContaVisaoGeral from './pages/admin/AdminContaVisaoGeral';
 import AdminContaPerfil from './pages/admin/AdminContaPerfil';
 import AdminContaSeguranca from './pages/admin/AdminContaSeguranca';
+import AdminContaAtividade from './pages/admin/AdminContaAtividade';
 import Ajuda from './pages/Ajuda';
 import AjudaPasso from './pages/AjudaPasso';
 import AjudaImprimir from './pages/AjudaImprimir';
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/admin/conta" element={<AdminContaVisaoGeral />} />
             <Route path="/admin/conta/perfil" element={<AdminContaPerfil />} />
             <Route path="/admin/conta/seguranca" element={<AdminContaSeguranca />} />
+            <Route path="/admin/conta/atividade" element={<AdminContaAtividade />} />
           </Route>
 
           {/* área profissional */}

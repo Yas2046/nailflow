@@ -176,7 +176,7 @@ function ActivityLink() {
         <h3 className="font-display text-2xl leading-tight text-wine-800">Atividade da conta</h3>
         <p className="mt-1.5 text-base text-ink/55">Consulte as ações administrativas registradas no NailFlow.</p>
       </div>
-      <Link to="/admin/auditoria" className="btn-secondary min-h-[46px] shrink-0 px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">
+      <Link to="/admin/conta/atividade" className="btn-secondary min-h-[46px] shrink-0 px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">
         Ver histórico
       </Link>
     </section>

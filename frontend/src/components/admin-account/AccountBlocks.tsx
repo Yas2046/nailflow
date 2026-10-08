@@ -106,7 +106,7 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
         </div>
         {activity && activity.length > 0 && (
           <Link
-            to="/admin/auditoria"
+            to="/admin/conta/atividade"
             className="rounded-lg py-1 text-[15px] font-medium text-wine-600 transition-colors hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40"
           >
             Ver histórico completo →
@@ -133,10 +133,10 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
 }
 
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorState({ message, onRetry, title = 'Não foi possível abrir sua conta' }: { message: string; onRetry: () => void; title?: string }) {
   return (
     <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50/60 px-6 py-12 text-center">
-      <p className="font-display text-2xl text-rose-700">Não foi possível abrir sua conta</p>
+      <p className="font-display text-2xl text-rose-700">{title}</p>
       <p className="mx-auto mt-2 max-w-md text-base text-ink/60">{message}</p>
       <button type="button" onClick={onRetry} className="btn-secondary mt-6 min-h-[46px] px-6">Tentar novamente</button>
     </div>
