@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ChangeEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import AccountShell from '../../components/admin-account/AccountShell';
-import { Eyebrow, Panel, Skeleton, SoonButton, StatusDot } from '../../components/admin-account/AccountUi';
+import { Eyebrow, Panel, Skeleton, StatusDot } from '../../components/admin-account/AccountUi';
 import {
   ENTER, ActivityPanel, Avatar, ErrorState, Pill, longDate,
 } from '../../components/admin-account/AccountBlocks';
@@ -278,7 +279,7 @@ function SecurityCard({ editing }: { editing: boolean }) {
           </div>
         ))}
       </dl>
-      <div className="mt-8"><SoonButton>Gerenciar segurança</SoonButton></div>
+      <div className="mt-8"><Link to="/admin/conta/seguranca" className="btn-secondary min-h-[46px] px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">Gerenciar segurança</Link></div>
     </Panel>
   );
 }

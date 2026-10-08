@@ -28,7 +28,7 @@ export const ACCOUNT_NAV: AccountNavGroup[] = [
   {
     group: 'Segurança',
     items: [
-      { id: 'seguranca', label: 'Segurança', to: '/admin/conta/seguranca', available: false },
+      { id: 'seguranca', label: 'Segurança', to: '/admin/conta/seguranca', available: true },
       { id: 'sessoes', label: 'Sessões', to: '/admin/conta/sessoes', available: false },
       { id: 'atividade', label: 'Atividade', to: '/admin/conta/atividade', available: false },
     ],

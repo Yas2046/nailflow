@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import AccountShell, { isContaPageAvailable } from '../../components/admin-account/AccountShell';
 import { Eyebrow, Panel, Skeleton, StatusDot } from '../../components/admin-account/AccountUi';
 import {
-  ENTER, ActivityPanel, Avatar, ErrorState, Pill, firstName, longDate,
+  ENTER, ActivityPanel, Avatar, ErrorState, IconDevice, IconShield, Pill, describeThisDevice, firstName, longDate,
 } from '../../components/admin-account/AccountBlocks';
 import {
   useAccountOverview,
@@ -10,40 +10,6 @@ import {
 } from '../../components/admin-account/useAccountOverview';
 
 // ── utilitários ─────────────────────────────────────────────────────────────
-
-// Navegador e sistema deste dispositivo, lidos localmente (nada vem do servidor).
-function describeThisDevice() {
-  const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
-  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'sistema não identificado';
-  return { label: `${browser} · ${os}`, mobile: /Android|iPhone|iPad|iPod/.test(ua) };
-}
-
-// ── ícones (poucos e discretos) ─────────────────────────────────────────────
-
-const icon = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'h-5 w-5' } as const;
-
-function IconShield() {
-  return (
-    <svg {...icon}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6l-7-3Zm-2.5 9 2 2 3.5-4" />
-    </svg>
-  );
-}
-
-function IconDevice({ mobile }: { mobile: boolean }) {
-  return mobile ? (
-    <svg {...icon}>
-      <rect x="7" y="3" width="10" height="18" rx="2.5" />
-      <path strokeLinecap="round" d="M11 18h2" />
-    </svg>
-  ) : (
-    <svg {...icon}>
-      <rect x="3" y="4.5" width="18" height="12" rx="2" />
-      <path strokeLinecap="round" d="M9 20h6M12 16.5V20" />
-    </svg>
-  );
-}
 
 // ── hero ────────────────────────────────────────────────────────────────────
 
