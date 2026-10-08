@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { usePageTitle } from '../hooks/usePageTitle';
+import { IconBan, IconCheckCircle, IconRefresh } from '../components/AdminIcons';
 
 type AuditAction = 'update' | 'block' | 'unblock' | 'delete';
 
@@ -32,20 +35,11 @@ const iconProps = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, view
 function IconPencil({ className = 'w-5 h-5' }: { className?: string }) {
   return <svg className={className} {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l3 3" /></svg>;
 }
-function IconBan({ className = 'w-5 h-5' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" d="m6 6 12 12" /></svg>;
-}
-function IconCheck({ className = 'w-5 h-5' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" strokeLinejoin="round" d="m8.5 12.3 2.4 2.4 4.6-5" /></svg>;
-}
 function IconTrash({ className = 'w-5 h-5' }: { className?: string }) {
   return <svg className={className} {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5" /></svg>;
 }
 function IconClock({ className = 'w-5 h-5' }: { className?: string }) {
   return <svg className={className} {...iconProps}><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5V12l3 2" /></svg>;
-}
-function IconCalendar({ className = 'w-5 h-5' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><rect x="3.5" y="5" width="17" height="15" rx="2" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>;
 }
 function IconChevron({ open }: { open: boolean }) {
   return (
@@ -54,14 +48,11 @@ function IconChevron({ open }: { open: boolean }) {
     </svg>
   );
 }
-function IconRefresh({ className = 'w-4 h-4' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M20 11a8 8 0 0 0-14.3-4.3L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.3L20 15.5M20 20v-4.5h-4.5" /></svg>;
-}
 
 const ACTION_META: Record<AuditAction, { filter: string; title: string; icon: ReactNode; tile: string; text: string }> = {
   update: { filter: 'Edição', title: 'Cadastro editado', icon: <IconPencil />, tile: 'bg-wine-100 text-wine-700', text: 'text-wine-700' },
   block: { filter: 'Bloqueio', title: 'Conta bloqueada', icon: <IconBan />, tile: 'bg-rose-50 text-rose-600', text: 'text-rose-700' },
-  unblock: { filter: 'Desbloqueio', title: 'Conta desbloqueada', icon: <IconCheck />, tile: 'bg-sage-100 text-[#3F5F46]', text: 'text-[#3F5F46]' },
+  unblock: { filter: 'Desbloqueio', title: 'Conta desbloqueada', icon: <IconCheckCircle />, tile: 'bg-sage-100 text-[#3F5F46]', text: 'text-[#3F5F46]' },
   delete: { filter: 'Exclusão', title: 'Conta excluída', icon: <IconTrash />, tile: 'bg-rose-100 text-rose-700', text: 'text-rose-700' },
 };
 
@@ -111,20 +102,16 @@ function SkeletonBlock({ className }: { className: string }) {
   return <div className={`bg-wine-100/60 rounded-lg animate-pulse ${className}`} />;
 }
 
-function SummaryCard({ label, caption, value, icon, tone }: { label: string; caption: string; value: number | null; icon: ReactNode; tone: 'wine' | 'gold' }) {
-  const chip = tone === 'gold' ? 'bg-gold-300/35 text-[#7A5A22]' : 'bg-wine-100 text-wine-700';
+function SummaryStat({ label, caption, value }: { label: string; caption: string; value: number | null }) {
   return (
-    <div className="rounded-3xl bg-white border border-wine-100/70 p-5 sm:p-6 shadow-[0_1px_2px_rgba(61,29,40,0.04),0_10px_28px_-14px_rgba(61,29,40,0.14)] flex items-center gap-5">
-      <span className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${chip}`}>{icon}</span>
-      <div className="min-w-0">
-        {value === null ? (
-          <SkeletonBlock className="h-9 w-14" />
-        ) : (
-          <p className="font-display text-4xl text-wine-800 tabular-nums leading-none">{value}</p>
-        )}
-        <p className="text-sm font-medium text-ink/70 mt-2">{label}</p>
-        <p className="text-xs text-ink/40 mt-0.5">{caption}</p>
-      </div>
+    <div className="min-w-0 p-5 sm:p-7">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/60">{label}</p>
+      {value === null ? (
+        <SkeletonBlock className="mt-3 h-9 w-14" />
+      ) : (
+        <p className="mt-2 font-display text-4xl font-semibold leading-none text-wine-800">{value}</p>
+      )}
+      <p className="mt-2 text-sm text-ink/65">{caption}</p>
     </div>
   );
 }
@@ -161,7 +148,7 @@ function ListSkeleton() {
 function DetailRow({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] uppercase tracking-widest font-semibold text-ink/40">{label}</dt>
+      <dt className="text-xs uppercase tracking-widest font-semibold text-ink/60">{label}</dt>
       <dd className={`mt-1 text-sm text-ink/75 break-all ${mono ? 'font-mono text-xs text-ink/60' : ''}`}>{children}</dd>
     </div>
   );
@@ -186,31 +173,31 @@ function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; on
             <span className="block text-sm text-ink/70 truncate" title={item.targetBusinessName}>{item.targetBusinessName}</span>
           </span>
           <span className="min-w-0 sm:text-right">
-            <span className="block text-xs text-ink/45 truncate" title={item.actorEmail}>por {item.actorEmail}</span>
-            <span className="block text-xs text-ink/55 tabular-nums mt-0.5">{formatShort(item.createdAt)}</span>
+            <span className="block text-xs text-ink/60 truncate" title={item.actorEmail}>por {item.actorEmail}</span>
+            <span className="block text-xs text-ink/65 tabular-nums mt-0.5">{formatShort(item.createdAt)}</span>
           </span>
         </span>
-        <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-sage-100 text-[#3F5F46] border border-sage-200 px-2.5 py-1 text-[11px] font-semibold tracking-wide shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-sage-500" aria-hidden="true" />
-          Concluída
-        </span>
-        <span className="text-ink/35 shrink-0 mt-1 sm:mt-0"><IconChevron open={open} /></span>
+        <span className="text-ink/60 shrink-0 mt-1 sm:mt-0"><IconChevron open={open} /></span>
       </button>
 
       {open && (
         <div id={panelId} className="px-4 sm:px-5 pb-5 -mt-1">
           <div className="rounded-2xl bg-cream border border-wine-100/60 p-4 sm:p-5">
             <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-4">
-              <DetailRow label="Ação">{meta.filter} <span className="text-ink/35">({item.action})</span></DetailRow>
-              <DetailRow label="Resultado">Concluída com sucesso</DetailRow>
-              <DetailRow label="Administrador">{item.actorEmail}</DetailRow>
-              <DetailRow label="ID do administrador" mono>{item.actorId}</DetailRow>
-              <DetailRow label="Profissional afetada (nome do negócio no registro)">{item.targetBusinessName}</DetailRow>
-              <DetailRow label="ID da profissional" mono>{item.targetId}</DetailRow>
+              <DetailRow label="Ação">{meta.filter}</DetailRow>
               <DetailRow label="Data e hora">{formatFull(item.createdAt)}</DetailRow>
-              <DetailRow label="ID do registro" mono>{item.id}</DetailRow>
+              <DetailRow label="Feita por">{item.actorEmail}</DetailRow>
+              <DetailRow label="Profissional (nome do negócio no registro)">{item.targetBusinessName}</DetailRow>
             </dl>
-            <p className="text-xs text-ink/45 mt-4 leading-relaxed">
+            <details className="mt-4 text-sm">
+              <summary className="cursor-pointer rounded font-medium text-wine-600 hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40">Detalhes técnicos</summary>
+              <dl className="mt-3 grid sm:grid-cols-2 gap-x-8 gap-y-3">
+                <DetailRow label="ID do administrador" mono>{item.actorId}</DetailRow>
+                <DetailRow label="ID da profissional" mono>{item.targetId}</DetailRow>
+                <DetailRow label="ID do registro" mono>{item.id}</DetailRow>
+              </dl>
+            </details>
+            <p className="text-xs text-ink/60 mt-4 leading-relaxed">
               Este registro guarda apenas quem fez a ação, qual foi a ação, em qual conta e quando.
               Os campos alterados em uma edição não são armazenados.
               {item.action === 'delete' && ' A conta foi excluída; o nome do negócio acima é o que ficou gravado no momento da exclusão.'}
@@ -225,6 +212,7 @@ function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; on
 // ── página ──────────────────────────────────────────────────────────────────
 
 export default function AdminAuditoria() {
+  usePageTitle('Auditoria');
   const [action, setAction] = useState<'all' | AuditAction>('all');
   const [preset, setPreset] = useState<Preset>('all');
   const [from, setFrom] = useState('');
@@ -315,24 +303,29 @@ export default function AdminAuditoria() {
 
       {/* ── topo ─────────────────────────────────────────────────────────── */}
       <header className="mb-8 sm:mb-10">
-        <p className="text-[11px] uppercase tracking-[0.22em] font-semibold text-gold-600">Administração</p>
-        <h1 className="font-display text-3xl sm:text-4xl lg:text-[2.6rem] font-semibold text-wine-800 leading-tight mt-2">Auditoria</h1>
-        <p className="text-sm sm:text-base text-ink/50 mt-1.5 max-w-2xl">
+        <p className="text-xs uppercase tracking-[0.22em] font-semibold text-gold-600">Gestão</p>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-wine-800 leading-tight mt-2">Auditoria</h1>
+        <p className="text-base text-ink/65 mt-1.5 max-w-2xl">
           Histórico das ações administrativas feitas sobre as contas das profissionais: edições, bloqueios,
-          desbloqueios e exclusões concluídas com sucesso.
+          desbloqueios e exclusões. Só ações concluídas com sucesso são registradas. Suas próprias ações também
+          aparecem em{' '}
+          <Link to="/admin/conta/atividade" className="font-medium text-wine-600 underline-offset-4 hover:text-wine-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 rounded">Atividade</Link>.
         </p>
       </header>
 
       {/* ── resumo ───────────────────────────────────────────────────────── */}
-      <section aria-label="Resumo" className="grid sm:grid-cols-2 gap-3 sm:gap-4 mb-10">
-        <SummaryCard label="Ações hoje" caption="desde as 00:00 (horário de Brasília)" value={summary?.today ?? null} icon={<IconClock />} tone="gold" />
-        <SummaryCard label="Últimos 7 dias" caption="nas últimas 168 horas" value={summary?.last7Days ?? null} icon={<IconCalendar />} tone="wine" />
+      <section
+        aria-label="Resumo"
+        className="mb-8 grid overflow-hidden rounded-3xl border border-wine-100/80 bg-white/85 shadow-[0_1px_2px_rgba(61,29,40,0.04),0_26px_60px_-34px_rgba(61,29,40,0.22)] sm:mb-10 sm:grid-cols-2 [&>*]:border-wine-100/70 [&>*:last-child]:border-t sm:[&>*:first-child]:border-r sm:[&>*:last-child]:border-t-0"
+      >
+        <SummaryStat label="Ações hoje" caption="desde as 00:00 (horário de Brasília)" value={summary?.today ?? null} />
+        <SummaryStat label="Últimos 7 dias" caption="nas últimas 168 horas" value={summary?.last7Days ?? null} />
       </section>
 
       {/* ── filtros ──────────────────────────────────────────────────────── */}
-      <section aria-label="Filtros" className="rounded-2xl bg-white/70 border border-wine-100/70 p-4 sm:p-5 mb-6 space-y-4">
+      <section aria-label="Filtros" className="mb-6 space-y-5">
         <div>
-          <p id={actionsLabelId} className="text-[11px] uppercase tracking-widest font-semibold text-ink/40 mb-2">Ação</p>
+          <p id={actionsLabelId} className="text-xs uppercase tracking-widest font-semibold text-ink/60 mb-2">Ação</p>
           <div role="group" aria-labelledby={actionsLabelId} className="flex flex-wrap gap-2">
             {ACTION_FILTERS.map((f) => (
               <button
@@ -340,8 +333,8 @@ export default function AdminAuditoria() {
                 type="button"
                 aria-pressed={action === f.id}
                 onClick={() => chooseAction(f.id)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50 ${
-                  action === f.id ? 'bg-wine-700 text-white border-wine-700' : 'bg-white text-ink/60 border-wine-100 hover:border-wine-300 hover:text-wine-700'
+                className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-[15px] transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 ${
+                  action === f.id ? 'border-wine-600 bg-wine-600 font-medium text-white' : 'border-wine-100 bg-white/80 text-ink/70 hover:border-wine-300 hover:text-wine-800'
                 }`}
               >
                 {f.label}
@@ -351,7 +344,7 @@ export default function AdminAuditoria() {
         </div>
 
         <div>
-          <p id={periodLabelId} className="text-[11px] uppercase tracking-widest font-semibold text-ink/40 mb-2">Período</p>
+          <p id={periodLabelId} className="text-xs uppercase tracking-widest font-semibold text-ink/60 mb-2">Período</p>
           <div className="flex flex-col xl:flex-row xl:items-end gap-3">
             <div role="group" aria-labelledby={periodLabelId} className="flex flex-wrap gap-2">
               {PRESETS.map((p) => (
@@ -360,8 +353,8 @@ export default function AdminAuditoria() {
                   type="button"
                   aria-pressed={preset === p.id}
                   onClick={() => choosePreset(p.id)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50 ${
-                    preset === p.id ? 'bg-wine-700 text-white border-wine-700' : 'bg-white text-ink/60 border-wine-100 hover:border-wine-300 hover:text-wine-700'
+                  className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-[15px] transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 ${
+                    preset === p.id ? 'border-wine-600 bg-wine-600 font-medium text-white' : 'border-wine-100 bg-white/80 text-ink/70 hover:border-wine-300 hover:text-wine-800'
                   }`}
                 >
                   {p.label}
@@ -370,11 +363,11 @@ export default function AdminAuditoria() {
             </div>
             <div className="flex flex-wrap items-end gap-3 xl:ml-auto">
               <label className="block">
-                <span className="block text-[11px] text-ink/45 mb-1">De</span>
+                <span className="block text-xs text-ink/60 mb-1">De</span>
                 <input type="date" className="input !py-1.5 w-40" value={from} max={to || undefined} onChange={(e) => changeDate('from', e.target.value)} />
               </label>
               <label className="block">
-                <span className="block text-[11px] text-ink/45 mb-1">Até</span>
+                <span className="block text-xs text-ink/60 mb-1">Até</span>
                 <input type="date" className="input !py-1.5 w-40" value={to} min={from || undefined} onChange={(e) => changeDate('to', e.target.value)} />
               </label>
               {hasFilters && (
@@ -391,10 +384,10 @@ export default function AdminAuditoria() {
       {/* ── lista ────────────────────────────────────────────────────────── */}
       <section aria-label="Registros" ref={listRef} className="scroll-mt-24 lg:scroll-mt-6">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <p className="text-sm text-ink/50" aria-live="polite">
+          <p className="text-sm text-ink/65" aria-live="polite">
             {initialLoad || rangeInvalid || error ? ' ' : total === 0 ? 'Nenhum registro' : `${firstShown}–${lastShown} de ${total} ${total === 1 ? 'registro' : 'registros'}`}
           </p>
-          <button onClick={retry} disabled={loading} className="btn-secondary !rounded-xl">
+          <button type="button" onClick={retry} disabled={loading} className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-wine-100 bg-white/80 px-4 text-sm text-ink/65 transition-colors hover:border-wine-300 hover:text-wine-800 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40">
             <IconRefresh />
             Atualizar
           </button>
@@ -410,7 +403,7 @@ export default function AdminAuditoria() {
             <p className="font-display text-xl text-wine-800 mt-5">
               {hasFilters ? 'Nenhum registro com esses filtros' : 'Ainda não há ações registradas'}
             </p>
-            <p className="text-sm text-ink/45 mt-1.5">
+            <p className="text-sm text-ink/60 mt-1.5">
               {hasFilters ? 'Tente outro período ou outro tipo de ação.' : 'Quando uma conta for editada, bloqueada, desbloqueada ou excluída, o registro aparece aqui.'}
             </p>
             {hasFilters && <button onClick={clearFilters} className="btn-secondary mt-6">Limpar filtros</button>}
@@ -437,7 +430,7 @@ export default function AdminAuditoria() {
             <button type="button" className="btn-secondary" disabled={page <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
               Anterior
             </button>
-            <span className="text-sm text-ink/50 tabular-nums">Página {page} de {totalPages}</span>
+            <span className="text-sm text-ink/65 tabular-nums">Página {page} de {totalPages}</span>
             <button type="button" className="btn-secondary" disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
               Próxima
             </button>
