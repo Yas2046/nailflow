@@ -4,6 +4,20 @@ import { z } from 'zod';
 import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
 
+// Emite o JWT da sessão e o grava no cookie httpOnly. Usado no login e quando a
+// versão do token muda (troca de senha / sair de todos) para manter a sessão atual.
+function setAuthCookie(res, professionalId, tokenVersion) {
+  const token = jwt.sign({ sub: professionalId, ver: tokenVersion }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  });
+  res.cookie('nailflow_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+}
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -27,16 +41,7 @@ export async function login(req, res, next) {
     if (!valid) throw invalidCredentials();
     if (professional.blocked_at !== null) throw invalidCredentials();
 
-    const token = jwt.sign({ sub: professional.id, ver: professional.token_version }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    });
-
-    res.cookie('nailflow_token', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    setAuthCookie(res, professional.id, professional.token_version);
 
     // O frontend usa so o cookie httpOnly; devolver o token tambem no corpo
     // expunha ele em texto plano a qualquer leitor da resposta (log, extensao
@@ -59,6 +64,61 @@ export async function login(req, res, next) {
 export async function logout(req, res) {
   res.clearCookie('nailflow_token');
   res.status(204).end();
+}
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Informe a senha atual.'),
+  newPassword: z
+    .string()
+    .min(8, 'A nova senha deve ter ao menos 8 caracteres.')
+    .max(72, 'A nova senha deve ter no máximo 72 caracteres.'),
+  confirmPassword: z.string(),
+}).strict();
+
+// Troca a senha da conta autenticada. Sobe token_version (derruba as demais
+// sessões) e reemite o cookie para que esta sessão continue válida.
+export async function changePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = changePasswordSchema.parse(req.body);
+    if (newPassword !== confirmPassword) throw new HttpError(400, 'A confirmação não confere com a nova senha.');
+    if (newPassword === currentPassword) throw new HttpError(400, 'A nova senha deve ser diferente da atual.');
+
+    const { rows } = await pool.query('SELECT password_hash FROM professionals WHERE id = $1', [req.professionalId]);
+    if (!rows[0]) throw new HttpError(401, 'Sessão inválida ou expirada.');
+    const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
+    if (!valid) throw new HttpError(400, 'Senha atual incorreta.');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    // WHERE token_version = ...: se outra troca/saída concorrente já mexeu, não sobrescreve.
+    const upd = await pool.query(
+      `UPDATE professionals SET password_hash = $1, token_version = token_version + 1
+        WHERE id = $2 AND token_version = $3 RETURNING token_version`,
+      [passwordHash, req.professionalId, req.tokenVersion]
+    );
+    if (!upd.rows[0]) throw new HttpError(401, 'Sessão inválida ou expirada.');
+
+    setAuthCookie(res, req.professionalId, upd.rows[0].token_version);
+    res.status(204).end();
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new HttpError(400, err.errors[0]?.message ?? 'Dados inválidos.'));
+    next(err);
+  }
+}
+
+// Encerra todas as sessões da conta (sobe token_version) e mantém esta.
+export async function logoutAll(req, res, next) {
+  try {
+    const upd = await pool.query(
+      `UPDATE professionals SET token_version = token_version + 1
+        WHERE id = $1 AND token_version = $2 RETURNING token_version`,
+      [req.professionalId, req.tokenVersion]
+    );
+    if (!upd.rows[0]) throw new HttpError(401, 'Sessão inválida ou expirada.');
+    setAuthCookie(res, req.professionalId, upd.rows[0].token_version);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function me(req, res, next) {

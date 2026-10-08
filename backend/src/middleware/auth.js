@@ -42,6 +42,7 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
     }
     req.professionalId = payload.sub;
+    req.tokenVersion = professional.token_version; // usado por troca de senha / sair de todos
     next();
   } catch (err) {
     next(err);
