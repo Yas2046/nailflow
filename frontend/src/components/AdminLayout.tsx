@@ -1,48 +1,26 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, Navigate, NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import type { AdminShellContext } from './adminShell';
+import { IconClipboard, IconHome, IconLogout, IconUser, IconUsers } from './AdminIcons';
 import LogoMark from './LogoMark';
 
-function IconLogout() {
-  return (
-    <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  );
-}
-
-function IconUsers() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 5.2a3.5 3.5 0 0 1 0 6.6" />
-    </svg>
-  );
-}
-
-function IconClipboard() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1ZM8 6H6.5A1.5 1.5 0 0 0 5 7.5v12A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 17.5 6H16M9 12h6M9 16h4" />
-    </svg>
-  );
-}
-
-function IconUser() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0" />
-    </svg>
-  );
-}
-
-const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
-  { to: '/admin', label: 'Profissionais', icon: <IconUsers /> },
+const NAV: Array<{ to: string; label: string; short?: string; icon: ReactNode; end?: boolean }> = [
+  { to: '/admin', label: 'Visão geral', icon: <IconHome />, end: true },
+  { to: '/admin/profissionais', label: 'Profissionais', icon: <IconUsers /> },
   { to: '/admin/auditoria', label: 'Auditoria', icon: <IconClipboard /> },
-  { to: '/admin/conta', label: 'Minha conta', icon: <IconUser />, end: false },
+  { to: '/admin/conta', label: 'Central da conta', short: 'Conta', icon: <IconUser />, end: false },
 ];
 
 export default function AdminLayout() {
   const { professional, logout } = useAuth();
+  // foto da administradora no menu (dado real de GET /auth/me; sem foto, aparecem as iniciais)
+  const [avatar, setAvatar] = useState<string | null>(null);
+  useEffect(() => {
+    if (!professional?.isAdmin) return;
+    api.get<{ avatar_b64: string | null }>('/auth/me').then((me) => setAvatar(me.avatar_b64 ?? null)).catch(() => {});
+  }, [professional?.id, professional?.isAdmin]);
 
   if (!professional) return <Navigate to="/login" replace />;
   if (!professional.isAdmin) return <Navigate to="/" replace />;
@@ -61,7 +39,7 @@ export default function AdminLayout() {
             </span>
             <div>
               <p className="font-display text-xl tracking-tight font-semibold leading-none">NailFlow</p>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-gold-300/90 mt-1.5">Administração</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-gold-300/90 mt-1.5">Administração</p>
             </div>
           </div>
         </div>
@@ -69,7 +47,7 @@ export default function AdminLayout() {
         <div className="mx-6 h-px bg-gradient-to-r from-gold-400/50 via-white/10 to-transparent" aria-hidden="true" />
 
         <nav aria-label="Navegação administrativa" className="flex-1 px-4 py-6 space-y-1">
-          <p className="px-3 mb-2 text-[10px] uppercase tracking-[0.2em] text-wine-100/40">Gestão</p>
+          <p className="px-3 mb-2 text-xs uppercase tracking-[0.2em] text-wine-100/40">Gestão</p>
           {NAV.map((item) => (
             <NavLink
               key={item.to}
@@ -93,13 +71,13 @@ export default function AdminLayout() {
         </nav>
 
         <div className="m-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3.5 flex items-center gap-3">
-          <Link to="/admin/conta" aria-label="Minha conta" className="flex items-center gap-3 min-w-0 flex-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
-            <span className="w-9 h-9 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm shrink-0" aria-hidden="true">
-              {initial}
+          <Link to="/admin/conta" aria-label="Central da conta" className="flex items-center gap-3 min-w-0 flex-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
+            <span className="w-9 h-9 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm shrink-0 overflow-hidden" aria-hidden="true">
+              {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initial}
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-white truncate leading-tight">{professional.name}</p>
-              <p className="text-[11px] text-wine-100/50 truncate leading-tight mt-0.5">{professional.email}</p>
+              <p className="text-xs text-wine-100/50 truncate leading-tight mt-0.5">{professional.email}</p>
             </div>
           </Link>
           <button
@@ -122,12 +100,12 @@ export default function AdminLayout() {
             </span>
             <div className="min-w-0">
               <p className="font-display text-lg tracking-tight font-semibold leading-none">NailFlow</p>
-              <p className="text-[9px] uppercase tracking-[0.2em] text-gold-300/90 mt-1">Administração</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-gold-300/90 mt-1">Administração</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Link to="/admin/conta" aria-label="Minha conta" className="w-8 h-8 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
-              {initial}
+            <Link to="/admin/conta" aria-label="Central da conta" className="w-8 h-8 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
+              {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initial}
             </Link>
             <button
               onClick={logout}
@@ -139,20 +117,20 @@ export default function AdminLayout() {
             </button>
           </div>
         </div>
-        <nav aria-label="Navegação administrativa" className="px-4 sm:px-6 pb-2.5 flex gap-2">
+        <nav aria-label="Navegação administrativa" className="px-4 sm:px-6 pb-2.5 flex gap-1.5 sm:gap-2 overflow-x-auto">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end ?? true}
               className={({ isActive }) =>
-                `flex-1 min-w-0 sm:flex-none inline-flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
+                `flex-1 shrink-0 sm:flex-none inline-flex items-center justify-center gap-2 px-2.5 sm:px-4 py-2 rounded-xl text-[13px] sm:text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
                   isActive ? 'bg-white/15 text-white ring-1 ring-gold-400/40' : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
               <span className="hidden min-[430px]:inline-flex">{item.icon}</span>
-              {item.label}
+              {item.short ? (<><span className="sm:hidden">{item.short}</span><span className="hidden sm:inline">{item.label}</span></>) : item.label}
             </NavLink>
           ))}
         </nav>
@@ -165,7 +143,7 @@ export default function AdminLayout() {
           aria-hidden="true"
         />
         <div className="relative px-4 sm:px-8 xl:px-12 py-8 sm:py-10">
-          <Outlet />
+          <Outlet context={{ setAvatar } satisfies AdminShellContext} />
         </div>
       </main>
 

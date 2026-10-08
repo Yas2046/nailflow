@@ -16,7 +16,8 @@ import Disponibilidade from './pages/Disponibilidade';
 import Perfil from './pages/Perfil';
 import PaginaPublica from './pages/PaginaPublica';
 import Configuracoes from './pages/Configuracoes';
-import Admin from './pages/Admin';
+import AdminDashboard from './pages/AdminDashboard';
+import AdminProfissionais from './pages/AdminProfissionais';
 import AdminAuditoria from './pages/AdminAuditoria';
 import AdminContaVisaoGeral from './pages/admin/AdminContaVisaoGeral';
 import AdminContaPerfil from './pages/admin/AdminContaPerfil';
@@ -45,7 +46,8 @@ export default function App() {
 
           {/* área admin — layout próprio */}
           <Route element={<AdminLayout />}>
-            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/profissionais" element={<AdminProfissionais />} />
             <Route path="/admin/auditoria" element={<AdminAuditoria />} />
             <Route path="/admin/conta" element={<AdminContaVisaoGeral />} />
             <Route path="/admin/conta/perfil" element={<AdminContaPerfil />} />
