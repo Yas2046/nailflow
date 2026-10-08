@@ -74,7 +74,8 @@ export function useProfileEdit(me: AccountMe, patchMe: (p: Partial<AccountMe>) =
 
   const hasErrors = Object.keys(errors).length > 0;
   const canSave = editing && dirty && !hasErrors && !saving;
-  const visibleError = (f: ProfileField) => (touched[f] || submitted ? errors[f] : undefined);
+  // o erro do WhatsApp aparece também assim que nome/e-mail mudam, para o usuário entender por que não dá para salvar
+  const visibleError = (f: ProfileField) => (touched[f] || submitted || (f === 'phone' && (nameChanged || emailChanged)) ? errors[f] : undefined);
 
   // Aviso do navegador ao fechar/recarregar com alterações não salvas.
   useEffect(() => {

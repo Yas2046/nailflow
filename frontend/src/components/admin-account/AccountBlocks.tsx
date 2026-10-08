@@ -68,7 +68,7 @@ export function Avatar({ name, src, size = 'lg' }: { name: string; src: string |
 
 export function Pill({ ok, children }: { ok: boolean; children: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-[13px] ${ok ? 'bg-sage-100/80 font-medium text-[#3F5F46]' : 'bg-ink/[0.04] px-2.5 text-ink/45'}`}>
+    <span className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-[13px] ${ok ? 'bg-sage-100/80 font-medium text-[#3F5F46]' : 'bg-ink/[0.04] px-2.5 text-ink/60'}`}>
       {ok && <StatusDot tone="sage" />}
       {children}
     </span>
@@ -82,7 +82,7 @@ export function ActivityItemRow({ item, last }: { item: AuditItem; last: boolean
     <li className={`group grid grid-cols-[4.25rem_1rem_minmax(0,1fr)] gap-x-4 sm:grid-cols-[5.5rem_1rem_minmax(0,1fr)] sm:gap-x-6 ${last ? '' : 'pb-9'}`}>
       <p className="pt-0.5 text-right">
         <span className="block text-[15px] font-semibold text-ink/80">{dayLabel(item.createdAt)}</span>
-        <span className="block text-sm text-ink/40">{timeLabel(item.createdAt)}</span>
+        <span className="block text-sm text-ink/60">{timeLabel(item.createdAt)}</span>
       </p>
       <div className="relative flex justify-center">
         <span aria-hidden="true" className={`relative z-10 mt-1.5 h-3 w-3 rounded-full border-2 bg-white transition-transform duration-300 motion-safe:group-hover:scale-125 ${meta.ring}`} />
@@ -90,7 +90,7 @@ export function ActivityItemRow({ item, last }: { item: AuditItem; last: boolean
       </div>
       <div className="min-w-0">
         <p className="text-lg font-medium leading-snug text-ink/85">{meta.title}</p>
-        <p className="mt-0.5 truncate text-[15px] text-ink/50">Profissional · {item.targetBusinessName}</p>
+        <p className="mt-0.5 truncate text-[15px] text-ink/65">Profissional · {item.targetBusinessName}</p>
       </div>
     </li>
   );
@@ -109,17 +109,17 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
             to="/admin/conta/atividade"
             className="rounded-lg py-1 text-[15px] font-medium text-wine-600 transition-colors hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40"
           >
-            Ver histórico completo →
+            Ver atividade →
           </Link>
         )}
       </div>
 
       {activity === null ? (
-        <p className="mt-10 text-base text-ink/55">Não foi possível carregar a atividade agora. Tente novamente em instantes.</p>
+        <p className="mt-10 text-base text-ink/65">Não foi possível carregar a atividade agora. Tente novamente em instantes.</p>
       ) : activity.length === 0 ? (
         <div className="mt-10 rounded-2xl border border-dashed border-wine-200/70 px-6 py-12 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/40">Ainda não há atividades</p>
-          <p className="mx-auto mt-3 max-w-xs text-base leading-relaxed text-ink/55">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">Ainda não há atividades</p>
+          <p className="mx-auto mt-3 max-w-xs text-base leading-relaxed text-ink/65">
             As ações importantes da sua conta aparecerão aqui.
           </p>
         </div>

@@ -1,13 +1,16 @@
 import { useEffect, useRef, type ChangeEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import AccountShell from '../../components/admin-account/AccountShell';
 import { Eyebrow, Panel, Skeleton, StatusDot } from '../../components/admin-account/AccountUi';
 import {
-  ENTER, ActivityPanel, Avatar, ErrorState, Pill, longDate,
+  ENTER, Avatar, ErrorState, longDate,
 } from '../../components/admin-account/AccountBlocks';
 import { useAccountOverview, type AccountOverview } from '../../components/admin-account/useAccountOverview';
 import { useProfileEdit } from '../../components/admin-account/useProfileEdit';
-import { formatPhone } from '../../utils/format';
+import { formatPhoneNational } from '../../utils/format';
+import { IconUser } from '../../components/AdminIcons';
+import { useAdminShell } from '../../components/adminShell';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 // O que pode ser editado é o que PUT /auth/me realmente aceita para esta conta: nome, e-mail,
 // WhatsApp e foto. Não há verificação de e-mail ou telefone no sistema, então nenhum selo de
@@ -17,13 +20,6 @@ type Edit = ReturnType<typeof useProfileEdit>;
 
 const icon = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'h-5 w-5' } as const;
 
-function IconUser() {
-  return (
-    <svg {...icon}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0" />
-    </svg>
-  );
-}
 function IconMail() {
   return (
     <svg {...icon}>
@@ -68,7 +64,7 @@ function AvatarControls({ edit, hasPhoto }: { edit: Edit; hasPhoto: boolean }) {
             type="button"
             onClick={edit.removeAvatar}
             disabled={edit.saving}
-            className="min-h-[40px] rounded-lg px-2 text-sm text-ink/55 transition-colors hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50 disabled:opacity-50"
+            className="min-h-[40px] rounded-lg px-2 text-sm text-ink/65 transition-colors hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50 disabled:opacity-50"
           >
             Remover foto
           </button>
@@ -97,7 +93,7 @@ function IdentityCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
         </div>
 
         <div className="min-w-0 flex-1 sm:pt-2">
-          <Eyebrow tone="gold">Perfil</Eyebrow>
+          <Eyebrow tone="gold">Identidade</Eyebrow>
           <h2 id="perfil-nome" className="mt-2 break-words font-display text-4xl font-semibold leading-tight tracking-tight text-wine-800 sm:text-5xl">
             {me.name}
           </h2>
@@ -112,7 +108,7 @@ function IdentityCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
             </span>
           </div>
 
-          {createdAt && <p className="mt-4 text-base text-ink/55">Administradora desde {longDate(createdAt)}</p>}
+          {createdAt && <p className="mt-4 text-base text-ink/65">Administradora desde {longDate(createdAt)}</p>}
 
           <div className="mt-6 min-h-[46px]">
             {edit.editing ? (
@@ -143,8 +139,8 @@ function Field({ icon: ic, label, value, empty = false }: { icon: ReactNode; lab
     <div className="flex items-center gap-4 py-4">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-wine-50/80 text-wine-500">{ic}</span>
       <div className="min-w-0">
-        <dt className="text-sm text-ink/45">{label}</dt>
-        <dd className={`mt-0.5 break-words text-lg ${empty ? 'text-ink/35' : 'text-ink/85'}`}>{value}</dd>
+        <dt className="text-sm text-ink/60">{label}</dt>
+        <dd className={`mt-0.5 break-words text-lg ${empty ? 'text-ink/60' : 'text-ink/85'}`}>{value}</dd>
       </div>
     </div>
   );
@@ -171,7 +167,7 @@ function EditField({
       {error ? (
         <p id={`${id}-erro`} role="alert" className="mt-1.5 text-sm text-rose-600">{error}</p>
       ) : hint ? (
-        <p id={`${id}-dica`} className="mt-1.5 text-sm text-ink/45">{hint}</p>
+        <p id={`${id}-dica`} className="mt-1.5 text-sm text-ink/60">{hint}</p>
       ) : null}
     </div>
   );
@@ -192,8 +188,8 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
   return (
     <div ref={cardRef} className="flex">
       <Panel className={`flex w-full flex-col ${ENTER} [animation-delay:90ms] ${edit.editing ? '!border-wine-300/70 ring-2 ring-wine-300/25' : ''}`}>
-        <Eyebrow>Identidade</Eyebrow>
-        <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Perfil</h3>
+        <Eyebrow>Dados</Eyebrow>
+        <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Dados pessoais</h3>
 
         {edit.editing ? (
           <form
@@ -201,7 +197,7 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
             noValidate
             onSubmit={(e) => { e.preventDefault(); void edit.save(); }}
           >
-            <div className="flex-1 divide-y divide-wine-100/60">
+            <div className="grid flex-1 gap-x-8 sm:grid-cols-2">
               <EditField
                 id="perfil-nome-input" label="Nome" inputRef={nameRef} autoComplete="name"
                 value={edit.draft.name} disabled={edit.saving} error={edit.errorOf('name')}
@@ -228,28 +224,28 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
               </p>
             )}
 
-            <div className="mt-7 flex flex-col gap-4">
-              <p className="text-sm text-ink/50" aria-live="polite">
+            <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-ink/65" aria-live="polite">
                 {edit.dirty ? 'Você tem alterações não salvas.' : 'Nenhuma alteração ainda.'}
               </p>
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end md:flex-col-reverse lg:flex-row min-[1400px]:flex-col-reverse">
-                <button type="button" onClick={edit.discard} disabled={edit.saving} className="btn-secondary min-h-[46px] w-full whitespace-nowrap px-5 disabled:opacity-50 sm:w-auto md:w-full lg:w-auto min-[1400px]:w-full">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={edit.discard} disabled={edit.saving} className="btn-secondary min-h-[46px] w-full whitespace-nowrap px-5 disabled:opacity-50 sm:w-auto">
                   Descartar alterações
                 </button>
-                <button type="submit" disabled={!edit.canSave} className="btn-primary min-h-[46px] w-full whitespace-nowrap px-6 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto md:w-full lg:w-auto min-[1400px]:w-full">
+                <button type="submit" disabled={!edit.canSave} className="btn-primary min-h-[46px] w-full whitespace-nowrap px-6 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
                   {edit.saving ? <><Spinner />Salvando…</> : 'Salvar alterações'}
                 </button>
               </div>
             </div>
           </form>
         ) : (
-          <dl className="mt-6 flex-1 divide-y divide-wine-100/60">
+          <dl className="mt-6 grid flex-1 gap-x-10 sm:grid-cols-2 [&>div]:border-b [&>div]:border-wine-100/60 [&>div:last-child]:border-0">
             <Field icon={<IconUser />} label="Nome" value={me.name} />
             <Field icon={<IconMail />} label="E-mail" value={me.email} />
             <Field
               icon={<IconPhone />}
               label="WhatsApp"
-              value={me.phone_whatsapp ? formatPhone(me.phone_whatsapp) : 'Não informado'}
+              value={me.phone_whatsapp ? formatPhoneNational(me.phone_whatsapp) : 'Não informado'}
               empty={!me.phone_whatsapp}
             />
           </dl>
@@ -259,42 +255,13 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
   );
 }
 
-// ── segurança (somente informativa) ─────────────────────────────────────────
-
-function SecurityCard({ editing }: { editing: boolean }) {
-  const rows: Array<{ label: string; value: string; ok: boolean }> = [
-    { label: 'Senha', value: 'Definida', ok: true },
-    { label: 'Autenticação em 2 fatores', value: 'Não disponível', ok: false },
-    { label: 'Sessões ativas', value: 'Não monitoradas', ok: false },
-  ];
-  return (
-    <Panel className={`flex flex-col ${editing ? 'self-start' : ''} ${ENTER} [animation-delay:150ms]`}>
-      <Eyebrow>Acesso</Eyebrow>
-      <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Segurança</h3>
-      <dl className="mt-6 flex-1 divide-y divide-wine-100/60">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between gap-4 py-5">
-            <dt className="min-w-0 flex-1 text-[15px] text-ink/75">{r.label}</dt>
-            <dd className="shrink-0"><Pill ok={r.ok}>{r.value}</Pill></dd>
-          </div>
-        ))}
-      </dl>
-      <div className="mt-8"><Link to="/admin/conta/seguranca" className="btn-secondary min-h-[46px] px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">Gerenciar segurança</Link></div>
-    </Panel>
-  );
-}
-
 // ── estados ─────────────────────────────────────────────────────────────────
 
 function LoadingState() {
   return (
     <div role="status" aria-label="Carregando seu perfil" className="space-y-8">
       <Skeleton className="h-72 rounded-[2rem] sm:h-60" />
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-1 min-[1400px]:grid-cols-2">
-        <Skeleton className="h-80 rounded-3xl" />
-        <Skeleton className="h-80 rounded-3xl" />
-      </div>
-      <Skeleton className="h-64 rounded-3xl" />
+      <Skeleton className="h-96 rounded-3xl" />
     </div>
   );
 }
@@ -302,24 +269,32 @@ function LoadingState() {
 // ── página ──────────────────────────────────────────────────────────────────
 
 function PerfilConteudo({ data, patchMe }: { data: AccountOverview; patchMe: Parameters<typeof useProfileEdit>[1] }) {
-  const edit = useProfileEdit(data.me, patchMe);
+  const shell = useAdminShell();
+  const edit = useProfileEdit(data.me, (p) => {
+    patchMe(p);
+    if ('avatar_b64' in p) shell?.setAvatar(p.avatar_b64 ?? null); // a foto salva já aparece no menu
+  });
+  const [params] = useSearchParams();
+  const startEdit = params.get('editar') === '1';
+  // vindo de "Editar perfil" na Visão geral: já abre o formulário (uma única vez)
+  useEffect(() => {
+    if (startEdit) edit.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className="space-y-8 sm:space-y-10">
       <IdentityCard data={data} edit={edit} />
-      <div className="grid gap-6 sm:gap-8 md:grid-cols-2 lg:grid-cols-1 min-[1400px]:grid-cols-2">
-        <ProfileCard data={data} edit={edit} />
-        <SecurityCard editing={edit.editing} />
-      </div>
-      <ActivityPanel activity={data.activity} />
+      <ProfileCard data={data} edit={edit} />
     </div>
   );
 }
 
 export default function AdminContaPerfil() {
+  usePageTitle('Perfil · Central da conta');
   const { state, reload, patchMe } = useAccountOverview();
 
   return (
-    <AccountShell title="Minha conta" subtitle="Gerencie sua identidade, segurança e atividade no NailFlow.">
+    <AccountShell title="Perfil" subtitle="Sua identidade no NailFlow: nome, e-mail, WhatsApp e foto.">
       {state.status === 'loading' && <LoadingState />}
       {state.status === 'error' && <ErrorState message={state.message} onRetry={reload} />}
       {state.status === 'ready' && <PerfilConteudo data={state.data} patchMe={patchMe} />}

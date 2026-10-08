@@ -5,6 +5,7 @@ import { Eyebrow, Panel, Skeleton } from '../../components/admin-account/Account
 import { ENTER, ErrorState, dayLabel, timeLabel } from '../../components/admin-account/AccountBlocks';
 import { useAccountActivity, type AccountActivity } from '../../components/admin-account/useAccountActivity';
 import type { AuditAction, AuditItem } from '../../components/admin-account/useAccountOverview';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 // Só aparece o que existe de verdade no admin_audit_log: quatro tipos de ação (edição, bloqueio,
 // desbloqueio, exclusão), todas registradas apenas quando concluídas com sucesso. Por isso os
@@ -64,9 +65,9 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 function Stat({ label, value, caption }: { label: string; value: ReactNode; caption: string }) {
   return (
     <div className="min-w-0 px-1 py-5 sm:px-8 sm:py-1 sm:first:pl-0 sm:last:pr-0">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/40">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">{label}</p>
       <p className="mt-2 font-display text-3xl font-semibold leading-tight text-wine-800">{value}</p>
-      <p className="mt-1 break-words text-[15px] text-ink/50">{caption}</p>
+      <p className="mt-1 break-words text-[15px] text-ink/65">{caption}</p>
     </div>
   );
 }
@@ -81,7 +82,7 @@ function Summary({ data }: { data: AccountActivity }) {
       <div className="grid divide-y divide-wine-100/70 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <Stat
           label="Última atividade"
-          value={<>{dayLabel(last.createdAt)}<span className="text-xl font-normal text-ink/45">, {timeLabel(last.createdAt)}</span></>}
+          value={<>{dayLabel(last.createdAt)}<span className="text-xl font-normal text-ink/60">, {timeLabel(last.createdAt)}</span></>}
           caption={`${META[last.action].title.replace('Você ', '').replace(/^./, (c) => c.toUpperCase())} · ${last.targetBusinessName}`}
         />
         <Stat
@@ -103,7 +104,7 @@ function Row({ item, group, last }: { item: AuditItem; group: GroupId; last: boo
     <li className={`group grid grid-cols-[3.75rem_2.5rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[5rem_2.5rem_minmax(0,1fr)] sm:gap-x-5 ${last ? '' : 'pb-8'}`}>
       <p className="pt-0.5 text-right">
         <span className="block text-[15px] font-semibold text-ink/80">{timeLabel(item.createdAt)}</span>
-        {group === 'antes' && <span className="block text-sm text-ink/40">{shortDate(item.createdAt)}</span>}
+        {group === 'antes' && <span className="block text-sm text-ink/60">{shortDate(item.createdAt)}</span>}
       </p>
       <div className="relative flex justify-center">
         <span className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-xl ring-4 ring-white transition-transform duration-300 motion-safe:group-hover:scale-105 ${meta.tile}`}>{ICONS[item.action]}</span>
@@ -111,10 +112,7 @@ function Row({ item, group, last }: { item: AuditItem; group: GroupId; last: boo
       </div>
       <div className="min-w-0 pt-0.5">
         <p className="text-base font-medium leading-snug text-ink/85 sm:text-lg">{meta.title}</p>
-        <p className="mt-1 break-words text-[15px] text-ink/50">Profissional · {item.targetBusinessName}</p>
-        <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-sage-100/70 px-2.5 py-0.5 text-xs font-medium text-[#3F5F46]">
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-sage-500" />Concluída
-        </p>
+        <p className="mt-1 break-words text-[15px] text-ink/65">Profissional · {item.targetBusinessName}</p>
       </div>
     </li>
   );
@@ -145,14 +143,14 @@ function Toolbar({
               }`}
             >
               {f.label}
-              <span className={`text-sm ${active ? 'text-white/75' : 'text-ink/35'}`}>{counts[f.id]}</span>
+              <span className={`text-sm ${active ? 'text-white/75' : 'text-ink/60'}`}>{counts[f.id]}</span>
             </button>
           );
         })}
       </div>
       <div className="relative lg:w-72">
         <label htmlFor="atividade-busca" className="sr-only">Buscar pelo nome do negócio</label>
-        <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/35" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path strokeLinecap="round" d="m16 16 4 4" /></svg>
+        <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/60" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path strokeLinecap="round" d="m16 16 4 4" /></svg>
         <input
           id="atividade-busca"
           type="search"
@@ -172,9 +170,9 @@ function EmptyAll() {
   return (
     <Panel className={`${ENTER}`}>
       <div className="rounded-2xl border border-dashed border-wine-200/70 px-6 py-16 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/40">Ainda não há atividades</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">Ainda não há atividades</p>
         <h3 className="mx-auto mt-4 max-w-sm font-display text-2xl leading-snug text-wine-800">Nada registrado por aqui ainda</h3>
-        <p className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-ink/55">
+        <p className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-ink/65">
           As ações administrativas que você realizar nas contas das profissionais aparecerão aqui.
         </p>
       </div>
@@ -214,7 +212,7 @@ function Content({ data }: { data: AccountActivity }) {
             <Eyebrow>Linha do tempo</Eyebrow>
             <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Suas ações administrativas</h3>
           </div>
-          <p className="text-[15px] text-ink/45" aria-live="polite">
+          <p className="text-[15px] text-ink/60" aria-live="polite">
             {filtering ? `${visible.length} de ${data.items.length} ações` : `${data.items.length} ${data.items.length === 1 ? 'ação' : 'ações'}`}
           </p>
         </div>
@@ -232,7 +230,7 @@ function Content({ data }: { data: AccountActivity }) {
               <section key={g.id} aria-labelledby={`grupo-${g.id}`}>
                 <div className="mb-6 flex items-baseline justify-between gap-4 border-b border-wine-100/70 pb-3">
                   <h4 id={`grupo-${g.id}`} className="font-display text-2xl text-wine-800">{g.label}</h4>
-                  <p className="text-sm text-ink/40">{g.items.length} {g.items.length === 1 ? 'ação' : 'ações'}</p>
+                  <p className="text-sm text-ink/60">{g.items.length} {g.items.length === 1 ? 'ação' : 'ações'}</p>
                 </div>
                 <ol>
                   {g.items.map((it, i) => <Row key={it.id} item={it} group={g.id} last={i === g.items.length - 1} />)}
@@ -243,7 +241,7 @@ function Content({ data }: { data: AccountActivity }) {
         )}
       </Panel>
 
-      <p className={`text-[15px] leading-relaxed text-ink/50 ${ENTER} [animation-delay:210ms]`}>
+      <p className={`text-[15px] leading-relaxed text-ink/65 ${ENTER} [animation-delay:210ms]`}>
         {data.truncated && 'Mostrando as ações mais recentes do histórico. '}
         Para ver o histórico de todas as contas administrativas, abra a{' '}
         <Link to="/admin/auditoria" className="rounded font-medium text-wine-600 underline-offset-4 transition-colors hover:text-wine-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40">
@@ -269,9 +267,10 @@ function LoadingState() {
 // ── página ──────────────────────────────────────────────────────────────────
 
 export default function AdminContaAtividade() {
+  usePageTitle('Atividade · Central da conta');
   const { state, reload } = useAccountActivity();
   return (
-    <AccountShell title="Atividade da conta" subtitle="Acompanhe as ações administrativas realizadas recentemente na sua conta.">
+    <AccountShell title="Atividade" subtitle="Suas ações administrativas recentes. Para o histórico de todas as contas, use a Auditoria.">
       {state.status === 'loading' && <LoadingState />}
       {state.status === 'error' && <ErrorState title="Não foi possível carregar a atividade" message={state.message} onRetry={reload} />}
       {state.status === 'ready' && <Content data={state.data} />}
