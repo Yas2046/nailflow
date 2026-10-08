@@ -2,43 +2,14 @@ import { Link } from 'react-router-dom';
 import AccountShell, { isContaPageAvailable } from '../../components/admin-account/AccountShell';
 import { Eyebrow, Panel, Skeleton, StatusDot } from '../../components/admin-account/AccountUi';
 import {
+  ENTER, ActivityPanel, Avatar, ErrorState, Pill, firstName, longDate,
+} from '../../components/admin-account/AccountBlocks';
+import {
   useAccountOverview,
   type AccountOverview,
-  type AuditAction,
-  type AuditItem,
 } from '../../components/admin-account/useAccountOverview';
 
-// Entrada suave das seções (respeita "reduzir movimento"); o atraso escalona a leitura.
-const ENTER = 'motion-safe:animate-fade-in-up [animation-fill-mode:backwards]';
-
 // ── utilitários ─────────────────────────────────────────────────────────────
-
-function firstName(name: string) {
-  return name.trim().split(/\s+/)[0] || name;
-}
-
-function initialsOf(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  return ((parts[0][0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-}
-
-function longDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function dayLabel(iso: string) {
-  const d = new Date(iso);
-  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
-  if (diff === 0) return 'Hoje';
-  if (diff === 1) return 'Ontem';
-  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
-}
-
-function timeLabel(iso: string) {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
 
 // Navegador e sistema deste dispositivo, lidos localmente (nada vem do servidor).
 function describeThisDevice() {
@@ -47,13 +18,6 @@ function describeThisDevice() {
   const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'sistema não identificado';
   return { label: `${browser} · ${os}`, mobile: /Android|iPhone|iPad|iPod/.test(ua) };
 }
-
-const ACTIVITY_META: Record<AuditAction, { title: string; ring: string }> = {
-  update: { title: 'Cadastro editado', ring: 'border-wine-400' },
-  block: { title: 'Conta bloqueada', ring: 'border-rose-400' },
-  unblock: { title: 'Conta desbloqueada', ring: 'border-sage-500' },
-  delete: { title: 'Conta excluída', ring: 'border-rose-400' },
-};
 
 // ── ícones (poucos e discretos) ─────────────────────────────────────────────
 
@@ -83,32 +47,10 @@ function IconDevice({ mobile }: { mobile: boolean }) {
 
 // ── hero ────────────────────────────────────────────────────────────────────
 
-function Avatar({ name, src }: { name: string; src: string | null }) {
-  const shadow = 'ring-[5px] ring-white shadow-[0_24px_48px_-18px_rgba(61,29,40,0.5)]';
-  return (
-    <div className="group relative h-36 w-36 shrink-0 sm:h-44 sm:w-44">
-      {/* aura: luz vinho/dourada difusa atrás do avatar */}
-      <span aria-hidden="true" className="absolute -inset-14 rounded-full bg-[radial-gradient(closest-side,rgba(140,74,94,0.26),rgba(199,154,69,0.12)_58%,transparent)] blur-xl" />
-      <span aria-hidden="true" className="absolute -inset-4 rounded-full border border-gold-400/40 transition-transform duration-700 motion-safe:group-hover:scale-[1.03]" />
-      <span aria-hidden="true" className="absolute -inset-9 rounded-full border border-wine-300/25 transition-transform duration-700 motion-safe:group-hover:scale-[1.04]" />
-      {src ? (
-        <img src={src} alt={`Foto de ${name}`} className={`relative h-full w-full rounded-full object-cover ${shadow}`} />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={`relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-wine-100 via-white to-gold-300/50 font-display text-6xl text-wine-700 ${shadow}`}
-        >
-          {initialsOf(name)}
-        </span>
-      )}
-    </div>
-  );
-}
-
 function Hero({ data }: { data: AccountOverview }) {
   const { me, blockedAt } = data;
   const active = blockedAt === null;
-  const canEdit = isContaPageAvailable('perfil');
+  const canView = isContaPageAvailable('perfil');
 
   return (
     <section
@@ -140,14 +82,9 @@ function Hero({ data }: { data: AccountOverview }) {
                 <StatusDot tone={active ? 'sage' : 'rose'} />
                 {active ? 'Conta ativa' : 'Conta bloqueada'}
               </p>
-              {canEdit ? (
-                <Link to="/admin/conta/perfil" className="btn-secondary min-h-[46px] px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">Editar perfil</Link>
-              ) : (
-                <span className="inline-flex items-center gap-3 whitespace-nowrap">
-                  <button type="button" disabled className="btn-secondary min-h-[46px] cursor-not-allowed whitespace-nowrap px-6 opacity-45">Editar perfil</button>
-                  <span className="text-xs uppercase tracking-widest text-ink/30">em breve</span>
-                </span>
-              )}
+              {canView && (
+              <Link to="/admin/conta/perfil" className="btn-secondary min-h-[46px] whitespace-nowrap px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40">Ver perfil</Link>
+            )}
             </div>
           </div>
         </div>
@@ -157,15 +94,6 @@ function Hero({ data }: { data: AccountOverview }) {
 }
 
 // ── proteção ────────────────────────────────────────────────────────────────
-
-function Pill({ ok, children }: { ok: boolean; children: string }) {
-  return (
-    <span className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-[13px] ${ok ? 'bg-sage-100/80 font-medium text-[#3F5F46]' : 'bg-ink/[0.04] px-2.5 text-ink/45'}`}>
-      {ok && <StatusDot tone="sage" />}
-      {children}
-    </span>
-  );
-}
 
 function ProtectionPanel() {
   const rows: Array<{ label: string; value: string; ok: boolean }> = [
@@ -222,62 +150,6 @@ function DevicesPanel() {
 
 // ── atividade ───────────────────────────────────────────────────────────────
 
-function ActivityItemRow({ item, last }: { item: AuditItem; last: boolean }) {
-  const meta = ACTIVITY_META[item.action];
-  return (
-    <li className={`group grid grid-cols-[4.25rem_1rem_minmax(0,1fr)] gap-x-4 sm:grid-cols-[5.5rem_1rem_minmax(0,1fr)] sm:gap-x-6 ${last ? '' : 'pb-9'}`}>
-      <p className="pt-0.5 text-right">
-        <span className="block text-[15px] font-semibold text-ink/80">{dayLabel(item.createdAt)}</span>
-        <span className="block text-sm text-ink/40">{timeLabel(item.createdAt)}</span>
-      </p>
-      <div className="relative flex justify-center">
-        <span aria-hidden="true" className={`relative z-10 mt-1.5 h-3 w-3 rounded-full border-2 bg-white transition-transform duration-300 motion-safe:group-hover:scale-125 ${meta.ring}`} />
-        {!last && <span aria-hidden="true" className="absolute -bottom-1.5 top-6 w-px bg-gradient-to-b from-wine-200/80 to-wine-100/30" />}
-      </div>
-      <div className="min-w-0">
-        <p className="text-lg font-medium leading-snug text-ink/85">{meta.title}</p>
-        <p className="mt-0.5 truncate text-[15px] text-ink/50">Profissional · {item.targetBusinessName}</p>
-      </div>
-    </li>
-  );
-}
-
-function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
-  return (
-    <Panel className={`${ENTER} [animation-delay:210ms]`}>
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div>
-          <Eyebrow>Atividade recente</Eyebrow>
-          <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Suas ações administrativas</h3>
-        </div>
-        {activity && activity.length > 0 && (
-          <Link
-            to="/admin/auditoria"
-            className="rounded-lg py-1 text-[15px] font-medium text-wine-600 transition-colors hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40"
-          >
-            Ver histórico completo →
-          </Link>
-        )}
-      </div>
-
-      {activity === null ? (
-        <p className="mt-10 text-base text-ink/55">Não foi possível carregar a atividade agora. Tente novamente em instantes.</p>
-      ) : activity.length === 0 ? (
-        <div className="mt-10 rounded-2xl border border-dashed border-wine-200/70 px-6 py-12 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/40">Ainda não há atividades</p>
-          <p className="mx-auto mt-3 max-w-xs text-base leading-relaxed text-ink/55">
-            As ações importantes da sua conta aparecerão aqui.
-          </p>
-        </div>
-      ) : (
-        <ol className="mt-10">
-          {activity.map((a, i) => <ActivityItemRow key={a.id} item={a} last={i === activity.length - 1} />)}
-        </ol>
-      )}
-    </Panel>
-  );
-}
-
 // ── identidade da conta ─────────────────────────────────────────────────────
 
 function IdentityFooter({ data }: { data: AccountOverview }) {
@@ -312,16 +184,6 @@ function LoadingState() {
         <Skeleton className="h-72 rounded-3xl" />
       </div>
       <Skeleton className="h-64 rounded-3xl" />
-    </div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50/60 px-6 py-12 text-center">
-      <p className="font-display text-2xl text-rose-700">Não foi possível abrir sua conta</p>
-      <p className="mx-auto mt-2 max-w-md text-base text-ink/60">{message}</p>
-      <button type="button" onClick={onRetry} className="btn-secondary mt-6 min-h-[46px] px-6">Tentar novamente</button>
     </div>
   );
 }

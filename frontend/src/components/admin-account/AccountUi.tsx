@@ -43,3 +43,15 @@ export function ContaLink({ to, available, children, className = '' }: { to: str
   if (!available) return null;
   return <Link to={to} className={className}>{children}</Link>;
 }
+
+/** Ação ainda não implementada: aparece desativada, sem levar a lugar nenhum. */
+export function SoonButton({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-3 whitespace-nowrap">
+      <button type="button" disabled title="Disponível em breve" className="btn-secondary min-h-[46px] cursor-not-allowed whitespace-nowrap px-6 opacity-45">
+        {children}
+      </button>
+      <span className="text-xs tracking-wide text-ink/30">em breve</span>
+    </span>
+  );
+}

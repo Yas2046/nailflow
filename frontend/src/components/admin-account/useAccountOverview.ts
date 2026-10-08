@@ -6,6 +6,7 @@ export interface AccountMe {
   name: string;
   email: string;
   business_name: string | null;
+  phone_whatsapp: string | null;
   avatar_b64: string | null;
   is_admin: boolean;
 }
@@ -76,5 +77,10 @@ export function useAccountOverview() {
 
   useEffect(() => { load(); }, [load]);
 
-  return { state, reload: load };
+  /** Atualiza os dados exibidos depois de salvar, sem recarregar a página. */
+  const patchMe = useCallback((partial: Partial<AccountMe>) => {
+    setState((prev) => (prev.status === 'ready' ? { status: 'ready', data: { ...prev.data, me: { ...prev.data.me, ...partial } } } : prev));
+  }, []);
+
+  return { state, reload: load, patchMe };
 }

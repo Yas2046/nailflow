@@ -21,7 +21,7 @@ export const ACCOUNT_NAV: AccountNavGroup[] = [
   {
     group: 'Identidade',
     items: [
-      { id: 'perfil', label: 'Perfil', to: '/admin/conta/perfil', available: false },
+      { id: 'perfil', label: 'Perfil', to: '/admin/conta/perfil', available: true },
       { id: 'negocio', label: 'Meu negócio', to: '/admin/conta/negocio', available: false },
     ],
   },
