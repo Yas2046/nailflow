@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 
 /** Rótulo pequeno em caixa alta, usado no topo de cada seção da Central da Conta. */
 export function Eyebrow({ children, tone = 'wine' }: { children: ReactNode; tone?: 'wine' | 'gold' }) {
@@ -33,25 +32,4 @@ export function StatusDot({ tone }: { tone: 'sage' | 'wine' | 'rose' | 'muted' }
 
 export function Skeleton({ className }: { className: string }) {
   return <div aria-hidden="true" className={`animate-pulse rounded-2xl bg-wine-100/50 ${className}`} />;
-}
-
-/**
- * Link para uma página da Central da Conta que ainda pode não existir.
- * Quando `available` é falso, nada clicável é renderizado.
- */
-export function ContaLink({ to, available, children, className = '' }: { to: string; available: boolean; children: ReactNode; className?: string }) {
-  if (!available) return null;
-  return <Link to={to} className={className}>{children}</Link>;
-}
-
-/** Ação ainda não implementada: aparece desativada, sem levar a lugar nenhum. */
-export function SoonButton({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-3 whitespace-nowrap">
-      <button type="button" disabled title="Disponível em breve" className="btn-secondary min-h-[46px] cursor-not-allowed whitespace-nowrap px-6 opacity-45">
-        {children}
-      </button>
-      <span className="text-xs tracking-wide text-ink/30">em breve</span>
-    </span>
-  );
 }
