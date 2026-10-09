@@ -4,6 +4,7 @@ import { checkSlotAvailability, getAvailableSlots, customerNotBefore, clock } fr
 import { expireDueHolds, initialBookingState, calculateDepositCents, paymentInstructionsText } from '../utils/bookingRules.js';
 import { zonedTimeToUtc } from '../utils/timezone.js';
 import { classifyReply } from '../utils/replyClassifier.js';
+import { CANCELLABLE_STATUSES, UUID_RE } from '../utils/appointmentStatus.js';
 import { cleanPhone, normalizeBrPhone, findClientByPhone } from '../utils/phone.js';
 import { extractSlots, extractDateMention, extractPeriodMention, extractTimeMention, extractActionIntent, extractServiceMention } from '../utils/conversationContext.js';
 
@@ -1156,12 +1157,29 @@ Quando quiser continuar pelo atendimento automático, é só enviar uma nova men
       // estado ter sido forjado direto em AGUARDANDO_CONFIRMACAO_CANCELAMENTO
       // (pulando a etapa de listagem) via POST /bot/conversation/:phone.
       const cancelClient = await findClientByPhone(professionalId, phone);
-      const { rowCount } = await pool.query(
-        `UPDATE appointments SET status = 'cancelado'
-         WHERE id = $1 AND professional_id = $2 AND client_id = $3`,
-        [ctx.apptIdToCancel, professionalId, cancelClient?.id ?? null]
-      );
+      const cancelId = typeof ctx.apptIdToCancel === 'string' && UUID_RE.test(ctx.apptIdToCancel) ? ctx.apptIdToCancel : null;
+      // Titularidade (profissional + cliente) e status valem no próprio UPDATE: só cancela
+      // pendente, aguardando pagamento ou confirmado; concluído e falta nunca são alterados.
+      const { rowCount } = cancelId
+        ? await pool.query(
+          `UPDATE appointments SET status = 'cancelado'
+           WHERE id = $1 AND professional_id = $2 AND client_id = $3 AND status = ANY($4::text[])`,
+          [cancelId, professionalId, cancelClient?.id ?? null, CANCELLABLE_STATUSES]
+        )
+        : { rowCount: 0 };
       if (rowCount === 0) {
+        const { rows: cancelCur } = cancelId
+          ? await pool.query(
+            'SELECT status FROM appointments WHERE id = $1 AND professional_id = $2 AND client_id = $3',
+            [cancelId, professionalId, cancelClient?.id ?? null]
+          )
+          : { rows: [] };
+        if (cancelCur[0]?.status === 'cancelado') {
+          return reply('Esse agendamento já estava cancelado. ✅', 'MENU', {});
+        }
+        if (cancelCur[0]) {
+          return reply('Esse atendimento já foi registrado e não pode ser cancelado por aqui. 😕', 'MENU', {});
+        }
         return reply('Agendamento não encontrado. 😕', 'MENU', {});
       }
       return reply(
