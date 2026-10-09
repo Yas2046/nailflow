@@ -1,4 +1,50 @@
-# NailFlow — Status Atual (2026-10-03)
+# NailFlow — Status Atual (2026-10-09)
+
+## ADM V1 publicado — 2026-10-09 (referência: `main` em `596d24a`)
+
+> Este bloco é o estado mais recente. As seções seguintes (a partir de "Estado atual — 2026-10-03") são histórico; onde algo ficou desatualizado há uma nota apontando para cá.
+
+**Git e deploy**
+- **Repositório:** `main` = `origin/main` = `596d24a` (fast-forward da `feat/admin-dashboard`, que também foi enviada ao remoto).
+- **Commits do ADM V1** (sobre o Guia Rápido já publicado em `808a4a6`):
+
+  | Commit | O quê |
+  |---|---|
+  | `93ba884`, `43c680e`, `3d8f359`, `3056049` | Central da conta: visão geral, edição do perfil, segurança (informativa) e atividade |
+  | `8e9d334` | Ícones compartilhados do ADM, contexto do layout e formatador de telefone |
+  | `630fd1a` | Redesenho da Visão geral, Perfil e Atividade da Central da conta |
+  | `14f19ef` | Auditoria: painel de resumo único, filtros em chips, detalhes técnicos recolhidos |
+  | `24a90b0` | Dashboard em `/admin` e gestão de profissionais em `/admin/profissionais` |
+  | `c2d4b60` | Backend: `PUT /auth/password` e `POST /auth/logout-all` |
+  | `596d24a` | Tela Segurança funcional (trocar senha e sair de todos os dispositivos) |
+
+- **Deploy em 2026-10-08:** build do frontend no servidor e troca do `dist` (anterior preservado em `frontend/dist.bak_20261008-pre-adm-v1`); `nailflow-backend` reiniciado, necessário pelas rotas novas (**PID 1274349 → 1511808**). **Sem alteração em banco, migrations, n8n ou Evolution.**
+
+**O que o ADM V1 entrega (7 telas, só para administradores)**
+- `/admin` — Visão geral da plataforma: indicadores de contas, atenção necessária, atividade recente e atalhos; usa só endpoints que já existiam (`/admin/professionals`, `/admin/audit-log`, `/health`).
+- `/admin/profissionais` — gestão de contas: busca, filtros (todas, ativas, bloqueadas, sem WhatsApp, sem número), lista de 12 em 12 com "Mostrar mais" (paginação no navegador) e as ações Editar, Bloquear/Desbloquear e Excluir (com prévia e confirmação pelo nome do negócio).
+- `/admin/auditoria` — histórico de ações administrativas, com filtros e detalhes.
+- `/admin/conta` (visão geral), `/perfil` (identidade e edição pelo `PUT /auth/me`), `/seguranca` e `/atividade` — Central da conta.
+- Títulos de aba padronizados ("Tela · NailFlow"), sem rolagem horizontal de 390 px a 1440 px.
+
+**Autenticação — novidades (backend)**
+- **`PUT /auth/password`:** exige senha atual, nova senha (8 a 72 caracteres, diferente da atual) e confirmação; grava novo hash, incrementa `token_version` (derruba as outras sessões) e reemite o cookie para a sessão atual continuar. Senha atual errada devolve 400 (não desloga). Limite de 5 falhas por conta a cada 15 minutos.
+- **`POST /auth/logout-all`:** incrementa `token_version` e reemite o cookie; encerra todos os outros dispositivos e mantém o atual. Limite de 10 por conta a cada 15 minutos.
+- O `POST /auth/logout` continua só limpando o cookie do navegador (sem revogação no servidor).
+- **Sem registro na Auditoria:** a tabela `admin_audit_log` só aceita `block`, `unblock`, `update` e `delete` (CHECK); registrar essas ações exigiria migration, que foi deliberadamente evitada.
+- Isto é a **troca de senha logada** simples. A implementação isolada de `/opt/nailflow-next` (recuperação por e-mail, normalização de e-mail) **continua não publicada**.
+
+**Validação**
+- Antes do deploy (ambiente isolado, banco PostgreSQL descartável): 7 rotas × 4 larguras (28 combinações), estados de carregamento, erro e vazio, ações de admin, permissões (401 sem sessão, 403 para profissional comum, redirecionamento na interface, conta bloqueada não loga) e troca de senha / "sair de todos" (17 verificações no banco real de teste); `tsc -b`, `vite build` e `git diff --check` em cada commit.
+- Depois do deploy: health OK, 7 rotas servidas, rotas novas exigem sessão (401 sem login), sem erros inesperados nos logs. **Validação manual em produção, relatada pela responsável (2026-10-08/09): tudo funcionando, exceto a foto da administradora** (ver pendência abaixo).
+
+**Pendência conhecida:** a **foto da administradora** (menu lateral e Perfil da Central da conta) **não está funcionando como esperado em produção**; fica para uma próxima etapa (registrada como A7 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
+
+**Não implementado de propósito (V1):** recuperação de senha, 2FA, lista/encerramento de sessões individuais, indicadores de agendamentos/clientes da plataforma (não existe endpoint agregado para o admin) e paginação no servidor. Ver A8–A11 em [`PENDENCIAS.md`](./PENDENCIAS.md).
+
+**Testes:** não foram adicionados testes automatizados ao repositório para o ADM nem para as rotas novas; a validação foi feita com scripts temporários fora do Git. A suíte existente não foi alterada (12 falhas conhecidas — I14).
+
+---
 
 ## Estado atual — 2026-10-03 (referência: `main` em `a326ec8`)
 
@@ -31,7 +77,8 @@
 **Validado em produção** (detalhes em [`TESTES_REALIZADOS.md`](./TESTES_REALIZADOS.md)): E2E dos 4 cenários de confirmação/sinal/expiração; página pública no celular; `public_created` sem instância; e a validação manual da Home e da Agenda (card "Precisa da sua ação", "Ver na Agenda", botões e remoção do `abrir` da URL), **relatada pela responsável**. **Não validado:** entrega real do aviso à profissional (telefone cadastrado é placeholder) e envio real de lembrete/abandono com confirmação de recebimento.
 
 **Admin — nova composição visual e Auditoria v1 (2026-10-03, `12dcff7`)**
-- **Painel Admin redesenhado** (só frontend; regras e chamadas de API das ações preservadas): menu lateral fixo (a partir de `lg`; abaixo, barra superior com abas), saudação com data, resumo de profissionais (indicadores com barras de proporção; contam só contas não admin), lista em cards responsiva (avatar, status, contato, instância, cadastro), ações num menu de três pontos (Editar, Bloquear/Desbloquear, Excluir…), diálogos acessíveis (Esc, foco preso/devolvido), estados de carregamento/vazio/erro com "Tentar novamente" e a nova aba **Auditoria**. A busca e os filtros de profissionais aparecem **só como visual desativado ("Em breve")** — não funcionam.
+- **Painel Admin redesenhado** (só frontend; regras e chamadas de API das ações preservadas): menu lateral fixo (a partir de `lg`; abaixo, barra superior com abas), saudação com data, resumo de profissionais (indicadores com barras de proporção; contam só contas não admin), lista em cards responsiva (avatar, status, contato, instância, cadastro), ações num menu de três pontos (Editar, Bloquear/Desbloquear, Excluir…), diálogos acessíveis (Esc, foco preso/devolvido), estados de carregamento/vazio/erro com "Tentar novamente" e a nova aba **Auditoria**. A busca e os filtros de profissionais aparecem **só como visual desativado ("Em breve")** — não funcionam. *(Superado em 2026-10-09: busca e filtros passaram a funcionar no ADM V1 — ver o bloco no topo.)*
+- *(Nota de 2026-10-09: na Auditoria do ADM V1 o rótulo "Concluída" saiu das telas — todo registro é uma ação concluída — e o detalhe passou a mostrar "Feita por", com os IDs em "Detalhes técnicos". O restante desta descrição segue válido.)*
 - **Tela `/admin/auditoria`:** cartões "Ações hoje" e "Últimos 7 dias"; filtro por ação (Todas/Edição/Bloqueio/Desbloqueio/Exclusão) e por período (presets + datas De/Até); lista do mais recente ao mais antigo, 15 por página, com detalhe expansível por registro (ação, resultado "Concluída", e-mail do admin, IDs, data completa e aviso de que os campos alterados não são armazenados); estados de carregamento, vazio e erro.
 - **Endpoint `GET /admin/audit-log`:** somente leitura, atrás de `requireAdmin` (401 sem login, 403 se não admin) e do rate limit de 100 req/5 min; paginação (`page`, `pageSize` ≤ 50), filtros `action`, `from`, `to` (dias inteiros em `America/Sao_Paulo`) e `summary` (`today`, `last7Days`). Detalhes em [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md). Sem migration.
 - **O que o log registra:** só ações administrativas **concluídas** — `block`, `unblock`, `update`, `delete` — com `actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`. **Não armazena:** valores antes/depois, motivo, IP, nome do administrador (só e-mail) e falhas/tentativas recusadas. Imutabilidade só pela API (sem rota de escrita; sem trigger no banco).
@@ -50,7 +97,7 @@
 
 **Suíte automatizada:** 296 testes, 284 passando (inclui os 8 novos de `admin-audit-log-list`, rodados em worktree limpo com banco descartável; **a suíte não é executada na árvore de produção**), **12 falhas conhecidas** (9 testes antigos que esperam `body.token` no login e 3 do bot que dependem do dia da semana — I14 em [`PENDENCIAS.md`](./PENDENCIAS.md)).
 
-**Pendente de publicação:** o Guia Rápido (`4decc04`) ainda **não foi publicado** — falta o merge na `main`, o push e o deploy do frontend. Melhorias de UX da Agenda registradas durante a revisão do guia, ainda não feitas: tornar o agendamento clicável diretamente, deixar o botão Editar (lápis) mais evidente, corrigir "Mes" para "Mês" e revisar a capitalização das datas.
+*(Nota de 2026-10-09: o Guia Rápido já foi publicado — produção estava em `808a4a6` antes do ADM V1.)* **Pendente de publicação:** o Guia Rápido (`4decc04`) ainda **não foi publicado** — falta o merge na `main`, o push e o deploy do frontend. Melhorias de UX da Agenda registradas durante a revisão do guia, ainda não feitas: tornar o agendamento clicável diretamente, deixar o botão Editar (lápis) mais evidente, corrigir "Mes" para "Mês" e revisar a capitalização das datas.
 
 **Pendências e limitações atuais:** ver [`PENDENCIAS.md`](./PENDENCIAS.md) — em especial M16–M20 (bot responde a DMs no número conectado, "Notificações" sem guarda para instância nula em `confirmed`/`cancelled`, `DELETE /appointments/:id` sem guarda de status, sem aviso interno para reservas do bot, 409 da página pública sem scroll até o erro), F9 e M10 (foto no Perfil).
 
@@ -262,8 +309,8 @@ Implementado em etapas, cada uma validada com `tsc -b`/`vite build` antes de ava
 | Item | Situação |
 |---|---|
 | Recuperação de senha ("Esqueci minha senha") | ❌ não publicada |
-| Troca de senha logada | ❌ não publicada |
-| Invalidação de sessões após troca de senha | ❌ não publicada |
+| Troca de senha logada | ✅ publicada em 2026-10-08 (ADM V1, `PUT /auth/password` — versão do repositório, não a do `nailflow-next`) |
+| Invalidação de sessões após troca de senha | ✅ publicada em 2026-10-08 (`token_version`; também `POST /auth/logout-all`) |
 | Normalização de e-mail no login | ❌ não publicada |
 
 A recuperação de senha **continua isolada e não publicada**. (`NODE_ENV=production` já está aplicado em produção desde 2026-09-27, fora do escopo do `nailflow-next` — cookie de sessão já sai com `Secure`.)

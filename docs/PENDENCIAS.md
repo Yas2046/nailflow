@@ -1,5 +1,7 @@
 # NailFlow — Pendências e Auditoria
 
+> Atualizado em 2026-10-09: **ADM V1 publicado** (`main` = `origin/main` = `596d24a`; PID do backend 1511808) — dashboard, gestão de profissionais, auditoria e Central da conta; troca de senha logada e "sair de todos os dispositivos". Validado manualmente em produção, **exceto a foto da administradora (A7)**. Ver A7–A12 abaixo e o bloco do topo de [`STATUS_ATUAL.md`](./STATUS_ATUAL.md).
+>
 > Atualizado em 2026-10-03 (`main` = `origin/main` = `50906f5`, tudo publicado e em produção): pacote `cb07d38` (confirmação manual/automática, reserva temporária com expiração e sinal Pix manual) validado em 4 cenários E2E; `3bcbb1a` (card "Precisa da sua ação" na Início, atalho para a Agenda e scroll da página pública); `50906f5` (aviso interno `public_created` só com instância própria e telefone da profissional normalizado). Veja as linhas desses commits em "Resolvido" e as pendências M16–M20 (a M21, validação manual do card e do atalho, está concluída).
 >
 > Atualização anterior, 2026-10-02 (V1 integrado à `main` e publicado; onboarding com etapa "Seu link" e hero de boas-vindas; página pública personalizável — migration 020 aplicada; antecedência mínima de 30 min para clientes; Fase 1A do pré-agendamento — confirmar/recusar solicitações — concluída e validada em produção; código em produção até `47c2886`). Anteriormente, em 2026-10-01: C2/C3 validadas com cliente real, correções de hardening/API, F9 implementada com entrega real ainda pendente.
@@ -15,7 +17,9 @@
 
 ---
 
-## Recuperação e troca de senha — NÃO publicadas
+## Recuperação de senha — NÃO publicada (a troca de senha logada foi publicada em 2026-10-08; ver a nota abaixo)
+
+> **Atualização 2026-10-09:** a **troca de senha logada** e a invalidação de sessões foram publicadas no ADM V1 em versão própria (`PUT /auth/password` e `POST /auth/logout-all`, `token_version`, sem migration). **Continuam não publicadas** a recuperação por e-mail ("Esqueci minha senha"), a normalização de e-mail no login e o restante da implementação de `/opt/nailflow-next`.
 
 - Implementação isolada em `/opt/nailflow-next` (fora do Git e fora de produção), validada apenas em ambiente de teste com banco descartável e SMTP simulado
 - Inclui: "Esqueci minha senha" por e-mail, troca de senha logada, invalidação de sessões anteriores, normalização de e-mail no login e `NODE_ENV=production` (cookie `Secure`)
@@ -43,7 +47,7 @@
 
 ### 🟠 Importante
 
-**I1. Publicar recuperação/troca de senha** — ver seção acima.
+**I1. Publicar a recuperação de senha ("Esqueci minha senha")** — ver seção acima. A troca de senha logada já foi publicada no ADM V1 (2026-10-08).
 
 **I2. Node "Registrar Mensagem Bot" sem `instance`**
 - Retorna 400 com mais de uma profissional cadastrada; as mensagens do bot não são gravadas em `message_history` (o envio à cliente não é afetado)
@@ -181,9 +185,9 @@
 
 ### 🟡 Admin — melhorias futuras (registradas em 2026-10-03, após `12dcff7`; nada iniciado)
 
-**A1. Busca real de profissionais no `/admin`** — a caixa de busca existe só como visual desativado ("Em breve"); não filtra nada.
+~~**A1. Busca real de profissionais no `/admin`**~~ — resolvido em 2026-10-09 (ADM V1, `/admin/profissionais`). Texto original: a caixa de busca existe só como visual desativado ("Em breve"); não filtra nada.
 
-**A2. Filtros reais no painel de profissionais** — os chips (ativas, bloqueadas, sem WhatsApp etc.) são visuais e desativados.
+~~**A2. Filtros reais no painel de profissionais**~~ — resolvido em 2026-10-09 (ADM V1). Texto original: os chips (ativas, bloqueadas, sem WhatsApp etc.) são visuais e desativados.
 
 **A3. Enriquecer o histórico de auditoria** — hoje não guarda valores antes/depois, motivo, IP, nome do administrador (só e-mail) nem falhas/tentativas recusadas (`actor_email` e `target_business_name` são denormalizados de propósito). Exige alterar a gravação (`logAdminAction`) e, provavelmente, migration; os registros já existentes não ganhariam os campos novos.
 
@@ -192,6 +196,21 @@
 **A5. Imutabilidade do log em nível de banco** — hoje só a API não tem rota de escrita; não há trigger nem restrição de permissão que impeça `UPDATE`/`DELETE` direto via SQL.
 
 **A6. Promover conta a admin pela interface** — hoje só por SQL (já registrado no checklist). Junto: revisar outras robustezas do Admin (ex.: M9 — página pública de conta bloqueada continua acessível).
+
+### 🟡 ADM V1 — pendências e próximos passos (registrados em 2026-10-09)
+
+**A7. Foto da administradora não funciona em produção** — aparece no menu lateral e no Perfil da Central da conta (`/admin/conta/perfil`); a responsável relatou que não está funcionando como esperado. Causa ainda **não diagnosticada** (o salvamento pelo Perfil usa `PUT /auth/me` com `avatar_b64`; ver também M10). Próximo passo: reproduzir em produção só com leitura, identificar se é envio, leitura (`GET /auth/me`) ou exibição, e corrigir.
+
+**A8. Indicadores de agendamentos e clientes da plataforma** — o admin não tem endpoint para isso (`/dashboard`, `/clients` e `/appointments` filtram pela própria conta). Exigiria um endpoint agregado novo (`platform-summary`), somente leitura, atrás de `requireAdmin`. Não iniciado.
+
+**A9. Recuperação de senha, 2FA e sessões individuais** — fora do V1. A recuperação depende de e-mail transacional (ver I1); 2FA e lista de sessões exigem coluna/tabela nova e `jti` no token. Hoje só existe "sair de todos os dispositivos".
+
+**A10. Registrar troca de senha e "sair de todos" na Auditoria** — exige migration para ampliar o CHECK de `action` em `admin_audit_log` (hoje só `block`, `unblock`, `update`, `delete`) e decidir se vale registrar ações de contas não admin.
+
+**A11. Paginação de profissionais no servidor** — hoje a lista carrega tudo e pagina no navegador (12 por vez); revisar quando houver centenas de contas.
+
+**A12. Testes automatizados do ADM e das rotas novas** — não há testes no repositório para `PUT /auth/password`, `POST /auth/logout-all` nem para as telas do ADM; a validação foi feita com scripts temporários fora do Git. Considerar levar os casos para a suíte (e atualizar os 9 testes que ainda esperam `body.token` — I14).
+
 
 ### 🟢 Futuro
 
@@ -315,3 +334,4 @@
 | Início com pendências, atalho para a Agenda e scroll da página pública | 2026-10-03 | Commit `3bcbb1a` (push `501cd55..3bcbb1a`), em produção: bloco `aguardando` em `GET /dashboard` e card "Precisa da sua ação" na Início (reservas `pendente`/`aguardando_pagamento` com validade em curso, próximo vencimento, até 5 pedidos), atalho `/agenda?data=…&abrir=<id>` (o `id` só é procurado na lista da própria profissional; consumido uma vez), scroll até o formulário e "Horário escolhido" na página pública. Backup `frontend/dist.bak_20261003-pre-home-ux`; backend reiniciado. 4 testes novos (`dashboard-awaiting`). **Validado em produção:** página pública no celular (375×812) de ponta a ponta (201, sem overflow). **Validação manual da Home e da Agenda, relatada pela responsável:** card com contadores e validade corretos, "Ver na Agenda" abriu o agendamento certo, botões funcionaram e o `abrir` saiu da URL — ver M21 |
 | `public_created` sem instância e telefone da profissional normalizado | 2026-10-03 | Commit `50906f5` (push `3bcbb1a..50906f5`), em produção (só o `nailflow-backend` reiniciado; PID 1249130 → 1253738): o aviso interno só é enviado com `wa_instance_name` próprio (sem fallback) e o telefone vai como `55` + número (`whatsappNumberForSending`), sem alterar o banco; 8 testes novos. **E2E em produção** na `studio-simone-teles` (sem instância): 201, `pendente`, visível na Agenda/Início; nenhuma execução de "Notificações" e nenhuma chamada de envio à Evolution (a execução de "Mensagem à Cliente" terminou com `sem_instancia`, sem envio). A reserva de teste, a ficha do cliente fictício e o agendamento cancelado foram removidos depois (cópia das linhas em `/root/e2e_test_rows_20261003.json`) |
 | Consolidação final da documentação | 2026-10-03 | 13 documentos atualizados para o estado de `main` em `50906f5` (ver M12) |
+| ADM V1 — dashboard, gestão de profissionais, auditoria, Central da conta, troca de senha e "sair de todos" | 2026-10-08 | Commits `93ba884`…`596d24a` (`main` em `596d24a`), em produção; `dist` anterior em `dist.bak_20261008-pre-adm-v1`; só o `nailflow-backend` reiniciado (PID 1274349 → 1511808); sem migrations. Validado manualmente, exceto a foto da administradora (A7) |
