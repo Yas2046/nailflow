@@ -211,6 +211,17 @@
 
 **A12. Testes automatizados do ADM e das rotas novas** — não há testes no repositório para `PUT /auth/password`, `POST /auth/logout-all` nem para as telas do ADM; a validação foi feita com scripts temporários fora do Git. Considerar levar os casos para a suíte (e atualizar os 9 testes que ainda esperam `body.token` — I14).
 
+### 🟡 Fase 1 — integridade de agendamentos: pendências de baixa gravidade (registradas em 2026-10-09; implementação só em desenvolvimento, sem commit)
+
+Vieram das auditorias da Fase 1 (proteção de status, lotes, bot e notificações). Nenhuma foi iniciada e nenhuma bloqueia a aprovação.
+
+**P1-1. Disponibilidade validada antes do lock (TOCTOU)** — `updateAppointment` valida expediente, almoço, bloqueio e serviço ativo antes de abrir a transação. Uma mudança nesses dados nos milissegundos entre a validação e o `UPDATE` não é revalidada; a sobreposição com outro agendamento continua protegida pelo `EXCLUDE` do banco (409 genérico). A janela já existia antes da Fase 1. Aceito.
+
+**P1-2. `cancelFromNow` ainda usa BEGIN/COMMIT/ROLLBACK manual** — funciona e libera a conexão, mas não descarta a conexão se o `ROLLBACK` falhar. Padronizar com `withTransaction` quando houver outra mudança nele.
+
+**P1-3. Sem teste para `ROLLBACK` com falha** — o descarte da conexão (`release(true)`) está correto por leitura, mas não é simulado por nenhum teste.
+
+**P1-4. Datas dos testes de integridade** — `appointment-status-characterization.test.js` usa um contador único (`dayN`) a partir de 2026-01-05 (passado) e 2029-01-01 (futuro). Com muitos testes novos o "passado" pode se aproximar do mês corrente e interferir na verificação de receita (INTEG-19); os testes com datas de 2029 deixam de funcionar a partir de 2029-01. Reavaliar quando a suíte crescer.
 
 ### 🟢 Futuro
 

@@ -12,10 +12,17 @@ import {
   updateFromNow,
 } from '../controllers/appointmentsController.js';
 import { requireAuth } from '../middleware/auth.js';
+import { UUID_RE } from '../utils/appointmentStatus.js';
 
 const router = Router();
 
 router.use(requireAuth);
+
+// Identificador malformado é erro de entrada (400), não falha do banco (500).
+router.param('id', (_req, res, next, id) => {
+  if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Identificador de agendamento inválido.' });
+  next();
+});
 
 router.get('/', listAppointments);
 router.post('/', createAppointment);

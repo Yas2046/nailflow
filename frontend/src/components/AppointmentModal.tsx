@@ -22,6 +22,35 @@ const statusOptions: { value: AppointmentStatus; label: string }[] = [
   { value: 'cancelado',       label: 'Cancelado' },
 ];
 
+// Espelha as regras da API para oferecer só o que ela aceita (a API continua sendo a autoridade e repete
+// a validação). Concluído e falta só existem para agendamento confirmado e depois do início; uma vez
+// registrados, travam cliente, serviço e horário (a observação continua livre).
+const ATTENDED: AppointmentStatus[] = ['concluido', 'nao_compareceu'];
+const NEXT_STATUS: Record<AppointmentStatus, AppointmentStatus[]> = {
+  pendente: ['confirmado', 'cancelado'],
+  aguardando_pagamento: ['cancelado'],
+  confirmado: ['pendente', 'concluido', 'nao_compareceu', 'cancelado'],
+  concluido: ['nao_compareceu', 'pendente'],
+  nao_compareceu: ['concluido', 'pendente'],
+  cancelado: ['pendente'],
+};
+
+function statusRules(appt: Appointment) {
+  const started = new Date(appt.startsAt).getTime() <= Date.now();
+  const allowed = new Set<AppointmentStatus>([appt.status, ...NEXT_STATUS[appt.status]]);
+  let hint: string | null = null;
+  if (appt.status === 'pendente') {
+    hint = 'Para concluir ou marcar falta, confirme o agendamento primeiro.';
+  } else if (appt.status === 'aguardando_pagamento') {
+    hint = 'Para concluir ou marcar falta, registre antes o pagamento recebido.';
+  } else if (appt.status === 'confirmado' && !started) {
+    allowed.delete('concluido');
+    allowed.delete('nao_compareceu');
+    hint = 'Concluir ou marcar falta só fica disponível a partir do início do atendimento.';
+  }
+  return { allowed, hint };
+}
+
 const frequencyOptions: { value: RecurringFrequency; label: string }[] = [
   { value: 'weekly',   label: 'Semanal (toda semana)' },
   { value: 'biweekly', label: 'A cada 2 semanas' },
@@ -75,6 +104,9 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
   const isEditing = !!appointment;
   const isRecurringAppt = isEditing && !!appointment?.recurringGroupId;
+  // concluído / com falta: cliente, serviço e horário ficam travados
+  const locked = !!appointment && ATTENDED.includes(appointment.status);
+  const rules = appointment ? statusRules(appointment) : null;
 
   useEffect(() => {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
@@ -116,16 +148,20 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
       if (isEditing && scope === 'following') {
         // Atualiza este e os próximos (status + notes)
-        await api.put(`/appointments/${appointment!.id}/and-following`, { status, notes: notes || null });
-        toast('Agendamentos atualizados');
+        const r = await api.put<{ updated?: number; skipped?: number } | undefined>(`/appointments/${appointment!.id}/and-following`, { status, notes: notes || null });
+        if (r?.skipped) {
+          toast(`${r.updated ?? 0} agendamento(s) atualizado(s); ${r.skipped} ignorado(s) por já estarem cancelados, concluídos, com falta ou não aceitarem essa mudança`, 'info');
+        } else {
+          toast('Agendamentos atualizados');
+        }
         onSaved();
         return;
       }
 
       if (isEditing) {
-        await api.put(`/appointments/${appointment!.id}`, {
-          clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null,
-        });
+        await api.put(`/appointments/${appointment!.id}`, locked
+          ? { status, notes: notes || null }
+          : { clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null });
         toast('Agendamento atualizado');
         onSaved();
         return;
@@ -167,7 +203,12 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
     setSaving(true);
     try {
       if (scope === 'following') {
-        await api.delete(`/appointments/${appointment!.id}/and-following`);
+        const r = await api.delete<{ updated?: number; skipped?: number } | undefined>(`/appointments/${appointment!.id}/and-following`);
+        if (r?.skipped) {
+          toast(`${r.updated ?? 0} cancelado(s); ${r.skipped} mantido(s) porque já foram concluídos ou marcados como falta`, 'info');
+          onSaved();
+          return;
+        }
       } else {
         await api.delete(`/appointments/${appointment!.id}`);
       }
@@ -503,9 +544,16 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
               </div>
             )}
 
+            {locked && (
+              <div className="rounded-xl bg-wine-50 border border-wine-100 p-3 text-sm text-ink/70">
+                Atendimento {appointment!.status === 'concluido' ? 'concluído' : 'com falta'}: cliente, serviço e horário não podem mais ser alterados, e o agendamento não pode ser cancelado.
+                Para corrigir, mude o status para "Aguardando confirmação", salve e depois edite.
+              </div>
+            )}
+
             {/* cliente */}
             <Field label="Cliente">
-              <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              <select className="input" value={clientId} disabled={locked} onChange={(e) => setClientId(e.target.value)}>
                 <option value="">Selecione...</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>
@@ -515,7 +563,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
             {/* serviço */}
             <Field label="Serviço">
-              <select className="input" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+              <select className="input" value={serviceId} disabled={locked} onChange={(e) => setServiceId(e.target.value)}>
                 <option value="">Selecione...</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} ({s.durationMinutes} min)</option>
@@ -538,6 +586,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 type="time"
                 step={60}
                 value={timeValue}
+                disabled={locked}
                 onChange={(e) => setTimeValue(e.target.value)}
               />
               <span className="block text-xs text-ink/40 mt-1">Pode digitar qualquer horário, ex.: 14:15</span>
@@ -547,10 +596,11 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
             {isEditing && (
               <Field label="Status">
                 <select className="input" value={status} onChange={(e) => setStatus(e.target.value as AppointmentStatus)}>
-                  {statusOptions.filter((o) => o.value !== 'aguardando_pagamento' || appointment?.status === 'aguardando_pagamento').map((s) => (
+                  {statusOptions.filter((o) => rules?.allowed.has(o.value)).map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
+                {rules?.hint && <span className="block text-xs text-ink/40 mt-1">{rules.hint}</span>}
               </Field>
             )}
 
@@ -671,7 +721,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
             {/* rodapé */}
             <div className="flex items-center justify-between pt-1">
               <div>
-                {isEditing && (
+                {isEditing && !locked && (
                   <button
                     onClick={handleCancelClick}
                     disabled={saving}
