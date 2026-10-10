@@ -5,11 +5,12 @@ import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { computeStats, type ProfessionalRow } from '../components/admin-dashboard/derive';
 import { IconRefresh } from '../components/AdminIcons';
+import { PageHeader, Segmented } from '../components/admin-account/AccountUi';
 import { resizeImageToBase64 } from '../components/admin-account/imageUtils';
 import { IconSearch } from '../components/admin-professionals/icons';
 import { EmptyState, ErrorState, LoadingState } from '../components/admin-professionals/ListStates';
 import { FILTERS, normalize, type FilterId } from '../components/admin-professionals/filters';
-import ProfessionalCard from '../components/admin-professionals/ProfessionalCard';
+import ProfessionalCard, { ProfessionalsTableHead } from '../components/admin-professionals/ProfessionalCard';
 import { ConfirmActionDialog, DeleteProfessionalDialog, EditProfessionalDialog } from '../components/admin-professionals/ProfessionalDialogs';
 import type { MenuItem } from '../components/admin-professionals/RowMenu';
 import { SummaryStrip } from '../components/admin-professionals/SummaryStrip';
@@ -210,15 +211,13 @@ export default function AdminProfissionais() {
   const filtering = filter !== 'todas' || q !== '';
 
   return (
-    <div className="max-w-[78rem] mx-auto">
+    <div className="mx-auto max-w-[80rem]">
 
-      <header className="mb-8 sm:mb-10">
-        <p className="text-xs uppercase tracking-[0.22em] font-semibold text-gold-600">Gestão</p>
-        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-wine-800 leading-tight mt-2">Profissionais</h1>
-        <p className="text-sm sm:text-base text-ink/65 mt-1.5 max-w-xl">
-          Gerencie o acesso e os dados de cada conta do NailFlow.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="gestão / profissionais"
+        title="Profissionais"
+        subtitle="Gerencie o acesso e os dados de cada conta do NailFlow."
+      />
 
       {loading && <LoadingState />}
 
@@ -229,71 +228,61 @@ export default function AdminProfissionais() {
           <SummaryStrip stats={stats} />
 
           <section aria-labelledby={listTitleId}>
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <h2 id={listTitleId} className="sr-only">Lista de profissionais</h2>
-              <p className="text-[15px] text-ink/65 tabular-nums" aria-live="polite">
-                {filtering ? `${visibleRows.length} de ${rows.length} contas` : `${rows.length} ${rows.length === 1 ? 'conta' : 'contas'}`}
-              </p>
-              <button
-                type="button"
-                onClick={() => reload(false)}
-                className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-wine-100 bg-white/80 px-4 text-sm text-ink/65 transition-colors hover:border-wine-300 hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40"
-              >
-                <IconRefresh />
-                Atualizar
-              </button>
-            </div>
-
-            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div role="group" aria-label="Filtrar por situação" className="flex flex-wrap gap-2">
-                {FILTERS.map((f) => {
-                  const active = filter === f.id;
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => chooseFilter(f.id)}
-                      className={`inline-flex min-h-[42px] items-center gap-2 rounded-full border px-4 text-[15px] transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 ${
-                        active ? 'border-wine-600 bg-wine-600 font-medium text-white' : 'border-wine-100 bg-white/80 text-ink/70 hover:border-wine-300 hover:text-wine-800'
-                      }`}
-                    >
-                      {f.label}
-                      <span className={`text-sm ${active ? 'text-white/75' : 'text-ink/60'}`}>{rows.filter(f.match).length}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="relative lg:w-96">
-                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/60" aria-hidden="true"><IconSearch /></span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => changeQuery(e.target.value)}
-                  aria-label="Buscar profissional"
-                  placeholder="Buscar por nome, negócio ou e-mail"
-                  className="input h-[42px] rounded-full !pl-10 text-[15px]"
-                />
+            <h2 id={listTitleId} className="sr-only">Lista de profissionais</h2>
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <Segmented<FilterId>
+                label="Filtrar por situação"
+                value={filter}
+                onChange={chooseFilter}
+                options={FILTERS.map((f) => ({ id: f.id, label: f.label, count: rows.filter(f.match).length }))}
+              />
+              <div className="flex items-center gap-2.5">
+                <div className="relative min-w-0 flex-1 lg:w-80 lg:flex-none">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/55" aria-hidden="true"><IconSearch /></span>
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => changeQuery(e.target.value)}
+                    aria-label="Buscar profissional"
+                    placeholder="Buscar nome, negócio ou e-mail"
+                    className="input h-[42px] !pl-9"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => reload(false)}
+                  title="Atualizar lista"
+                  aria-label="Atualizar lista"
+                  className="btn-secondary h-[42px] w-[42px] shrink-0 !p-0"
+                >
+                  <IconRefresh />
+                </button>
               </div>
             </div>
+            <p className="mb-3 font-mono text-xs text-ink/65" aria-live="polite">
+              {filtering ? `${visibleRows.length} de ${rows.length} contas` : `${rows.length} ${rows.length === 1 ? 'conta' : 'contas'}`}
+            </p>
 
             {rows.length === 0 ? (
               <EmptyState />
             ) : visibleRows.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-wine-200/70 bg-white/50 px-6 py-14 text-center">
-                <p className="text-base text-ink/60">Nenhuma conta encontrada com esses filtros.</p>
+              <div className="rounded-2xl border border-dashed border-wine-200 bg-white px-6 py-14 text-center">
+                <p className="text-[15px] text-ink/65">Nenhuma conta encontrada com esses filtros.</p>
                 <button type="button" onClick={clearFilters} className="btn-secondary mt-5">Limpar filtros</button>
               </div>
             ) : (
               <>
-                <ul className="grid sm:grid-cols-2 2xl:grid-cols-3 gap-4">
-                  {shownRows.map((p) => (
-                    <ProfessionalCard key={p.id} p={p} menuItems={menuItemsFor(p)} onOpenTrigger={(el) => { triggerRef.current = el; }} />
-                  ))}
-                </ul>
+                <div className="overflow-hidden rounded-2xl border border-wine-100 bg-white">
+                  <ProfessionalsTableHead />
+                  <ul className="divide-y divide-wine-100">
+                    {shownRows.map((p) => (
+                      <ProfessionalCard key={p.id} p={p} menuItems={menuItemsFor(p)} onOpenTrigger={(el) => { triggerRef.current = el; }} />
+                    ))}
+                  </ul>
+                </div>
                 {remaining > 0 && (
                   <div className="mt-8 flex flex-col items-center gap-3">
-                    <p className="text-sm text-ink/65 tabular-nums" aria-live="polite">Mostrando {shownRows.length} de {visibleRows.length}</p>
+                    <p className="font-mono text-xs text-ink/65 tabular-nums" aria-live="polite">Mostrando {shownRows.length} de {visibleRows.length}</p>
                     <button
                       type="button"
                       onClick={() => setLimit((l) => l + PAGE_SIZE)}

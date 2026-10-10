@@ -1,194 +1,189 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { usePageTitle } from '../hooks/usePageTitle';
-import { IconArrow, IconClipboard, IconRefresh, IconTick, IconUser, IconUsers } from '../components/AdminIcons';
-import { Eyebrow, Panel, Skeleton, StatusDot } from '../components/admin-account/AccountUi';
-import { ACTIVITY_META, ENTER, ErrorState, dayLabel, timeLabel } from '../components/admin-account/AccountBlocks';
+import { IconArrow, IconRefresh, IconTick } from '../components/AdminIcons';
+import { Badge, Eyebrow, Meter, Panel, Skeleton, StatusDot } from '../components/admin-account/AccountUi';
+import { ACTIVITY_META, ActionIcon, ENTER, ErrorState, dayLabel, initialsOf, timeLabel } from '../components/admin-account/AccountBlocks';
 import { useAdminDashboard, type DashboardData, type DashboardAuditItem, type Health } from '../components/admin-dashboard/useAdminDashboard';
-import { chartIsMeaningful, computeAttention, computeStats, signupsByMonth, type MonthBucket } from '../components/admin-dashboard/derive';
+import { computeAttention, computeStats, type AttentionItem, type ProfessionalRow } from '../components/admin-dashboard/derive';
 
-// Dashboard ADM = visão operacional da plataforma. Só mostra o que os endpoints atuais fornecem:
-// contas (/admin/professionals), ações administrativas (/admin/audit-log) e /health.
-// Não há clientes, agendamentos, receita, uptime nem estado do banco/n8n/Evolution: nada disso é exibido.
+// Central de comando do ADM. Só mostra o que os endpoints atuais fornecem: contas (/admin/professionals),
+// ações administrativas (/admin/audit-log) e /health. Não há solicitações de suporte, clientes,
+// agendamentos, receita, uptime nem estado do banco/n8n/Evolution: nada disso é exibido.
 
-const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'h-[18px] w-[18px]' } as const;
-
-const IconBook = () => <svg {...stroke}><path strokeLinecap="round" strokeLinejoin="round" d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v13H6.5A1.5 1.5 0 0 0 5 18.5v-13Zm0 13A1.5 1.5 0 0 0 6.5 20H19v-3" /></svg>;
+const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'h-4 w-4' } as const;
 const IconLink = () => <svg {...stroke}><path strokeLinecap="round" strokeLinejoin="round" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg>;
+const IconBook = () => <svg {...stroke}><path strokeLinecap="round" strokeLinejoin="round" d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v13H6.5A1.5 1.5 0 0 0 5 18.5v-13Zm0 13A1.5 1.5 0 0 0 6.5 20H19v-3" /></svg>;
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
-const todayLabel = () => new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
-const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40';
+const todayLabel = () => new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).toLowerCase();
+const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/50';
+const heroBtn = `inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-3.5 text-sm font-medium text-cream transition-colors hover:bg-white/[0.12] focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-300 disabled:opacity-60`;
 
-// ── cabeçalho ───────────────────────────────────────────────────────────────
+// ── hero: o retrato da plataforma, em uma superfície noturna ────────────────
 
 function HealthChip({ health }: { health: Health }) {
   return health.ok ? (
-    <span className="inline-flex items-center gap-2.5 whitespace-nowrap rounded-full bg-sage-100/70 px-3.5 py-1.5 text-sm font-medium text-[#3F5F46]">
-      <StatusDot tone="sage" />
-      API respondendo
-      <span className="text-xs font-normal text-[#3F5F46]/55 tabular-nums">{health.ms} ms</span>
+    <span role="status" className="inline-flex min-h-[40px] items-center gap-2.5 whitespace-nowrap rounded-lg border border-signal/25 bg-signal/10 px-3.5 font-mono text-xs text-signal">
+      <StatusDot tone="signal" live />
+      API online
+      <span className="tabular-nums text-signal/70">{health.ms} ms</span>
     </span>
   ) : (
-    <span className="inline-flex items-center gap-2.5 whitespace-nowrap rounded-full bg-ink/[0.05] px-3.5 py-1.5 text-sm text-ink/65">
+    <span role="status" className="inline-flex min-h-[40px] items-center gap-2.5 whitespace-nowrap rounded-lg border border-white/15 px-3.5 font-mono text-xs text-[#BDB3AC]">
       <StatusDot tone="muted" />
-      Status da API indisponível
+      status da API indisponível
     </span>
   );
 }
 
-function Header({ name, health, refreshing, onRefresh }: { name: string; health: Health | null; refreshing: boolean; onRefresh: () => void }) {
-  const first = name.trim().split(/\s+/)[0];
+function Metric({
+  label, value, of, caption, meter,
+}: { label: string; value: number; of?: number; caption: ReactNode; meter?: { value: number; max: number; tone: 'wine' | 'signal' } }) {
   return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4 sm:mb-10">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gold-600">{todayLabel()}</p>
-        <h1 className="mt-2 font-display text-3xl font-semibold leading-tight text-wine-800 sm:text-4xl">
-          {greeting()}{first ? `, ${first}` : ''}
-        </h1>
-        <p className="mt-1 text-[15px] text-ink/65">Visão geral da plataforma NailFlow.</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {health && <HealthChip health={health} />}
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border border-wine-100 bg-white/80 px-4 text-sm text-ink/65 transition-colors hover:border-wine-300 hover:text-wine-800 disabled:opacity-60 ${focusRing}`}
-        >
-          <IconRefresh className={refreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-          {refreshing ? 'Atualizando…' : 'Atualizar'}
-        </button>
-      </div>
-    </header>
-  );
-}
-
-// ── visão da plataforma ─────────────────────────────────────────────────────
-
-function Kpi({ label, value, caption }: { label: string; value: number; caption: string }) {
-  return (
-    <div className="min-w-0 px-1 py-5 sm:px-6 sm:py-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/60">{label}</p>
-      <p className="mt-2 font-display text-4xl font-semibold leading-none text-wine-800 lining-nums">{value}</p>
-      <p className="mt-2 text-sm text-ink/65">{caption}</p>
+    <div className="min-w-0 px-5 py-5 sm:px-7 sm:py-6">
+      <dt className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#A0958E]">{label}</dt>
+      <dd className="mt-2">
+        <span className="font-display text-[2.5rem] font-semibold leading-none tabular-nums text-white sm:text-5xl">{value}</span>
+        {of !== undefined && <span className="ml-1.5 font-mono text-sm tabular-nums text-[#A0958E]">/ {of}</span>}
+        {meter && meter.max > 0 && <div className="mt-3.5"><Meter label={label} value={meter.value} max={meter.max} tone={meter.tone} /></div>}
+        <span className="mt-3 block text-sm leading-snug text-[#BDB3AC]">{caption}</span>
+      </dd>
     </div>
   );
 }
 
-function SignupsChart({ buckets }: { buckets: MonthBucket[] }) {
-  const max = Math.max(...buckets.map((b) => b.count), 1);
-  return (
-    <div className="mt-2 border-t border-wine-100/70 pt-7">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/60">Cadastros por mês</p>
-      <ul className="mt-5 flex h-28 items-end gap-3 sm:gap-5" aria-label="Cadastros de profissionais nos últimos 6 meses">
-        {buckets.map((b) => (
-          <li key={b.key} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={`${b.label}: ${b.count}`}>
-            <span className="text-xs tabular-nums text-ink/60">{b.count}</span>
-            <span
-              aria-hidden="true"
-              className={`w-full max-w-[3rem] rounded-t-lg transition-colors ${b.count > 0 ? 'bg-gradient-to-t from-wine-600 to-wine-400' : 'bg-wine-100/70'}`}
-              style={{ height: `${Math.max((b.count / max) * 100, b.count > 0 ? 14 : 4)}%` }}
-            />
-            <span className="text-xs text-ink/60">{b.label}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PlatformPanel({ data }: { data: DashboardData }) {
+function Hero({ name, data, refreshing, onRefresh }: { name: string; data: DashboardData; refreshing: boolean; onRefresh: () => void }) {
+  const { toast } = useToast();
   const s = computeStats(data.rows);
-  const buckets = signupsByMonth(data.rows);
-  return (
-    <Panel className={`!p-6 sm:!p-8 ${ENTER}`}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <Eyebrow>Visão da plataforma</Eyebrow>
-        <p className="text-xs text-ink/60">Atualizado às {data.loadedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
-      </div>
+  const first = name.trim().split(/\s+/)[0];
+  const withoutInstance = s.accounts - s.withInstance;
 
-      <div className="mt-5 grid gap-x-2 sm:grid-cols-[13rem_minmax(0,1fr)]">
-        <div className="border-b border-wine-100/70 pb-6 sm:border-b-0 sm:border-r sm:pb-0 sm:pr-8">
-          <p className="font-display text-7xl font-semibold leading-none text-wine-800 lining-nums">{s.accounts}</p>
-          <p className="mt-3 text-base font-medium text-ink/75">{s.accounts === 1 ? 'conta de profissional' : 'contas de profissionais'}</p>
-          <p className="mt-1 text-sm text-ink/60">
-            {s.admins > 0 ? `sem contar ${s.admins} ${s.admins === 1 ? 'conta administradora' : 'contas administradoras'}` : 'cadastradas na plataforma'}
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/register`);
+      toast('Link de cadastro copiado');
+    } catch {
+      toast('Não foi possível copiar o link', 'error');
+    }
+  }
+
+  return (
+    <Panel tone="night" className={`relative !p-0 overflow-hidden ${ENTER}`}>
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-gold-500/70" />
+      <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 p-5 sm:p-8">
+        <div className="min-w-0">
+          <Eyebrow tone="night">central de comando · {todayLabel()}</Eyebrow>
+          <h1 className="mt-3 font-display text-[1.875rem] font-semibold leading-tight text-white sm:text-[2.5rem]">
+            {greeting()}{first ? `, ${first}` : ''}
+          </h1>
+          <p className="mt-2 text-[15px] text-[#BDB3AC]">
+            A plataforma agora: contas, acessos e atividade.
+            <span className="ml-2 font-mono text-xs text-[#8F847D]">
+              atualizado às {data.loadedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
           </p>
         </div>
-        <div className="grid grid-cols-2 divide-wine-100/70 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-wine-100/70 [&>*:nth-child(even)]:border-l [&>*:nth-child(even)]:border-wine-100/70">
-          <Kpi label="Ativas" value={s.active} caption="com acesso liberado" />
-          <Kpi label="Bloqueadas" value={s.blocked} caption="sem acesso ao sistema" />
-          <Kpi label="WhatsApp" value={s.withInstance} caption="com instância configurada" />
-          <Kpi label="Novas" value={s.newLast30} caption="nos últimos 30 dias" />
+        <div className="flex flex-wrap items-center gap-2">
+          <HealthChip health={data.health} />
+          <button type="button" onClick={onRefresh} disabled={refreshing} aria-busy={refreshing} className={heroBtn}>
+            <IconRefresh className={refreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+            {refreshing ? 'Atualizando…' : 'Atualizar'}
+          </button>
+          <button type="button" onClick={copyLink} aria-label="Copiar link de cadastro" className={heroBtn}><IconLink /><span className="sm:hidden">Link de cadastro</span><span className="hidden sm:inline">Copiar link de cadastro</span></button>
+          <Link to="/ajuda" className={heroBtn}><IconBook />Guia rápido</Link>
         </div>
       </div>
 
-      {chartIsMeaningful(buckets) && <SignupsChart buckets={buckets} />}
+      <dl className="grid grid-cols-2 border-t border-white/10 lg:grid-cols-4 [&>*]:border-white/10 [&>*:nth-child(odd)]:border-r [&>*:nth-child(n+3)]:border-t lg:[&>*:nth-child(n+3)]:border-t-0 lg:[&>*:not(:last-child)]:border-r">
+        <Metric
+          label="Contas"
+          value={s.accounts}
+          caption={s.admins > 0 ? `sem contar ${s.admins} ${s.admins === 1 ? 'administradora' : 'administradoras'}` : 'profissionais cadastradas'}
+        />
+        <Metric
+          label="Acesso liberado"
+          value={s.active}
+          of={s.accounts}
+          meter={{ value: s.active, max: s.accounts, tone: 'signal' }}
+          caption={s.blocked > 0 ? `${s.blocked} ${s.blocked === 1 ? 'conta bloqueada' : 'contas bloqueadas'}` : 'nenhuma conta bloqueada'}
+        />
+        <Metric
+          label="WhatsApp configurado"
+          value={s.withInstance}
+          of={s.accounts}
+          meter={{ value: s.withInstance, max: s.accounts, tone: 'wine' }}
+          caption={withoutInstance > 0 ? `${withoutInstance} sem instância` : 'todas com instância'}
+        />
+        <Metric label="Novas · 30 dias" value={s.newLast30} caption="cadastros recentes" />
+      </dl>
     </Panel>
   );
 }
 
-// ── atenção ─────────────────────────────────────────────────────────────────
+// ── pendências ──────────────────────────────────────────────────────────────
 
-const MAX_ATTENTION = 4;
+const SEVERE = new Set(['bloqueadas', 'exclusoes']);
+
+function splitCount(text: string): { n: string | null; rest: string } {
+  const m = /^(\d+)\s+(.*)$/.exec(text);
+  return m ? { n: m[1], rest: m[2] } : { n: null, rest: text };
+}
+
+function QueueRow({ it }: { it: AttentionItem }) {
+  const { n, rest } = splitCount(it.text);
+  const severe = SEVERE.has(it.id);
+  const body = (
+    <>
+      <span aria-hidden="true" className={`self-stretch w-[3px] shrink-0 rounded-full ${severe ? 'bg-rose-500' : 'bg-gold-500'}`} />
+      <span className={`inline-flex h-8 min-w-[2rem] shrink-0 items-center justify-center rounded-md px-2 font-mono text-sm font-medium tabular-nums ${severe ? 'bg-rose-50 text-rose-700' : 'bg-gold-300/35 text-gold-700'}`}>{n ?? '·'}</span>
+      <span className="min-w-0 flex-1 text-[15px] leading-snug text-ink/85">{rest}</span>
+      {it.to && <span className="shrink-0 text-wine-500"><IconArrow /></span>}
+    </>
+  );
+  return it.to ? (
+    <Link to={it.to} className={`group flex min-h-[56px] items-center gap-3.5 rounded-lg px-1 py-2 transition-colors hover:bg-wine-50/70 ${focusRing}`}>{body}</Link>
+  ) : (
+    <div className="flex min-h-[56px] items-center gap-3.5 px-1 py-2">{body}</div>
+  );
+}
 
 function AttentionPanel({ data }: { data: DashboardData }) {
   const items = computeAttention(data.rows, data.deletes7);
   const actionable = items.filter((i) => !i.info);
   const notes = items.filter((i) => i.info);
-  const [all, setAll] = useState(false);
-  const shown = all ? items : items.slice(0, MAX_ATTENTION);
-  const hidden = items.length - shown.length;
 
   return (
-    <Panel className={`!p-6 sm:!p-7 ${ENTER} [animation-delay:90ms]`}>
-      <Eyebrow tone="gold">Atenção</Eyebrow>
+    <Panel className={`${ENTER} [animation-delay:60ms]`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Eyebrow>Fila de pendências</Eyebrow>
+          <h2 className="mt-2 font-display text-xl font-semibold leading-tight text-wine-800">O que pede atenção</h2>
+        </div>
+        {actionable.length > 0 && <Badge tone="warn">{actionable.length} {actionable.length === 1 ? 'item' : 'itens'}</Badge>}
+      </div>
+
       {actionable.length === 0 ? (
-        <div className="mt-4 flex items-start gap-4">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage-100 text-[#3F5F46]"><IconTick className="h-5 w-5" /></span>
+        <div className="mt-6 flex items-start gap-4 rounded-xl border border-sage-200 bg-sage-100/60 p-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-sage-700"><IconTick className="h-5 w-5" /></span>
           <div>
-            <p className="font-display text-2xl leading-tight text-wine-800">Tudo em ordem</p>
-            <p className="mt-1 text-[15px] text-ink/65">Nenhuma atenção necessária no momento.</p>
-            {notes.map((n) => (
-              <p key={n.id} className="mt-3 flex items-center gap-2.5 text-sm text-ink/60">
-                <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/20" />{n.text}
-              </p>
-            ))}
+            <p className="font-display text-lg font-semibold text-wine-800">Tudo em ordem</p>
+            <p className="mt-0.5 text-[15px] text-ink/70">Nenhuma pendência no momento.</p>
           </div>
         </div>
       ) : (
-        <>
-          <h2 className="mt-3 font-display text-2xl leading-tight text-wine-800">O que merece um olhar</h2>
-          <ul className="mt-5 divide-y divide-wine-100/60">
-            {shown.map((it) => {
-              const body = (
-                <>
-                  <span aria-hidden="true" className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-gold-500" />
-                  <span className="min-w-0 flex-1 text-[15px] leading-snug text-ink/75">{it.text}</span>
-                  {it.to && <span className="mt-0.5 text-wine-500"><IconArrow /></span>}
-                </>
-              );
-              return (
-                <li key={it.id}>
-                  {it.to ? (
-                    <Link to={it.to} className={`group flex items-start gap-3.5 rounded-lg py-3.5 transition-colors hover:text-wine-800 ${focusRing}`}>{body}</Link>
-                  ) : (
-                    <div className="flex items-start gap-3.5 py-3.5">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          {items.length > MAX_ATTENTION && (
-            <button type="button" onClick={() => setAll((v) => !v)} className={`mt-2 rounded-md py-1 text-sm font-medium text-wine-600 hover:text-wine-800 ${focusRing}`}>
-              {all ? 'Mostrar menos' : `Mostrar mais (${hidden})`}
-            </button>
-          )}
-        </>
+        <ul className="mt-4 divide-y divide-wine-100">
+          {actionable.map((it) => <li key={it.id}><QueueRow it={it} /></li>)}
+        </ul>
       )}
+
+      {notes.map((n) => (
+        <p key={n.id} className="mt-4 flex items-center gap-2.5 border-t border-wine-100 pt-4 text-sm text-ink/70">
+          <StatusDot tone="muted" />{n.text}
+        </p>
+      ))}
     </Panel>
   );
 }
@@ -199,15 +194,15 @@ function ActivityRow({ item, meEmail }: { item: DashboardAuditItem; meEmail: str
   const meta = ACTIVITY_META[item.action];
   const author = item.actorEmail === meEmail ? 'você' : item.actorEmail;
   return (
-    <li className="flex items-start gap-4 py-4">
-      <span aria-hidden="true" className={`mt-1.5 h-3 w-3 shrink-0 rounded-full border-2 bg-white ${meta.ring}`} />
+    <li className="flex items-start gap-3.5 py-3.5">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><ActionIcon action={item.action} /></span>
       <div className="min-w-0 flex-1">
-        <p className="text-base font-medium leading-snug text-ink/85">{meta.title}</p>
-        <p className="mt-0.5 break-words text-[15px] text-ink/65">Profissional · {item.targetBusinessName}</p>
-        <p className="mt-0.5 break-all text-sm text-ink/60 sm:break-normal">por {author}</p>
+        <p className="text-[15px] font-medium leading-snug text-ink/90">{meta.title}</p>
+        <p className="mt-0.5 break-words text-sm text-ink/70">{item.targetBusinessName}</p>
+        <p className="mt-0.5 break-all font-mono text-xs text-ink/55 sm:break-normal">por {author}</p>
       </div>
-      <p className="shrink-0 text-right text-sm text-ink/60">
-        <span className="block font-medium text-ink/65">{dayLabel(item.createdAt)}</span>
+      <p className="shrink-0 text-right font-mono text-xs leading-5 text-ink/65">
+        <span className="block font-medium text-ink/80">{dayLabel(item.createdAt)}</span>
         {timeLabel(item.createdAt)}
       </p>
     </li>
@@ -217,32 +212,32 @@ function ActivityRow({ item, meEmail }: { item: DashboardAuditItem; meEmail: str
 function ActivityPanel({ data, meEmail }: { data: DashboardData; meEmail: string | undefined }) {
   const audit = data.audit;
   return (
-    <Panel className={`!p-6 sm:!p-8 ${ENTER} [animation-delay:150ms]`}>
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+    <Panel className={`${ENTER} [animation-delay:120ms]`}>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <div>
           <Eyebrow>Atividade recente</Eyebrow>
-          <h2 className="mt-3 font-display text-2xl leading-tight text-wine-800">Ações administrativas</h2>
+          <h2 className="mt-2 font-display text-xl font-semibold leading-tight text-wine-800">Ações administrativas</h2>
         </div>
         {audit && audit.items.length > 0 && (
-          <Link to="/admin/auditoria" className={`rounded-lg py-1 text-[15px] font-medium text-wine-600 transition-colors hover:text-wine-800 ${focusRing}`}>
+          <Link to="/admin/auditoria" className={`rounded-lg py-1 text-sm font-medium text-wine-600 transition-colors hover:text-wine-800 ${focusRing}`}>
             Ver auditoria →
           </Link>
         )}
       </div>
 
       {audit === null ? (
-        <p className="mt-8 text-base text-ink/65">Não foi possível carregar a atividade agora. Tente atualizar em instantes.</p>
+        <p className="mt-6 text-[15px] text-ink/70">Não foi possível carregar a atividade agora. Tente atualizar em instantes.</p>
       ) : audit.items.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-dashed border-wine-200/70 px-6 py-10 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">Ainda não há atividades</p>
-          <p className="mx-auto mt-3 max-w-xs text-base leading-relaxed text-ink/65">As ações administrativas realizadas na plataforma aparecerão aqui.</p>
+        <div className="mt-6 rounded-xl border border-dashed border-wine-200 px-6 py-10 text-center">
+          <Eyebrow>Ainda não há atividades</Eyebrow>
+          <p className="mx-auto mt-3 max-w-xs text-[15px] leading-relaxed text-ink/70">As ações administrativas realizadas na plataforma aparecerão aqui.</p>
         </div>
       ) : (
         <>
-          <p className="mt-4 text-sm text-ink/60">
-            {audit.today} {audit.today === 1 ? 'ação hoje' : 'ações hoje'} · {audit.last7Days} {audit.last7Days === 1 ? 'ação' : 'ações'} nos últimos 7 dias
+          <p className="mt-3 font-mono text-xs text-ink/65">
+            {audit.today} {audit.today === 1 ? 'ação hoje' : 'ações hoje'} · {audit.last7Days} nos últimos 7 dias
           </p>
-          <ol className="mt-3 divide-y divide-wine-100/60">
+          <ol className="mt-1 divide-y divide-wine-100">
             {audit.items.map((it) => <ActivityRow key={it.id} item={it} meEmail={meEmail} />)}
           </ol>
         </>
@@ -251,47 +246,73 @@ function ActivityPanel({ data, meEmail }: { data: DashboardData; meEmail: string
   );
 }
 
-// ── atalhos ─────────────────────────────────────────────────────────────────
+// ── cadastros recentes (tabela) ─────────────────────────────────────────────
 
-function Shortcut({ to, icon, children }: { to: string; icon: ReactNode; children: ReactNode }) {
-  return (
-    <Link to={to} className={`group flex min-h-[48px] items-center gap-3.5 rounded-xl px-3 text-[15px] font-medium text-ink/75 transition-colors hover:bg-wine-50/70 hover:text-wine-800 ${focusRing}`}>
-      <span className="text-wine-500">{icon}</span>
-      <span className="flex-1">{children}</span>
-      <span className="text-wine-400"><IconArrow /></span>
-    </Link>
-  );
+const RECENT = 5;
+const COLS = 'md:grid-cols-[minmax(0,2.2fr)_8.5rem_minmax(0,1.2fr)_6.5rem]';
+
+function AccountBadge({ row }: { row: ProfessionalRow }) {
+  if (row.blocked_at) return <Badge tone="danger">Bloqueada</Badge>;
+  if (!row.wa_instance_name) return <Badge tone="warn">Sem WhatsApp</Badge>;
+  return <Badge tone="ok">Ativa</Badge>;
 }
 
-function ShortcutsPanel() {
-  const { toast } = useToast();
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/register`);
-      toast('Link de cadastro copiado');
-    } catch {
-      toast('Não foi possível copiar o link', 'error');
-    }
-  }
+function sinceLabel(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function RecentAccounts({ data }: { data: DashboardData }) {
+  const recent = data.rows
+    .filter((r) => !r.is_admin)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, RECENT);
+
   return (
-    <Panel className={`!p-4 sm:!p-5 ${ENTER} [animation-delay:210ms]`}>
-      <div className="px-3 pt-2 pb-3"><Eyebrow>Atalhos</Eyebrow></div>
-      <nav aria-label="Atalhos administrativos" className="space-y-0.5">
-        <Shortcut to="/admin/profissionais" icon={<IconUsers className="h-[18px] w-[18px]" />}>Profissionais</Shortcut>
-        <Shortcut to="/admin/auditoria" icon={<IconClipboard className="h-[18px] w-[18px]" />}>Auditoria</Shortcut>
-        <Shortcut to="/admin/conta" icon={<IconUser className="h-[18px] w-[18px]" />}>Central da conta</Shortcut>
-        <Shortcut to="/ajuda" icon={<IconBook />}>Guia rápido</Shortcut>
-      </nav>
-      <div className="mt-2 border-t border-wine-100/70 pt-2">
-        <button
-          type="button"
-          onClick={copyLink}
-          className={`flex min-h-[48px] w-full items-center gap-3.5 rounded-xl px-3 text-left text-[15px] text-ink/60 transition-colors hover:bg-wine-50/70 hover:text-wine-800 ${focusRing}`}
-        >
-          <span className="text-wine-400"><IconLink /></span>
-          Copiar link de cadastro
-        </button>
+    <Panel className={`!p-0 overflow-hidden ${ENTER} [animation-delay:180ms]`}>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 px-5 pt-5 sm:px-6 sm:pt-6">
+        <div>
+          <Eyebrow>Profissionais</Eyebrow>
+          <h2 className="mt-2 font-display text-xl font-semibold leading-tight text-wine-800">Cadastros recentes</h2>
+        </div>
+        {recent.length > 0 && (
+          <Link to="/admin/profissionais" className={`rounded-lg py-1 text-sm font-medium text-wine-600 transition-colors hover:text-wine-800 ${focusRing}`}>
+            Ver todas →
+          </Link>
+        )}
       </div>
+
+      {recent.length === 0 ? (
+        <div className="m-5 rounded-xl border border-dashed border-wine-200 px-6 py-10 text-center sm:m-6">
+          <Eyebrow>Nenhuma profissional ainda</Eyebrow>
+          <p className="mx-auto mt-3 max-w-xs text-[15px] leading-relaxed text-ink/70">Quando alguém se cadastrar, a conta aparece aqui.</p>
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div aria-hidden="true" className={`hidden border-y border-wine-100 bg-wine-50/60 px-6 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink/60 md:grid ${COLS} md:gap-x-4`}>
+            <span>Conta</span><span>Situação</span><span>Instância</span><span className="text-right">Cadastro</span>
+          </div>
+          <ul className="divide-y divide-wine-100 border-t border-wine-100 md:border-t-0">
+            {recent.map((r) => (
+              <li key={r.id} className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3.5 sm:px-6 ${COLS}`}>
+                <div className="flex min-w-0 items-center gap-3.5">
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wine-50 font-display text-sm font-semibold text-wine-700">
+                    {initialsOf(r.business_name || r.name)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-medium text-ink/90">{r.business_name || r.name}</p>
+                    <p className="truncate text-sm text-ink/65">{r.name}</p>
+                  </div>
+                </div>
+                <div className="justify-self-end md:justify-self-start"><AccountBadge row={r} /></div>
+                <p className="col-span-2 truncate font-mono text-xs text-ink/65 md:col-span-1">
+                  {r.wa_instance_name ?? <span className="text-ink/45">— sem instância</span>}
+                </p>
+                <p className="col-span-2 whitespace-nowrap font-mono text-xs text-ink/65 md:col-span-1 md:text-right">{sinceLabel(r.created_at)}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -300,15 +321,13 @@ function ShortcutsPanel() {
 
 function LoadingState() {
   return (
-    <div role="status" aria-label="Carregando o painel" className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
-      <div className="space-y-8">
-        <Skeleton className="h-72 rounded-3xl" />
-        <Skeleton className="h-96 rounded-3xl" />
+    <div role="status" aria-label="Carregando o painel" className="space-y-6">
+      <Skeleton className="h-72 rounded-2xl sm:h-64" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Skeleton className="h-72 rounded-2xl" />
+        <Skeleton className="h-72 rounded-2xl" />
       </div>
-      <div className="space-y-8">
-        <Skeleton className="h-60 rounded-3xl" />
-        <Skeleton className="h-64 rounded-3xl" />
-      </div>
+      <Skeleton className="h-72 rounded-2xl" />
     </div>
   );
 }
@@ -322,22 +341,22 @@ export default function AdminDashboard() {
   const data = state.status === 'ready' ? state.data : null;
 
   return (
-    <div className="mx-auto max-w-[78rem]">
-      <Header name={professional?.name ?? ''} health={data?.health ?? null} refreshing={refreshing} onRefresh={reload} />
-
+    <div className="mx-auto max-w-[80rem]">
       {state.status === 'loading' && <LoadingState />}
-      {state.status === 'error' && <ErrorState title="Não foi possível carregar o painel" message={state.message} onRetry={retry} />}
+      {state.status === 'error' && (
+        <>
+          <h1 className="mb-6 font-display text-[1.875rem] font-semibold text-wine-800">Central de comando</h1>
+          <ErrorState title="Não foi possível carregar o painel" message={state.message} onRetry={retry} />
+        </>
+      )}
       {data && (
-        // No celular a ordem é: resumo → atenção → atividade → atalhos; no desktop, duas colunas.
-        <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
-          <div className="contents lg:block lg:min-w-0 lg:space-y-8">
-            <div className="order-1 lg:order-none"><PlatformPanel data={data} /></div>
-            <div className="order-3 lg:order-none"><ActivityPanel data={data} meEmail={professional?.email} /></div>
+        <div className="space-y-6">
+          <Hero name={professional?.name ?? ''} data={data} refreshing={refreshing} onRefresh={reload} />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+            <AttentionPanel data={data} />
+            <ActivityPanel data={data} meEmail={professional?.email} />
           </div>
-          <div className="contents lg:block lg:min-w-0 lg:space-y-8">
-            <div className="order-2 lg:order-none"><AttentionPanel data={data} /></div>
-            <div className="order-4 lg:order-none"><ShortcutsPanel /></div>
-          </div>
+          <RecentAccounts data={data} />
         </div>
       )}
     </div>

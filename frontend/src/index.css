@@ -44,6 +44,86 @@
   --wine-800:  14  44  75;
 }
 
+/* Valores originais de cream, ink, gold e sage (área da profissional). */
+:root {
+  --cream: 251 246 241;
+  --ink: 43 35 32;
+  --gold-300: 237 217 160;
+  --gold-400: 217 178 106;
+  --gold-500: 199 154 69;
+  --gold-600: 166 125 53;
+  --gold-700: 122 90 34;
+  --sage-100: 236 240 237;
+  --sage-200: 212 222 219;
+  --sage-500: 110 143 115;
+  --sage-700: 63 95 70;
+  --rose-50: 255 241 242;
+  --rose-100: 255 228 230;
+  --rose-200: 254 205 211;
+  --rose-300: 253 164 175;
+  --rose-400: 251 113 133;
+  --rose-500: 244 63 94;
+  --rose-600: 225 29 72;
+  --rose-700: 190 18 60;
+  --rose-800: 159 18 57;
+}
+
+/* ─── Área administrativa: "Nocturne Burgundy" ───────────────────────────────
+   Vinho profundo como cor principal, carvão de subtom quente nas superfícies escuras,
+   neutros claros quentes, dourado envelhecido só em detalhes pequenos. Verde e vermelho
+   aparecem apenas como estados funcionais (sucesso / erro). Redefine os mesmos tokens
+   (wine/gold/sage/rose/ink/cream) só dentro de .admin-ui, então tudo que já usa esses tokens
+   muda junto, e a área da profissional não é afetada. */
+.admin-ui {
+  /* vinho: 600 = botões e links · 800 = títulos · 500 = foco */
+  --wine-50:  248 242 243;
+  --wine-100: 237 227 229;
+  --wine-200: 221 205 209;
+  --wine-300: 198 154 164;
+  --wine-400: 168 102 119;
+  --wine-500: 150  58  84;
+  --wine-600: 123  45  69;
+  --wine-700:  94  30  50;
+  --wine-800:  58  19  35;
+
+  /* dourado envelhecido: atenção e pequenos detalhes */
+  --gold-300: 232 214 166;
+  --gold-400: 201 165  92;
+  --gold-500: 176 138  62;
+  --gold-600: 138 106  36;
+  --gold-700: 107  80  24;
+
+  /* verde: sucesso */
+  --sage-100: 227 241 232;
+  --sage-200: 187 220 199;
+  --sage-500:  47 143  98;
+  --sage-700:  27 107  69;
+
+  /* vermelho: erro (mais alaranjado que o vinho, para nunca se confundir com a marca) */
+  --rose-50:  253 240 238;
+  --rose-100: 251 221 217;
+  --rose-200: 245 189 182;
+  --rose-300: 235 142 132;
+  --rose-400: 221  95  82;
+  --rose-500: 200  56  43;
+  --rose-600: 176  42  31;
+  --rose-700: 143  31  23;
+  --rose-800: 110  24  18;
+
+  --ink:   31  26  24;
+  --cream: 245 243 241;
+
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+.admin-ui .font-display {
+  font-family: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+.admin-ui .font-mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+.admin-ui ::selection { background-color: rgb(var(--wine-200)); }
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -139,5 +219,44 @@ select.input {
   .guia-imprimir .guia-passo-novo {
     break-before: page;
     page-break-before: always;
+  }
+}
+
+/* ─── Área administrativa: componentes (escopo .admin-ui) ───────────────────── */
+@layer components {
+  .admin-ui .input {
+    @apply rounded-lg border-wine-200 bg-white text-[15px] placeholder:text-ink/40
+           focus:border-wine-500 focus:ring-2 focus:ring-wine-500/25;
+  }
+  .admin-ui .btn-primary {
+    @apply rounded-lg bg-wine-600 px-4 py-2.5 font-semibold shadow-none
+           hover:bg-wine-700 hover:shadow-none active:scale-100 active:bg-wine-700
+           focus-visible:ring-wine-500/50 focus-visible:ring-offset-2;
+  }
+  .admin-ui .btn-secondary {
+    @apply rounded-lg border-wine-200 bg-white px-4 py-2.5 font-medium text-wine-800
+           hover:border-wine-400 hover:bg-wine-50 active:scale-100
+           focus-visible:ring-wine-500/40 focus-visible:ring-offset-2;
+  }
+  .admin-ui .btn-ghost {
+    @apply rounded-lg text-wine-700 hover:bg-wine-50 hover:text-wine-800 active:scale-100;
+  }
+  .admin-ui select.input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23561F31' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* Cantos mais secos: os componentes herdados usavam raios grandes (3xl/2rem). */
+  .admin-ui .rounded-3xl,
+  .admin-ui .rounded-\[2rem\],
+  .admin-ui .rounded-\[2\.25rem\] { border-radius: 16px; }
+  .admin-ui .rounded-2xl { border-radius: 12px; }
+
+  /* Movimento: respeita a preferência do sistema. */
+  @media (prefers-reduced-motion: reduce) {
+    .admin-ui *, .admin-ui *::before, .admin-ui *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

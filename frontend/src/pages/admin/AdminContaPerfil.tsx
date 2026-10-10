@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ChangeEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AccountShell from '../../components/admin-account/AccountShell';
-import { Eyebrow, Panel, Skeleton, StatusDot } from '../../components/admin-account/AccountUi';
+import { Badge, Eyebrow, Panel, Skeleton } from '../../components/admin-account/AccountUi';
 import {
   ENTER, Avatar, ErrorState, longDate,
 } from '../../components/admin-account/AccountBlocks';
@@ -81,46 +81,39 @@ function IdentityCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
   return (
     <section
       aria-labelledby="perfil-nome"
-      className={`relative overflow-hidden rounded-[2rem] border bg-gradient-to-br from-white via-white to-wine-50/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_1px_2px_rgba(61,29,40,0.05),0_30px_70px_-38px_rgba(61,29,40,0.3)] transition-colors duration-500 ${edit.editing ? 'border-wine-300/60' : 'border-wine-100/80'} ${ENTER}`}
+      className={`relative overflow-hidden rounded-2xl border bg-white transition-colors duration-300 ${edit.editing ? 'border-wine-400' : 'border-wine-100'} ${ENTER}`}
     >
-      <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(closest-side,rgba(199,154,69,0.14),transparent)]" />
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-gold-400/50 to-transparent" />
-
-      <div className="relative flex flex-col items-center gap-8 px-6 py-10 text-center sm:flex-row sm:items-start sm:gap-10 sm:px-10 sm:py-12 sm:text-left">
-        <div className="flex shrink-0 flex-col items-center">
+      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] ${edit.editing ? 'bg-wine-500' : 'bg-wine-100'}`} />
+      <div className="flex flex-col gap-6 p-5 sm:flex-row sm:items-start sm:gap-8 sm:p-8">
+        <div className="flex shrink-0 flex-col items-start">
           <Avatar name={me.name} src={edit.avatarSrc} size="md" />
           {edit.editing && <AvatarControls edit={edit} hasPhoto={!!edit.avatarSrc} />}
         </div>
 
-        <div className="min-w-0 flex-1 sm:pt-2">
-          <Eyebrow tone="gold">Identidade</Eyebrow>
-          <h2 id="perfil-nome" className="mt-2 break-words font-display text-4xl font-semibold leading-tight tracking-tight text-wine-800 sm:text-5xl">
+        <div className="min-w-0 flex-1">
+          <Eyebrow>Identidade</Eyebrow>
+          <h2 id="perfil-nome" className="mt-2 break-words font-display text-[1.875rem] font-semibold leading-tight text-wine-800 sm:text-4xl">
             {me.name}
           </h2>
 
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-            <span className="inline-flex items-center rounded-full border border-gold-400/50 bg-gold-300/20 px-4 py-1.5 text-sm font-semibold tracking-wide text-gold-600">
-              Administradora
-            </span>
-            <span className="inline-flex items-center gap-3 whitespace-nowrap rounded-full bg-sage-100/70 px-4 py-1.5 text-sm font-medium text-[#3F5F46]">
-              <StatusDot tone={active ? 'sage' : 'rose'} />
-              {active ? 'Conta ativa' : 'Conta bloqueada'}
-            </span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone="info" dot={false}>Administradora</Badge>
+            <Badge tone={active ? 'ok' : 'danger'}>{active ? 'Conta ativa' : 'Conta bloqueada'}</Badge>
           </div>
 
-          {createdAt && <p className="mt-4 text-base text-ink/65">Administradora desde {longDate(createdAt)}</p>}
+          {createdAt && <p className="mt-3 font-mono text-xs text-ink/65">administradora desde {longDate(createdAt)}</p>}
 
-          <div className="mt-6 min-h-[46px]">
+          <div className="mt-5 min-h-[44px]">
             {edit.editing ? (
-              <p className="inline-flex items-center gap-3 text-[15px] font-medium text-gold-600" aria-live="polite">
-                <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full bg-gold-500 ${edit.dirty ? 'shadow-[0_0_0_4px_rgba(199,154,69,0.2)]' : 'opacity-50'}`} />
+              <p className="inline-flex items-center gap-2.5 text-sm font-medium text-gold-700" aria-live="polite">
+                <span aria-hidden="true" className={`h-2 w-2 rounded-full bg-gold-500 ${edit.dirty ? '' : 'opacity-50'}`} />
                 {edit.dirty ? 'Editando · alterações pendentes' : 'Editando perfil'}
               </p>
             ) : (
               <button
                 type="button"
                 onClick={edit.start}
-                className="btn-secondary min-h-[46px] px-6 focus-visible:ring-2 focus-visible:ring-wine-500/40"
+                className="btn-secondary min-h-[44px] px-5"
               >
                 Editar perfil
               </button>
@@ -137,10 +130,10 @@ function IdentityCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
 function Field({ icon: ic, label, value, empty = false }: { icon: ReactNode; label: string; value: string; empty?: boolean }) {
   return (
     <div className="flex items-center gap-4 py-4">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-wine-50/80 text-wine-500">{ic}</span>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wine-50 text-wine-600">{ic}</span>
       <div className="min-w-0">
-        <dt className="text-sm text-ink/60">{label}</dt>
-        <dd className={`mt-0.5 break-words text-lg ${empty ? 'text-ink/60' : 'text-ink/85'}`}>{value}</dd>
+        <dt className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink/60">{label}</dt>
+        <dd className={`mt-0.5 break-words text-base ${empty ? 'text-ink/60' : 'text-ink/90'}`}>{value}</dd>
       </div>
     </div>
   );
@@ -155,13 +148,13 @@ function EditField({
   const describedBy = error ? `${id}-erro` : hint ? `${id}-dica` : undefined;
   return (
     <div className="py-3.5">
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink/60">{label}</label>
+      <label htmlFor={id} className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.14em] text-ink/65">{label}</label>
       <input
         id={id}
         ref={inputRef}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
-        className={`input h-12 text-base disabled:opacity-60 ${error ? '!border-rose-400 focus:!ring-rose-300/30' : ''}`}
+        className={`input h-12 disabled:opacity-60 ${error ? '!border-rose-400 focus:!ring-rose-300/30' : ''}`}
         {...input}
       />
       {error ? (
@@ -187,9 +180,9 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
 
   return (
     <div ref={cardRef} className="flex">
-      <Panel className={`flex w-full flex-col ${ENTER} [animation-delay:90ms] ${edit.editing ? '!border-wine-300/70 ring-2 ring-wine-300/25' : ''}`}>
+      <Panel className={`flex w-full flex-col ${ENTER} [animation-delay:90ms] ${edit.editing ? '!border-wine-400' : ''}`}>
         <Eyebrow>Dados</Eyebrow>
-        <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Dados pessoais</h3>
+        <h3 className="mt-2 font-display text-xl font-semibold leading-tight text-wine-800">Dados pessoais</h3>
 
         {edit.editing ? (
           <form
@@ -219,7 +212,7 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
             </div>
 
             {edit.saveError && (
-              <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-[15px] text-rose-700">
+              <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50/70 px-4 py-3 text-[15px] text-rose-700">
                 {edit.saveError}
               </p>
             )}
@@ -260,8 +253,8 @@ function ProfileCard({ data, edit }: { data: AccountOverview; edit: Edit }) {
 function LoadingState() {
   return (
     <div role="status" aria-label="Carregando seu perfil" className="space-y-8">
-      <Skeleton className="h-72 rounded-[2rem] sm:h-60" />
-      <Skeleton className="h-96 rounded-3xl" />
+      <Skeleton className="h-72 rounded-2xl sm:h-60" />
+      <Skeleton className="h-96 rounded-2xl" />
     </div>
   );
 }
@@ -282,7 +275,7 @@ function PerfilConteudo({ data, patchMe }: { data: AccountOverview; patchMe: Par
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <div className="space-y-8 sm:space-y-10">
+    <div className="space-y-6">
       <IdentityCard data={data} edit={edit} />
       <ProfileCard data={data} edit={edit} />
     </div>
