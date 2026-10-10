@@ -3,7 +3,9 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { usePageTitle } from '../hooks/usePageTitle';
-import { IconBan, IconCheckCircle, IconRefresh } from '../components/AdminIcons';
+import { IconBan, IconRefresh } from '../components/AdminIcons';
+import { Badge, PageHeader, Segmented } from '../components/admin-account/AccountUi';
+import { ACTIVITY_META, ActionIcon } from '../components/admin-account/AccountBlocks';
 
 type AuditAction = 'update' | 'block' | 'unblock' | 'delete';
 
@@ -28,16 +30,10 @@ interface AuditResponse {
 
 const PAGE_SIZE = 15;
 
-// ── apresentação por tipo de ação ───────────────────────────────────────────
+// ── apresentação: a mesma de toda a área admin (ACTIVITY_META / ActionIcon) ──
 
 const iconProps = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, viewBox: '0 0 24 24', 'aria-hidden': true } as const;
 
-function IconPencil({ className = 'w-5 h-5' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l3 3" /></svg>;
-}
-function IconTrash({ className = 'w-5 h-5' }: { className?: string }) {
-  return <svg className={className} {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5" /></svg>;
-}
 function IconClock({ className = 'w-5 h-5' }: { className?: string }) {
   return <svg className={className} {...iconProps}><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5V12l3 2" /></svg>;
 }
@@ -48,13 +44,6 @@ function IconChevron({ open }: { open: boolean }) {
     </svg>
   );
 }
-
-const ACTION_META: Record<AuditAction, { filter: string; title: string; icon: ReactNode; tile: string; text: string }> = {
-  update: { filter: 'Edição', title: 'Cadastro editado', icon: <IconPencil />, tile: 'bg-wine-100 text-wine-700', text: 'text-wine-700' },
-  block: { filter: 'Bloqueio', title: 'Conta bloqueada', icon: <IconBan />, tile: 'bg-rose-50 text-rose-600', text: 'text-rose-700' },
-  unblock: { filter: 'Desbloqueio', title: 'Conta desbloqueada', icon: <IconCheckCircle />, tile: 'bg-sage-100 text-[#3F5F46]', text: 'text-[#3F5F46]' },
-  delete: { filter: 'Exclusão', title: 'Conta excluída', icon: <IconTrash />, tile: 'bg-rose-100 text-rose-700', text: 'text-rose-700' },
-};
 
 const ACTION_FILTERS: Array<{ id: 'all' | AuditAction; label: string }> = [
   { id: 'all', label: 'Todas' },
@@ -99,29 +88,31 @@ function formatFull(iso: string) {
 // ── peças visuais ───────────────────────────────────────────────────────────
 
 function SkeletonBlock({ className }: { className: string }) {
-  return <div className={`bg-wine-100/60 rounded-lg animate-pulse ${className}`} />;
+  return <div className={`animate-pulse rounded-md bg-wine-100/70 ${className}`} />;
 }
 
 function SummaryStat({ label, caption, value }: { label: string; caption: string; value: number | null }) {
   return (
-    <div className="min-w-0 p-5 sm:p-7">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/60">{label}</p>
+    <div className="flex min-w-0 items-center justify-between gap-4 px-5 py-4 sm:px-6">
+      <div className="min-w-0">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink/60">{label}</p>
+        <p className="mt-1 text-sm text-ink/65">{caption}</p>
+      </div>
       {value === null ? (
-        <SkeletonBlock className="mt-3 h-9 w-14" />
+        <SkeletonBlock className="h-8 w-12" />
       ) : (
-        <p className="mt-2 font-display text-4xl font-semibold leading-none text-wine-800">{value}</p>
+        <p className="font-display text-4xl font-semibold leading-none tabular-nums text-wine-800">{value}</p>
       )}
-      <p className="mt-2 text-sm text-ink/65">{caption}</p>
     </div>
   );
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="rounded-3xl bg-white border border-rose-200 p-10 text-center shadow-sm">
-      <span className="mx-auto w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center"><IconBan /></span>
-      <p className="font-display text-xl text-wine-800 mt-4">Não foi possível carregar</p>
-      <p className="text-sm text-rose-700 mt-1">{message}</p>
+    <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50/60 p-10 text-center">
+      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-white text-rose-600"><IconBan /></span>
+      <p className="mt-4 font-display text-xl font-semibold text-wine-800">Não foi possível carregar</p>
+      <p className="mt-1 text-[15px] text-rose-700">{message}</p>
       <button onClick={onRetry} className="btn-primary mt-6">Tentar novamente</button>
     </div>
   );
@@ -129,16 +120,16 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function ListSkeleton() {
   return (
-    <div aria-busy="true" aria-live="polite" className="rounded-3xl bg-white border border-wine-100/70 shadow-sm divide-y divide-wine-100/60">
+    <div aria-busy="true" aria-live="polite" className="divide-y divide-wine-100 rounded-2xl border border-wine-100 bg-white">
       <span className="sr-only">Carregando registros…</span>
       {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} className="flex items-center gap-4 p-4 sm:p-5">
-          <div className="w-11 h-11 rounded-2xl bg-wine-100/60 animate-pulse shrink-0" />
+          <div className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-wine-100/70" />
           <div className="flex-1 space-y-2">
             <SkeletonBlock className="h-4 w-44" />
             <SkeletonBlock className="h-3 w-56 max-w-full" />
           </div>
-          <SkeletonBlock className="h-4 w-24 hidden sm:block" />
+          <SkeletonBlock className="hidden h-4 w-24 sm:block" />
         </div>
       ))}
     </div>
@@ -148,14 +139,23 @@ function ListSkeleton() {
 function DetailRow({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs uppercase tracking-widest font-semibold text-ink/60">{label}</dt>
-      <dd className={`mt-1 text-sm text-ink/75 break-all ${mono ? 'font-mono text-xs text-ink/60' : ''}`}>{children}</dd>
+      <dt className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink/60">{label}</dt>
+      <dd className={`mt-1 break-all text-sm text-ink/85 ${mono ? 'font-mono text-xs' : ''}`}>{children}</dd>
+    </div>
+  );
+}
+
+function TechRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="grid gap-x-4 gap-y-0.5 sm:grid-cols-[10rem_minmax(0,1fr)]">
+      <dt className="text-[#A0958E]">{k}</dt>
+      <dd className="break-all text-white">{v}</dd>
     </div>
   );
 }
 
 function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; onToggle: () => void }) {
-  const meta = ACTION_META[item.action];
+  const meta = ACTIVITY_META[item.action];
   const panelId = useId();
   return (
     <li>
@@ -164,40 +164,38 @@ function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; on
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={panelId}
-        className="w-full text-left flex items-start sm:items-center gap-4 p-4 sm:p-5 hover:bg-wine-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-wine-400/50 transition-colors"
+        className={`flex w-full items-start gap-4 p-4 text-left transition-colors hover:bg-wine-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-wine-500/50 sm:items-center sm:px-6 ${open ? 'bg-wine-50/50' : ''}`}
       >
-        <span className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${meta.tile}`}>{meta.icon}</span>
-        <span className="min-w-0 flex-1 grid sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-x-6 gap-y-1">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><ActionIcon action={item.action} /></span>
+        <span className="grid min-w-0 flex-1 gap-x-6 gap-y-1.5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_9.5rem]">
           <span className="min-w-0">
-            <span className={`block text-sm font-semibold ${meta.text}`}>{meta.title}</span>
-            <span className="block text-sm text-ink/70 truncate" title={item.targetBusinessName}>{item.targetBusinessName}</span>
+            <span className="block text-[15px] font-semibold text-ink/95">{meta.title}</span>
+            <span className="mt-0.5 block truncate text-sm text-ink/70" title={item.targetBusinessName}>{item.targetBusinessName}</span>
           </span>
-          <span className="min-w-0 sm:text-right">
-            <span className="block text-xs text-ink/60 truncate" title={item.actorEmail}>por {item.actorEmail}</span>
-            <span className="block text-xs text-ink/65 tabular-nums mt-0.5">{formatShort(item.createdAt)}</span>
-          </span>
+          <span className="block min-w-0 truncate font-mono text-xs leading-5 text-ink/65" title={item.actorEmail}>por {item.actorEmail}</span>
+          <span className="font-mono text-xs tabular-nums text-ink/70 sm:text-right">{formatShort(item.createdAt)}</span>
         </span>
-        <span className="text-ink/60 shrink-0 mt-1 sm:mt-0"><IconChevron open={open} /></span>
+        <span className="mt-1 shrink-0 text-ink/55 sm:mt-0"><IconChevron open={open} /></span>
       </button>
 
       {open && (
-        <div id={panelId} className="px-4 sm:px-5 pb-5 -mt-1">
-          <div className="rounded-2xl bg-cream border border-wine-100/60 p-4 sm:p-5">
-            <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-4">
-              <DetailRow label="Ação">{meta.filter}</DetailRow>
+        <div id={panelId} className="px-4 pb-5 sm:px-6">
+          <div className="rounded-xl border border-wine-100 bg-cream p-4 sm:p-5">
+            <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              <DetailRow label="Ação"><Badge tone={meta.tone}>{meta.label}</Badge></DetailRow>
               <DetailRow label="Data e hora">{formatFull(item.createdAt)}</DetailRow>
               <DetailRow label="Feita por">{item.actorEmail}</DetailRow>
               <DetailRow label="Profissional (nome do negócio no registro)">{item.targetBusinessName}</DetailRow>
             </dl>
             <details className="mt-4 text-sm">
-              <summary className="cursor-pointer rounded font-medium text-wine-600 hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40">Detalhes técnicos</summary>
-              <dl className="mt-3 grid sm:grid-cols-2 gap-x-8 gap-y-3">
-                <DetailRow label="ID do administrador" mono>{item.actorId}</DetailRow>
-                <DetailRow label="ID da profissional" mono>{item.targetId}</DetailRow>
-                <DetailRow label="ID do registro" mono>{item.id}</DetailRow>
+              <summary className="cursor-pointer rounded font-medium text-wine-600 hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/50">Detalhes técnicos</summary>
+              <dl className="mt-3 space-y-2 rounded-lg bg-night-900 p-4 font-mono text-xs leading-relaxed">
+                <TechRow k="admin_id" v={item.actorId} />
+                <TechRow k="profissional_id" v={item.targetId} />
+                <TechRow k="registro_id" v={item.id} />
               </dl>
             </details>
-            <p className="text-xs text-ink/60 mt-4 leading-relaxed">
+            <p className="mt-4 text-xs leading-relaxed text-ink/65">
               Este registro guarda apenas quem fez a ação, qual foi a ação, em qual conta e quando.
               Os campos alterados em uma edição não são armazenados.
               {item.action === 'delete' && ' A conta foi excluída; o nome do negócio acima é o que ficou gravado no momento da exclusão.'}
@@ -225,8 +223,6 @@ export default function AdminAuditoria() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const requestRef = useRef(0);
-  const actionsLabelId = useId();
-  const periodLabelId = useId();
 
   const rangeInvalid = from !== '' && to !== '' && from > to;
   const hasFilters = action !== 'all' || from !== '' || to !== '';
@@ -271,7 +267,8 @@ export default function AdminAuditoria() {
     setAction(a);
     setPage(1);
   }
-  function choosePreset(p: Exclude<Preset, 'custom'>) {
+  function choosePreset(p: Preset) {
+    if (p === 'custom') return;
     const r = presetRange(p);
     setPreset(p);
     setFrom(r.from);
@@ -299,97 +296,79 @@ export default function AdminAuditoria() {
   const initialLoad = loading && data === null;
 
   return (
-    <div className="max-w-[78rem] mx-auto">
+    <div className="mx-auto max-w-[80rem]">
 
-      {/* ── topo ─────────────────────────────────────────────────────────── */}
-      <header className="mb-8 sm:mb-10">
-        <p className="text-xs uppercase tracking-[0.22em] font-semibold text-gold-600">Gestão</p>
-        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-wine-800 leading-tight mt-2">Auditoria</h1>
-        <p className="text-base text-ink/65 mt-1.5 max-w-2xl">
-          Histórico das ações administrativas feitas sobre as contas das profissionais: edições, bloqueios,
-          desbloqueios e exclusões. Só ações concluídas com sucesso são registradas. Suas próprias ações também
-          aparecem em{' '}
-          <Link to="/admin/conta/atividade" className="font-medium text-wine-600 underline-offset-4 hover:text-wine-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 rounded">Atividade</Link>.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="gestão / auditoria"
+        title="Auditoria"
+        subtitle={
+          <>
+            Histórico das ações administrativas sobre as contas das profissionais: edições, bloqueios,
+            desbloqueios e exclusões. Só ações concluídas com sucesso são registradas. As suas também
+            aparecem em{' '}
+            <Link to="/admin/conta/atividade" className="font-medium text-wine-600 underline-offset-4 hover:text-wine-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/50 rounded">Atividade</Link>.
+          </>
+        }
+      />
 
       {/* ── resumo ───────────────────────────────────────────────────────── */}
       <section
         aria-label="Resumo"
-        className="mb-8 grid overflow-hidden rounded-3xl border border-wine-100/80 bg-white/85 shadow-[0_1px_2px_rgba(61,29,40,0.04),0_26px_60px_-34px_rgba(61,29,40,0.22)] sm:mb-10 sm:grid-cols-2 [&>*]:border-wine-100/70 [&>*:last-child]:border-t sm:[&>*:first-child]:border-r sm:[&>*:last-child]:border-t-0"
+        className="mb-6 grid overflow-hidden rounded-2xl border border-wine-100 bg-white sm:grid-cols-2 [&>*]:border-wine-100 [&>*:last-child]:border-t sm:[&>*:first-child]:border-r sm:[&>*:last-child]:border-t-0"
       >
         <SummaryStat label="Ações hoje" caption="desde as 00:00 (horário de Brasília)" value={summary?.today ?? null} />
         <SummaryStat label="Últimos 7 dias" caption="nas últimas 168 horas" value={summary?.last7Days ?? null} />
       </section>
 
       {/* ── filtros ──────────────────────────────────────────────────────── */}
-      <section aria-label="Filtros" className="mb-6 space-y-5">
-        <div>
-          <p id={actionsLabelId} className="text-xs uppercase tracking-widest font-semibold text-ink/60 mb-2">Ação</p>
-          <div role="group" aria-labelledby={actionsLabelId} className="flex flex-wrap gap-2">
-            {ACTION_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                aria-pressed={action === f.id}
-                onClick={() => chooseAction(f.id)}
-                className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-[15px] transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 ${
-                  action === f.id ? 'border-wine-600 bg-wine-600 font-medium text-white' : 'border-wine-100 bg-white/80 text-ink/70 hover:border-wine-300 hover:text-wine-800'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+      <section aria-label="Filtros" className="mb-5 space-y-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <Segmented<'all' | AuditAction>
+            label="Filtrar por ação"
+            value={action}
+            onChange={chooseAction}
+            options={ACTION_FILTERS}
+          />
+          <Segmented<Preset>
+            label="Filtrar por período"
+            value={preset}
+            onChange={choosePreset}
+            options={PRESETS}
+          />
         </div>
-
-        <div>
-          <p id={periodLabelId} className="text-xs uppercase tracking-widest font-semibold text-ink/60 mb-2">Período</p>
-          <div className="flex flex-col xl:flex-row xl:items-end gap-3">
-            <div role="group" aria-labelledby={periodLabelId} className="flex flex-wrap gap-2">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  aria-pressed={preset === p.id}
-                  onClick={() => choosePreset(p.id)}
-                  className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-[15px] transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 ${
-                    preset === p.id ? 'border-wine-600 bg-wine-600 font-medium text-white' : 'border-wine-100 bg-white/80 text-ink/70 hover:border-wine-300 hover:text-wine-800'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-end gap-3 xl:ml-auto">
-              <label className="block">
-                <span className="block text-xs text-ink/60 mb-1">De</span>
-                <input type="date" className="input !py-1.5 w-40" value={from} max={to || undefined} onChange={(e) => changeDate('from', e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="block text-xs text-ink/60 mb-1">Até</span>
-                <input type="date" className="input !py-1.5 w-40" value={to} min={from || undefined} onChange={(e) => changeDate('to', e.target.value)} />
-              </label>
-              {hasFilters && (
-                <button type="button" onClick={clearFilters} className="btn-ghost !py-2">Limpar filtros</button>
-              )}
-            </div>
-          </div>
-          {rangeInvalid && (
-            <p role="alert" className="text-xs text-rose-600 mt-2">A data inicial não pode ser depois da data final.</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-ink/60">De</span>
+            <input type="date" className="input !py-1.5 w-40" value={from} max={to || undefined} onChange={(e) => changeDate('from', e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-ink/60">Até</span>
+            <input type="date" className="input !py-1.5 w-40" value={to} min={from || undefined} onChange={(e) => changeDate('to', e.target.value)} />
+          </label>
+          {hasFilters && (
+            <button type="button" onClick={clearFilters} className="btn-ghost !py-2.5">Limpar filtros</button>
           )}
         </div>
+        {rangeInvalid && (
+          <p role="alert" className="text-xs text-rose-600">A data inicial não pode ser depois da data final.</p>
+        )}
       </section>
 
       {/* ── lista ────────────────────────────────────────────────────────── */}
-      <section aria-label="Registros" ref={listRef} className="scroll-mt-24 lg:scroll-mt-6">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <p className="text-sm text-ink/65" aria-live="polite">
-            {initialLoad || rangeInvalid || error ? ' ' : total === 0 ? 'Nenhum registro' : `${firstShown}–${lastShown} de ${total} ${total === 1 ? 'registro' : 'registros'}`}
+      <section aria-label="Registros" ref={listRef} className="scroll-mt-24 lg:scroll-mt-20">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="font-mono text-xs text-ink/65" aria-live="polite">
+            {initialLoad || rangeInvalid || error ? ' ' : total === 0 ? 'nenhum registro' : `${firstShown}–${lastShown} de ${total} ${total === 1 ? 'registro' : 'registros'}`}
           </p>
-          <button type="button" onClick={retry} disabled={loading} className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-wine-100 bg-white/80 px-4 text-sm text-ink/65 transition-colors hover:border-wine-300 hover:text-wine-800 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40">
-            <IconRefresh />
-            Atualizar
+          <button
+            type="button"
+            onClick={retry}
+            disabled={loading}
+            title="Atualizar registros"
+            aria-label="Atualizar registros"
+            className="btn-secondary h-[40px] w-[40px] !p-0"
+          >
+            <IconRefresh className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
           </button>
         </div>
 
@@ -398,12 +377,12 @@ export default function AdminAuditoria() {
         ) : initialLoad ? (
           <ListSkeleton />
         ) : data && data.items.length === 0 ? (
-          <div className="rounded-3xl bg-white border border-wine-100/70 p-14 text-center shadow-sm">
-            <span className="mx-auto w-14 h-14 rounded-2xl bg-gold-300/30 text-gold-600 flex items-center justify-center"><IconClock className="w-6 h-6" /></span>
-            <p className="font-display text-xl text-wine-800 mt-5">
+          <div className="rounded-2xl border border-dashed border-wine-200 bg-white p-14 text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-night-900 text-wine-300"><IconClock className="h-6 w-6" /></span>
+            <p className="mt-5 font-display text-xl font-semibold text-wine-800">
               {hasFilters ? 'Nenhum registro com esses filtros' : 'Ainda não há ações registradas'}
             </p>
-            <p className="text-sm text-ink/60 mt-1.5">
+            <p className="mt-1.5 text-[15px] text-ink/65">
               {hasFilters ? 'Tente outro período ou outro tipo de ação.' : 'Quando uma conta for editada, bloqueada, desbloqueada ou excluída, o registro aparece aqui.'}
             </p>
             {hasFilters && <button onClick={clearFilters} className="btn-secondary mt-6">Limpar filtros</button>}
@@ -411,7 +390,7 @@ export default function AdminAuditoria() {
         ) : data ? (
           <ul
             aria-busy={loading}
-            className={`rounded-3xl bg-white border border-wine-100/70 shadow-[0_1px_2px_rgba(61,29,40,0.04),0_10px_28px_-14px_rgba(61,29,40,0.14)] divide-y divide-wine-100/60 transition-opacity ${loading ? 'opacity-60' : ''}`}
+            className={`divide-y divide-wine-100 overflow-hidden rounded-2xl border border-wine-100 bg-white transition-opacity ${loading ? 'opacity-60' : ''}`}
           >
             {data.items.map((item) => (
               <AuditRow
@@ -426,11 +405,11 @@ export default function AdminAuditoria() {
 
         {/* paginação */}
         {data && data.items.length > 0 && !error && (
-          <nav aria-label="Paginação" className="mt-6 flex items-center justify-between gap-3">
+          <nav aria-label="Paginação" className="mt-5 flex items-center justify-between gap-3">
             <button type="button" className="btn-secondary" disabled={page <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
               Anterior
             </button>
-            <span className="text-sm text-ink/65 tabular-nums">Página {page} de {totalPages}</span>
+            <span className="font-mono text-xs tabular-nums text-ink/65">página {page} de {totalPages}</span>
             <button type="button" className="btn-secondary" disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
               Próxima
             </button>

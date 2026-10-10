@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Eyebrow, Panel, StatusDot } from './AccountUi';
+import { Eyebrow, Panel, StatusDot, type BadgeTone } from './AccountUi';
 import type { AuditAction, AuditItem } from './useAccountOverview';
 
 // Entrada suave das seções (respeita "reduzir movimento"); o atraso escalona a leitura.
@@ -33,42 +33,49 @@ export function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// ── tipos de ação do histórico: apresentação única para todas as telas ─────────
 
-export const ACTIVITY_META: Record<AuditAction, { title: string; ring: string }> = {
-  update: { title: 'Cadastro editado', ring: 'border-wine-400' },
-  block: { title: 'Conta bloqueada', ring: 'border-rose-400' },
-  unblock: { title: 'Conta desbloqueada', ring: 'border-sage-500' },
-  delete: { title: 'Conta excluída', ring: 'border-rose-400' },
+export const ACTIVITY_META: Record<AuditAction, { title: string; label: string; tone: BadgeTone; ring: string; tile: string }> = {
+  update: { title: 'Cadastro editado', label: 'Edição', tone: 'info', ring: 'border-wine-500', tile: 'bg-wine-50 text-wine-600' },
+  block: { title: 'Conta bloqueada', label: 'Bloqueio', tone: 'danger', ring: 'border-rose-500', tile: 'bg-rose-50 text-rose-600' },
+  unblock: { title: 'Conta desbloqueada', label: 'Desbloqueio', tone: 'ok', ring: 'border-sage-500', tile: 'bg-sage-100 text-sage-700' },
+  delete: { title: 'Conta excluída', label: 'Exclusão', tone: 'danger', ring: 'border-rose-600', tile: 'bg-rose-100 text-rose-700' },
 };
 
+const aiProps = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, viewBox: '0 0 24 24', 'aria-hidden': true } as const;
 
+export function ActionIcon({ action, className = 'h-[18px] w-[18px]' }: { action: AuditAction; className?: string }) {
+  switch (action) {
+    case 'update':
+      return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Zm9.5-13.5 3 3" /></svg>;
+    case 'block':
+      return <svg {...aiProps} className={className}><rect x="5" y="11" width="14" height="9" rx="2" /><path strokeLinecap="round" d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>;
+    case 'unblock':
+      return <svg {...aiProps} className={className}><rect x="5" y="11" width="14" height="9" rx="2" /><path strokeLinecap="round" d="M8 11V8a4 4 0 0 1 7.5-1.9" /></svg>;
+    case 'delete':
+      return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M5 7h14M10 7V4h4v3m-7 0 1 13h8l1-13M10 11v6m4-6v6" /></svg>;
+  }
+}
+
+/** Foto ou iniciais, em quadrado de cantos suaves (sem auras nem anéis decorativos). */
 export function Avatar({ name, src, size = 'lg' }: { name: string; src: string | null; size?: 'lg' | 'md' }) {
-  const md = size === 'md';
-  const shadow = 'ring-[5px] ring-white shadow-[0_24px_48px_-18px_rgba(61,29,40,0.5)]';
-  return (
-    <div className={`group relative shrink-0 ${md ? 'h-28 w-28 sm:h-32 sm:w-32' : 'h-36 w-36 sm:h-44 sm:w-44'}`}>
-      {/* aura: luz vinho/dourada difusa atrás do avatar */}
-      <span aria-hidden="true" className={`absolute ${md ? '-inset-9' : '-inset-14'} rounded-full bg-[radial-gradient(closest-side,rgba(140,74,94,0.26),rgba(199,154,69,0.12)_58%,transparent)] blur-xl`} />
-      <span aria-hidden="true" className={`absolute ${md ? '-inset-2.5' : '-inset-4'} rounded-full border border-gold-400/40 transition-transform duration-700 motion-safe:group-hover:scale-[1.03]`} />
-      <span aria-hidden="true" className={`absolute ${md ? '-inset-5' : '-inset-9'} rounded-full border border-wine-300/25 transition-transform duration-700 motion-safe:group-hover:scale-[1.04]`} />
-      {src ? (
-        <img src={src} alt={`Foto de ${name}`} className={`relative h-full w-full rounded-full object-cover ${shadow}`} />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={`relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-wine-100 via-white to-gold-300/50 font-display ${md ? 'text-4xl' : 'text-6xl'} text-wine-700 ${shadow}`}
-        >
-          {initialsOf(name)}
-        </span>
-      )}
-    </div>
+  const box = size === 'md' ? 'h-24 w-24 text-3xl' : 'h-28 w-28 text-4xl sm:h-32 sm:w-32 sm:text-5xl';
+  return src ? (
+    <img src={src} alt={`Foto de ${name}`} className={`${box} shrink-0 rounded-2xl object-cover ring-1 ring-wine-200`} />
+  ) : (
+    <span
+      aria-hidden="true"
+      className={`${box} flex shrink-0 items-center justify-center rounded-2xl bg-wine-600 font-display font-semibold text-white`}
+    >
+      {initialsOf(name)}
+    </span>
   );
 }
 
 
 export function Pill({ ok, children }: { ok: boolean; children: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-[13px] ${ok ? 'bg-sage-100/80 font-medium text-[#3F5F46]' : 'bg-ink/[0.04] px-2.5 text-ink/60'}`}>
+    <span className={`inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${ok ? 'bg-sage-100 text-sage-700' : 'bg-ink/[0.06] text-ink/70'}`}>
       {ok && <StatusDot tone="sage" />}
       {children}
     </span>
@@ -79,19 +86,16 @@ export function Pill({ ok, children }: { ok: boolean; children: string }) {
 export function ActivityItemRow({ item, last }: { item: AuditItem; last: boolean }) {
   const meta = ACTIVITY_META[item.action];
   return (
-    <li className={`group grid grid-cols-[4.25rem_1rem_minmax(0,1fr)] gap-x-4 sm:grid-cols-[5.5rem_1rem_minmax(0,1fr)] sm:gap-x-6 ${last ? '' : 'pb-9'}`}>
-      <p className="pt-0.5 text-right">
-        <span className="block text-[15px] font-semibold text-ink/80">{dayLabel(item.createdAt)}</span>
-        <span className="block text-sm text-ink/60">{timeLabel(item.createdAt)}</span>
+    <li className={`group flex items-start gap-4 py-4 ${last ? '' : 'border-b border-wine-100'}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><ActionIcon action={item.action} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-medium leading-snug text-ink/90">{meta.title}</p>
+        <p className="mt-0.5 truncate text-sm text-ink/65">Profissional · {item.targetBusinessName}</p>
+      </div>
+      <p className="shrink-0 text-right font-mono text-xs leading-5 text-ink/65">
+        <span className="block font-medium text-ink/80">{dayLabel(item.createdAt)}</span>
+        {timeLabel(item.createdAt)}
       </p>
-      <div className="relative flex justify-center">
-        <span aria-hidden="true" className={`relative z-10 mt-1.5 h-3 w-3 rounded-full border-2 bg-white transition-transform duration-300 motion-safe:group-hover:scale-125 ${meta.ring}`} />
-        {!last && <span aria-hidden="true" className="absolute -bottom-1.5 top-6 w-px bg-gradient-to-b from-wine-200/80 to-wine-100/30" />}
-      </div>
-      <div className="min-w-0">
-        <p className="text-lg font-medium leading-snug text-ink/85">{meta.title}</p>
-        <p className="mt-0.5 truncate text-[15px] text-ink/65">Profissional · {item.targetBusinessName}</p>
-      </div>
     </li>
   );
 }
@@ -102,12 +106,12 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
           <Eyebrow>Atividade recente</Eyebrow>
-          <h3 className="mt-3 font-display text-3xl leading-tight text-wine-800">Suas ações administrativas</h3>
+          <h3 className="mt-2 font-display text-xl font-semibold leading-tight text-wine-800">Suas ações administrativas</h3>
         </div>
         {activity && activity.length > 0 && (
           <Link
             to="/admin/conta/atividade"
-            className="rounded-lg py-1 text-[15px] font-medium text-wine-600 transition-colors hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40"
+            className="rounded-lg py-1 text-sm font-medium text-wine-600 transition-colors hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/50"
           >
             Ver atividade →
           </Link>
@@ -115,16 +119,14 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
       </div>
 
       {activity === null ? (
-        <p className="mt-10 text-base text-ink/65">Não foi possível carregar a atividade agora. Tente novamente em instantes.</p>
+        <p className="mt-6 text-[15px] text-ink/70">Não foi possível carregar a atividade agora. Tente novamente em instantes.</p>
       ) : activity.length === 0 ? (
-        <div className="mt-10 rounded-2xl border border-dashed border-wine-200/70 px-6 py-12 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">Ainda não há atividades</p>
-          <p className="mx-auto mt-3 max-w-xs text-base leading-relaxed text-ink/65">
-            As ações importantes da sua conta aparecerão aqui.
-          </p>
+        <div className="mt-6 rounded-xl border border-dashed border-wine-200 px-6 py-10 text-center">
+          <Eyebrow>Ainda não há atividades</Eyebrow>
+          <p className="mx-auto mt-3 max-w-xs text-[15px] leading-relaxed text-ink/70">As ações importantes da sua conta aparecerão aqui.</p>
         </div>
       ) : (
-        <ol className="mt-10">
+        <ol className="mt-3">
           {activity.map((a, i) => <ActivityItemRow key={a.id} item={a} last={i === activity.length - 1} />)}
         </ol>
       )}
@@ -135,10 +137,10 @@ export function ActivityPanel({ activity }: { activity: AuditItem[] | null }) {
 
 export function ErrorState({ message, onRetry, title = 'Não foi possível abrir sua conta' }: { message: string; onRetry: () => void; title?: string }) {
   return (
-    <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50/60 px-6 py-12 text-center">
-      <p className="font-display text-2xl text-rose-700">{title}</p>
-      <p className="mx-auto mt-2 max-w-md text-base text-ink/60">{message}</p>
-      <button type="button" onClick={onRetry} className="btn-secondary mt-6 min-h-[46px] px-6">Tentar novamente</button>
+    <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-12 text-center">
+      <p className="font-display text-xl font-semibold text-rose-700">{title}</p>
+      <p className="mx-auto mt-2 max-w-md text-[15px] text-ink/70">{message}</p>
+      <button type="button" onClick={onRetry} className="btn-secondary mt-6 min-h-[44px] px-6">Tentar novamente</button>
     </div>
   );
 }

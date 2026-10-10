@@ -55,7 +55,7 @@ export function RowMenu({
     tone === 'danger'
       ? 'text-rose-700 hover:bg-rose-50 focus:bg-rose-50'
       : tone === 'success'
-        ? 'text-[#3F5F46] hover:bg-sage-100 focus:bg-sage-100'
+        ? 'text-sage-700 hover:bg-sage-100 focus:bg-sage-100'
         : 'text-ink/80 hover:bg-wine-50 focus:bg-wine-50';
 
   return (
@@ -68,7 +68,7 @@ export function RowMenu({
         aria-controls={open ? menuId : undefined}
         aria-label={label}
         onClick={() => setOpen((o) => !o)}
-        className="w-9 h-9 rounded-xl flex items-center justify-center text-ink/60 hover:text-wine-700 hover:bg-wine-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50"
+        className="h-10 w-10 rounded-lg flex items-center justify-center text-ink/60 hover:text-wine-700 hover:bg-wine-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50"
       >
         <IconDots />
       </button>
@@ -77,7 +77,7 @@ export function RowMenu({
           id={menuId}
           role="menu"
           aria-label={label}
-          className="absolute right-0 top-full mt-1 z-40 w-48 rounded-2xl bg-white border border-wine-100 shadow-xl py-1.5"
+          className="absolute right-0 top-full z-40 mt-1 w-52 rounded-xl border border-wine-100 bg-white py-1.5 shadow-[0_18px_40px_-12px_rgba(20,17,16,0.35)]"
         >
           {items.map((item, i) => (
             <div key={item.label}>

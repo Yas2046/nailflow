@@ -22,7 +22,7 @@ export function ConfirmActionDialog({
   const block = action.action === 'block';
   return (
     <Modal titleId={titleId} busy={acting} returnFocusRef={returnFocusRef} onClose={onCancel}>
-      <span className={`w-11 h-11 rounded-2xl flex items-center justify-center mb-4 ${block ? 'bg-rose-50 text-rose-600' : 'bg-sage-100 text-[#3F5F46]'}`}>
+      <span className={`w-11 h-11 rounded-2xl flex items-center justify-center mb-4 ${block ? 'bg-rose-50 text-rose-600' : 'bg-sage-100 text-sage-700'}`}>
         {block ? <IconBan /> : <IconCheckCircle />}
       </span>
       <h3 id={titleId} className="font-display text-xl text-wine-800 mb-2">
@@ -44,7 +44,7 @@ export function ConfirmActionDialog({
           onClick={onConfirm}
           disabled={acting}
           className={`flex-1 text-sm py-2 rounded-lg font-medium transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
-            block ? 'bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-400' : 'bg-sage-500 text-white hover:bg-[#5C7B61] focus-visible:ring-sage-500'
+            block ? 'bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-400' : 'bg-sage-500 text-white hover:bg-sage-700 focus-visible:ring-sage-500'
           }`}
         >
           {acting ? 'Aguarde…' : block ? 'Bloquear' : 'Desbloquear'}
@@ -75,7 +75,7 @@ export function EditProfessionalDialog({
       {step === 'form' ? (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-wine-100 to-wine-200 text-wine-700 flex items-center justify-center font-display text-xl shrink-0">
+            <div className="w-14 h-14 rounded-2xl overflow-hidden bg-wine-50 text-wine-700 ring-1 ring-wine-200 flex items-center justify-center font-display text-xl shrink-0">
               {avatarB64 ? <img src={avatarB64} alt="Nova foto" className="w-full h-full object-cover" /> : initialsOf(form.name)}
             </div>
             <div>
@@ -83,7 +83,7 @@ export function EditProfessionalDialog({
                 Trocar foto
                 <input type="file" accept="image/*" className="sr-only" onChange={onAvatarFile} />
               </label>
-              {avatarChanged && <p className="text-xs text-[#7A5A22] mt-0.5">Nova foto selecionada — ainda não salva</p>}
+              {avatarChanged && <p className="text-xs text-gold-700 mt-0.5">Nova foto selecionada — ainda não salva</p>}
             </div>
           </div>
 
@@ -127,7 +127,7 @@ export function EditProfessionalDialog({
             {avatarChanged && <li><span className="text-ink/60">Foto:</span> nova foto selecionada</li>}
           </ul>
           {form.email !== target.email && (
-            <div className="rounded-xl bg-gold-300/25 border border-gold-400/40 p-3 text-xs text-[#7A5A22]">
+            <div className="rounded-xl bg-gold-300/25 border border-gold-400/40 p-3 text-xs text-gold-700">
               O e-mail de login vai mudar. A profissional precisará usar o novo e-mail para entrar.
             </div>
           )}

@@ -1,20 +1,76 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Outlet, Navigate, NavLink, Link } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Outlet, Navigate, NavLink, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { AdminShellContext } from './adminShell';
 import { IconClipboard, IconHome, IconLogout, IconUser, IconUsers } from './AdminIcons';
+import { StatusDot } from './admin-account/AccountUi';
 import LogoMark from './LogoMark';
 
-const NAV: Array<{ to: string; label: string; short?: string; icon: ReactNode; end?: boolean }> = [
-  { to: '/admin', label: 'Visão geral', icon: <IconHome />, end: true },
-  { to: '/admin/profissionais', label: 'Profissionais', icon: <IconUsers /> },
-  { to: '/admin/auditoria', label: 'Auditoria', icon: <IconClipboard /> },
-  { to: '/admin/conta', label: 'Central da conta', short: 'Conta', icon: <IconUser />, end: false },
+interface NavItem { to: string; label: string; short: string; icon: ReactNode; end: boolean }
+
+// Duas áreas: gestão da plataforma e a conta de quem administra.
+const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
+  {
+    title: 'Gestão',
+    items: [
+      { to: '/admin', label: 'Visão geral', short: 'Visão geral', icon: <IconHome />, end: true },
+      { to: '/admin/profissionais', label: 'Profissionais', short: 'Profissionais', icon: <IconUsers />, end: false },
+      { to: '/admin/auditoria', label: 'Auditoria', short: 'Auditoria', icon: <IconClipboard />, end: false },
+    ],
+  },
+  {
+    title: 'Minha conta',
+    items: [{ to: '/admin/conta', label: 'Central da conta', short: 'Conta', icon: <IconUser />, end: false }],
+  },
 ];
+const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
+const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400';
+
+// Trilha da barra superior, derivada da rota (nenhum dado novo).
+const CRUMBS: Array<[string, string[]]> = [
+  ['/admin/conta/perfil', ['Conta', 'Perfil']],
+  ['/admin/conta/seguranca', ['Conta', 'Segurança']],
+  ['/admin/conta/atividade', ['Conta', 'Atividade']],
+  ['/admin/conta', ['Conta', 'Visão geral']],
+  ['/admin/profissionais', ['Gestão', 'Profissionais']],
+  ['/admin/auditoria', ['Gestão', 'Auditoria']],
+  ['/admin', ['Gestão', 'Visão geral']],
+];
+const crumbsFor = (pathname: string) => CRUMBS.find(([p]) => pathname === p || pathname.startsWith(`${p}/`))?.[1] ?? ['Gestão'];
+
+type ApiStatus = { state: 'checking' } | { state: 'up'; ms: number } | { state: 'down' };
+
+/** Estado real da API (GET /health), medido no navegador ao abrir e a cada minuto. */
+function useApiStatus(enabled: boolean): ApiStatus {
+  const [status, setStatus] = useState<ApiStatus>({ state: 'checking' });
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    async function ping() {
+      const t0 = performance.now();
+      try {
+        await api.get('/health');
+        if (alive) setStatus({ state: 'up', ms: Math.round(performance.now() - t0) });
+      } catch {
+        if (alive) setStatus({ state: 'down' });
+      }
+    }
+    void ping();
+    const timer = window.setInterval(ping, 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [enabled]);
+  return status;
+}
 
 export default function AdminLayout() {
   const { professional, logout } = useAuth();
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const firstRender = useRef(true);
+  const apiStatus = useApiStatus(!!professional?.isAdmin);
+
   // foto da administradora no menu (dado real de GET /auth/me; sem foto, aparecem as iniciais)
   const [avatar, setAvatar] = useState<string | null>(null);
   useEffect(() => {
@@ -22,131 +78,186 @@ export default function AdminLayout() {
     api.get<{ avatar_b64: string | null }>('/auth/me').then((me) => setAvatar(me.avatar_b64 ?? null)).catch(() => {});
   }, [professional?.id, professional?.isAdmin]);
 
+  // Ao trocar de tela, o foco vai para o conteúdo: leitores de tela e teclado não ficam presos no menu.
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    mainRef.current?.focus({ preventScroll: true });
+  }, [pathname]);
+
   if (!professional) return <Navigate to="/login" replace />;
   if (!professional.isAdmin) return <Navigate to="/" replace />;
 
   const initial = (professional.name?.trim()[0] ?? 'A').toUpperCase();
+  const crumbs = crumbsFor(pathname);
+
+  const avatarBubble = (size: string) => (
+    <span className={`${size} flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-wine-600 font-display text-sm font-semibold text-white`} aria-hidden="true">
+      {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initial}
+    </span>
+  );
+
+  const brand = (
+    <>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-night-800 text-gold-400">
+        <LogoMark className="h-[18px] w-[18px]" />
+      </span>
+      <span className="flex items-center gap-2">
+        <span className="font-display text-lg font-semibold leading-none tracking-tight text-white">NailFlow</span>
+        <span className="rounded border border-gold-400/50 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase leading-none tracking-wider text-gold-300">admin</span>
+      </span>
+    </>
+  );
 
   return (
-    <div className="min-h-screen bg-cream lg:flex">
+    <div className="admin-ui min-h-screen bg-cream text-ink lg:flex">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-wine-600 focus:px-4 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-white focus:outline-none focus:ring-2 focus:ring-white"
+      >
+        Pular para o conteúdo
+      </a>
 
       {/* ── barra lateral (desktop) ──────────────────────────────────────── */}
-      <aside className="hidden lg:flex lg:w-64 lg:fixed lg:inset-y-0 flex-col bg-gradient-to-b from-wine-800 to-wine-700 text-cream z-30">
-        <div className="px-6 pt-8 pb-7">
-          <div className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-white/10 ring-1 ring-gold-400/40 flex items-center justify-center text-gold-400">
-              <LogoMark className="w-[18px] h-[18px]" />
-            </span>
-            <div>
-              <p className="font-display text-xl tracking-tight font-semibold leading-none">NailFlow</p>
-              <p className="text-xs uppercase tracking-[0.22em] text-gold-300/90 mt-1.5">Administração</p>
-            </div>
-          </div>
+      <aside className="z-30 hidden flex-col border-r border-white/5 bg-night-950 text-cream lg:fixed lg:inset-y-0 lg:flex lg:w-64">
+        <div className="px-5 pb-6 pt-6">
+          <Link to="/admin" aria-label="NailFlow Administração: ir para a visão geral" className={`flex items-center gap-3 rounded-lg ${focusRing}`}>
+            {brand}
+          </Link>
         </div>
 
-        <div className="mx-6 h-px bg-gradient-to-r from-gold-400/50 via-white/10 to-transparent" aria-hidden="true" />
-
-        <nav aria-label="Navegação administrativa" className="flex-1 px-4 py-6 space-y-1">
-          <p className="px-3 mb-2 text-xs uppercase tracking-[0.2em] text-wine-100/40">Gestão</p>
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end ?? true}
-              className={({ isActive }) =>
-                `relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
-                  isActive ? 'bg-white/12 text-white' : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-gold-400" aria-hidden="true" />}
-                  {item.icon}
-                  {item.label}
-                </>
-              )}
-            </NavLink>
+        <nav aria-label="Navegação administrativa" className="flex-1 space-y-7 overflow-y-auto px-3 py-2">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.title}>
+              <p className="mb-2 px-3 font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#8F847D]">{group.title}</p>
+              <ul className="space-y-0.5">
+                {group.items.map((item) => (
+                  <li key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      end={item.end}
+                      className={({ isActive }) =>
+                        `relative flex min-h-[42px] items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${focusRing} ${
+                          isActive ? 'bg-wine-600/45 text-white' : 'text-[#BDB3AC] hover:bg-white/[0.05] hover:text-white'
+                        }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {isActive && <span className="absolute -left-3 top-2 bottom-2 w-[3px] rounded-r bg-gold-400" aria-hidden="true" />}
+                          <span className={isActive ? 'text-gold-300' : 'text-[#8F847D]'}>{item.icon}</span>
+                          {item.label}
+                        </>
+                      )}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </nav>
 
-        <div className="m-4 rounded-2xl bg-white/5 ring-1 ring-white/10 p-3.5 flex items-center gap-3">
-          <Link to="/admin/conta" aria-label="Central da conta" className="flex items-center gap-3 min-w-0 flex-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
-            <span className="w-9 h-9 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm shrink-0 overflow-hidden" aria-hidden="true">
-              {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initial}
+        <div className="m-3 flex items-center gap-3 rounded-xl border border-white/10 bg-night-900 p-3">
+          <Link to="/admin/conta" aria-label={`Central da conta de ${professional.name}`} className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg ${focusRing}`}>
+            {avatarBubble('h-9 w-9')}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium leading-tight text-white">{professional.name}</span>
+              <span className="mt-0.5 block truncate text-xs leading-tight text-[#A0958E]">{professional.email}</span>
             </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-white truncate leading-tight">{professional.name}</p>
-              <p className="text-xs text-wine-100/50 truncate leading-tight mt-0.5">{professional.email}</p>
-            </div>
           </Link>
           <button
+            type="button"
             onClick={logout}
             title="Sair da conta"
             aria-label="Sair da conta"
-            className="shrink-0 p-2 rounded-lg text-wine-100/60 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60"
+            className={`shrink-0 rounded-lg p-2.5 text-[#A0958E] transition-colors hover:bg-white/10 hover:text-white ${focusRing}`}
           >
             <IconLogout />
           </button>
         </div>
       </aside>
 
-      {/* ── barra superior + abas (mobile e tablet) ──────────────────────── */}
-      <div className="lg:hidden sticky top-0 z-30 bg-gradient-to-r from-wine-800 to-wine-700 text-cream border-b border-gold-500/50">
-        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-8 h-8 rounded-lg bg-white/10 ring-1 ring-gold-400/40 flex items-center justify-center text-gold-400 shrink-0">
-              <LogoMark className="w-4 h-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="font-display text-lg tracking-tight font-semibold leading-none">NailFlow</p>
-              <p className="text-xs uppercase tracking-[0.2em] text-gold-300/90 mt-1">Administração</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Link to="/admin/conta" aria-label="Central da conta" className="w-8 h-8 rounded-full bg-gold-300/25 ring-1 ring-gold-400/40 text-gold-300 flex items-center justify-center font-display text-sm overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
-              {avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initial}
+      {/* ── barra superior (celular e tablet): marca, conta e sair ───────── */}
+      <header className="sticky top-0 z-30 border-b border-white/5 bg-night-950 text-cream lg:hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+          <Link to="/admin" aria-label="NailFlow Administração: ir para a visão geral" className={`flex min-w-0 items-center gap-3 rounded-lg ${focusRing}`}>
+            {brand}
+          </Link>
+          <div className="flex shrink-0 items-center gap-1">
+            <Link to="/admin/conta" aria-label={`Central da conta de ${professional.name}`} className={`flex h-11 w-11 items-center justify-center rounded-lg ${focusRing}`}>
+              {avatarBubble('h-8 w-8')}
             </Link>
             <button
+              type="button"
               onClick={logout}
               title="Sair da conta"
               aria-label="Sair da conta"
-              className="p-2 rounded-lg text-wine-100/70 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60"
+              className={`flex h-11 w-11 items-center justify-center rounded-lg text-[#BDB3AC] transition-colors hover:bg-white/10 hover:text-white ${focusRing}`}
             >
               <IconLogout />
             </button>
           </div>
         </div>
-        <nav aria-label="Navegação administrativa" className="px-4 sm:px-6 pb-2.5 flex gap-1.5 sm:gap-2 overflow-x-auto">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end ?? true}
-              className={({ isActive }) =>
-                `flex-1 shrink-0 sm:flex-none inline-flex items-center justify-center gap-2 px-2.5 sm:px-4 py-2 rounded-xl text-[13px] sm:text-sm font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
-                  isActive ? 'bg-white/15 text-white ring-1 ring-gold-400/40' : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              <span className="hidden min-[430px]:inline-flex">{item.icon}</span>
-              {item.short ? (<><span className="sm:hidden">{item.short}</span><span className="hidden sm:inline">{item.label}</span></>) : item.label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      </header>
 
       {/* ── conteúdo ─────────────────────────────────────────────────────── */}
-      <main className="relative flex-1 lg:pl-64 min-w-0">
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(48rem_22rem_at_88%_-8%,rgba(199,154,69,0.14),transparent),radial-gradient(40rem_24rem_at_-6%_4%,rgba(140,74,94,0.09),transparent)]"
-          aria-hidden="true"
-        />
-        <div className="relative px-4 sm:px-8 xl:px-12 py-8 sm:py-10">
-          <Outlet context={{ setAvatar } satisfies AdminShellContext} />
+      <div className="min-w-0 flex-1 lg:pl-64">
+        {/* barra de contexto (desktop): onde estou + estado real da API */}
+        <div className="sticky top-0 z-20 hidden h-14 items-center justify-between gap-6 border-b border-wine-100 bg-cream/90 px-8 backdrop-blur lg:flex xl:px-12">
+          <nav aria-label="Você está em" className="flex items-center gap-2 font-mono text-xs text-ink/65">
+            <span>admin</span>
+            {crumbs.map((c, i) => (
+              <span key={c} className="flex items-center gap-2">
+                <span aria-hidden="true" className="text-ink/30">/</span>
+                <span aria-current={i === crumbs.length - 1 ? 'page' : undefined} className={i === crumbs.length - 1 ? 'font-medium text-wine-800' : ''}>{c.toLowerCase()}</span>
+              </span>
+            ))}
+          </nav>
+          <p role="status" className="flex items-center gap-2.5 font-mono text-xs text-ink/70">
+            {apiStatus.state === 'up' && (<><StatusDot tone="sage" live />api online<span className="tabular-nums text-ink/50">{apiStatus.ms} ms</span></>)}
+            {apiStatus.state === 'down' && (<><StatusDot tone="rose" />api sem resposta</>)}
+            {apiStatus.state === 'checking' && (<><StatusDot tone="muted" />verificando api…</>)}
+          </p>
         </div>
-      </main>
 
+        <main
+          id="conteudo"
+          ref={mainRef}
+          tabIndex={-1}
+          className="relative px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-7 focus:outline-none sm:px-8 sm:pt-9 lg:pb-14 xl:px-12"
+        >
+          <Outlet context={{ setAvatar } satisfies AdminShellContext} />
+        </main>
+      </div>
+
+      {/* ── navegação inferior (celular e tablet): ao alcance do polegar ──── */}
+      <nav
+        aria-label="Navegação administrativa"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-night-950/95 pb-[env(safe-area-inset-bottom)] text-cream backdrop-blur lg:hidden"
+      >
+        <ul className="mx-auto grid max-w-lg grid-cols-4 px-2">
+          {ALL_ITEMS.map((item) => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  `relative flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors ${focusRing} ${
+                    isActive ? 'text-white' : 'text-[#A0958E] hover:text-white'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive && <span className="absolute inset-x-6 top-0 h-[3px] rounded-b bg-gold-400" aria-hidden="true" />}
+                    <span className={isActive ? 'text-gold-300' : ''}>{item.icon}</span>
+                    {item.short}
+                  </>
+                )}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
     </div>
   );
 }

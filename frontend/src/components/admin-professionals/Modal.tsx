@@ -65,7 +65,7 @@ export function Modal({ titleId, onClose, busy = false, focusKey, returnFocusRef
 
   return (
     <div
-      className="fixed inset-0 bg-wine-800/40 backdrop-blur-[2px] flex items-end sm:items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-night-950/65 backdrop-blur-[3px] flex items-end sm:items-center justify-center p-4 z-50"
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
     >
       <div
@@ -74,7 +74,7 @@ export function Modal({ titleId, onClose, busy = false, focusKey, returnFocusRef
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="bg-white rounded-3xl w-full max-w-md shadow-2xl ring-1 ring-wine-100 p-6 sm:p-7 max-h-[90vh] overflow-y-auto focus:outline-none"
+        className="bg-white rounded-2xl w-full max-w-md border border-wine-100 shadow-[0_28px_70px_-20px_rgba(20,17,16,0.6)] p-6 sm:p-7 max-h-[90vh] overflow-y-auto focus:outline-none"
       >
         {children}
       </div>
