@@ -145,6 +145,29 @@ const CASCADED_TABLES = [
   'recurring_groups', 'recurring_exceptions', 'expenses', 'conversation_states', 'message_history',
 ];
 
+// Central de Suporte (migration 023): solicitações, mensagens e eventos também caem em cascade (FK composta,
+// ON DELETE CASCADE) e têm professional_id. Só entram no snapshot/contagem quando as três tabelas existem:
+// em bancos sem a migration 023 aplicada a exclusão continua funcionando exatamente como antes.
+const SUPPORT_TABLES = ['support_tickets', 'support_messages', 'support_ticket_events'];
+
+async function supportTablesPresent(db) {
+  const { rows } = await db.query(
+    `SELECT to_regclass('public.support_tickets') IS NOT NULL
+        AND to_regclass('public.support_messages') IS NOT NULL
+        AND to_regclass('public.support_ticket_events') IS NOT NULL AS present`
+  );
+  return rows[0].present === true;
+}
+
+async function supportCounts(db, professionalId) {
+  const counts = {};
+  for (const table of SUPPORT_TABLES) {
+    const { rows } = await db.query(`SELECT count(*)::int AS n FROM ${table} WHERE professional_id = $1`, [professionalId]);
+    counts[table] = rows[0].n;
+  }
+  return counts;
+}
+
 const SNAPSHOT_DIR = process.env.DELETED_PROFESSIONAL_BACKUP_DIR || '/var/backups/nailflow/deleted-professionals';
 const SNAPSHOT_RETENTION_DAYS = 90;
 
@@ -165,7 +188,8 @@ async function writeProfessionalSnapshot(professionalId) {
   if (professionalRow) delete professionalRow.password_hash; // nunca persistir hash de senha no snapshot
 
   const data = { snapshotTakenAt: new Date().toISOString(), professional: professionalRow };
-  for (const table of CASCADED_TABLES) {
+  const withSupport = await supportTablesPresent(pool);
+  for (const table of withSupport ? [...CASCADED_TABLES, ...SUPPORT_TABLES] : CASCADED_TABLES) {
     const { rows } = await pool.query(`SELECT * FROM ${table} WHERE professional_id = $1`, [professionalId]);
     data[table] = rows;
   }
@@ -184,7 +208,12 @@ async function writeProfessionalSnapshot(professionalId) {
     if (stat && stat.mtimeMs < cutoff) await fs.unlink(entryPath).catch(() => {});
   }
 
-  return filePath;
+  // Contagens de suporte no momento do snapshot (null = banco sem a migration 023): a exclusão confere que
+  // nada novo foi gravado depois delas, para nenhuma conversa ser apagada sem estar no snapshot.
+  const snapshotSupportCounts = withSupport
+    ? Object.fromEntries(SUPPORT_TABLES.map((t) => [t, data[t].length]))
+    : null;
+  return { filePath, supportCounts: snapshotSupportCounts };
 }
 
 // GET /admin/professionals/:id/delete-preview
@@ -202,7 +231,11 @@ export async function getDeleteProfessionalPreview(req, res, next) {
          (SELECT count(*)::int FROM expenses WHERE professional_id = $1) AS expenses`,
       [id]
     );
-    res.json(rows[0]);
+    // Solicitações da Central de Suporte que seriam apagadas junto (0 quando a migration 023 não está aplicada).
+    const supportTickets = (await supportTablesPresent(pool))
+      ? (await supportCounts(pool, id)).support_tickets
+      : 0;
+    res.json({ ...rows[0], supportTickets });
   } catch (err) {
     next(err);
   }
@@ -247,7 +280,7 @@ export async function deleteProfessional(req, res, next) {
     }
 
     // 1) Rede de segurança operacional -- antes de qualquer exclusão.
-    await writeProfessionalSnapshot(id);
+    const { supportCounts: snapshotSupport } = await writeProfessionalSnapshot(id);
 
     // 2) Evolution é externa ao Postgres: resolve antes de abrir a transação.
     //    Se falhar, aborta aqui -- a profissional NÃO é excluída do banco.
@@ -263,6 +296,17 @@ export async function deleteProfessional(req, res, next) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      if (snapshotSupport) {
+        // Trava as solicitações e depois a conta (mesma ordem de quem grava mensagem: solicitação -> conta),
+        // o que impede novas atividades de suporte até o COMMIT, e confere que nada novo foi gravado depois do
+        // snapshot. Se foi, aborta sem excluir: nenhuma conversa é apagada fora do snapshot.
+        await client.query('SELECT id FROM support_tickets WHERE professional_id = $1 FOR UPDATE', [id]);
+        await client.query('SELECT id FROM professionals WHERE id = $1 FOR UPDATE', [id]);
+        const now = await supportCounts(client, id);
+        if (SUPPORT_TABLES.some((t) => now[t] > snapshotSupport[t])) {
+          throw new HttpError(409, 'Houve atividade de suporte nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
+        }
+      }
       await client.query('DELETE FROM professionals WHERE id = $1', [id]);
       await client.query('COMMIT');
     } catch (err) {

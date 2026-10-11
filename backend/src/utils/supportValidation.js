@@ -119,6 +119,64 @@ export const adminStatusSchema = z
 
 export const adminPrioritySchema = z.object({ priority: enumField(PRIORITIES, 'Prioridade') }).strict();
 
+// Fila da ADM: mesmos parâmetros da profissional (status, q, page, pageSize) mais prioridade, categoria, titular,
+// período de criação (dias inteiros no fuso America/Sao_Paulo, inclusivos) e "só não lidas".
+const isRealDate = (v) => {
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+const dateParam = requiredString('Data')
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida. Use o formato AAAA-MM-DD.')
+  .refine(isRealDate, 'Data inválida.');
+
+export const adminListTicketsQuerySchema = listTicketsQuerySchema
+  .extend({
+    priority: enumField(PRIORITIES, 'Prioridade').optional(),
+    category: enumField(CATEGORIES, 'Categoria').optional(),
+    professionalId: uuidField('Profissional').optional(),
+    from: dateParam.optional(),
+    to: dateParam.optional(),
+    unread: z.enum(['true', 'false'], { errorMap: () => ({ message: 'Filtro de não lidas inválido.' }) }).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.from && v.to && v.from > v.to) ctx.addIssue({ code: 'custom', path: ['from'], message: 'A data inicial não pode ser maior que a final.' });
+  });
+
+// FAQ (editor da ADM). Título cabe em admin_audit_log.target_business_name (varchar(120)); corpo até 8000.
+export const FAQ_TITLE_MAX = 120;
+export const FAQ_BODY_MAX = 8000;
+
+export const faqArticleSchema = z
+  .object({
+    categorySlug: enumField(CATEGORIES, 'Categoria'),
+    title: requiredString('Título')
+      .transform(cleanSubject)
+      .superRefine((v, ctx) => {
+        const n = charLength(v);
+        if (n < SUBJECT_MIN) ctx.addIssue({ code: 'custom', message: `O título precisa ter pelo menos ${SUBJECT_MIN} caracteres.` });
+        if (n > FAQ_TITLE_MAX) ctx.addIssue({ code: 'custom', message: `O título pode ter no máximo ${FAQ_TITLE_MAX} caracteres.` });
+      }),
+    body: requiredString('Texto')
+      .transform(cleanBody)
+      .superRefine((v, ctx) => {
+        const n = charLength(v);
+        if (n < 1) ctx.addIssue({ code: 'custom', message: 'O texto não pode ficar em branco.' });
+        if (n > FAQ_BODY_MAX) ctx.addIssue({ code: 'custom', message: `O texto pode ter no máximo ${FAQ_BODY_MAX} caracteres.` });
+      }),
+    position: z.number().int().min(0).max(100000).optional(),
+  })
+  .strict();
+
+export const faqReorderSchema = z
+  .object({
+    categorySlug: enumField(CATEGORIES, 'Categoria'),
+    orderedIds: z.array(uuidField('Artigo')).min(1, 'Informe os artigos.').max(200, 'Artigos demais.'),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (new Set(v.orderedIds).size !== v.orderedIds.length) ctx.addIssue({ code: 'custom', path: ['orderedIds'], message: 'Há artigos repetidos na lista.' });
+  });
+
 /**
  * Valida com um dos schemas acima.
  * { ok: true, data } ou { ok: false, errors: [{ field, message }] } (mensagens em português, sem eco do valor).
