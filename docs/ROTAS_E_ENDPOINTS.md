@@ -180,15 +180,64 @@ Resposta: `{ perfil, servicos, horarios, whatsapp, clientes, concluidos, total: 
 | PUT | `/admin/professionals/:id` | JWT + `is_admin` | Editar `name`/`business_name`/`phone_whatsapp`/`email`/`avatar_b64` (mesmo schema de `PUT /auth/me`, e-mail único); não permite editar a própria conta; não altera `slug`/`wa_instance_name`/`is_admin`/`blocked_at`/`token_version`/senha (2026-09-29) |
 | POST | `/admin/professionals/:id/block` | JWT + `is_admin` | Bloqueia (`blocked_at = now()`); não permite bloquear a própria conta (2026-09-29) |
 | POST | `/admin/professionals/:id/unblock` | JWT + `is_admin` | Desbloqueia e incrementa `token_version` (invalida tokens emitidos antes do desbloqueio, exige novo login) (2026-09-29) |
-| GET | `/admin/professionals/:id/delete-preview` | JWT + `is_admin` | Contagens (clientes, agendamentos, serviços, recorrências, mensagens, despesas) antes de excluir (2026-09-29) |
+| GET | `/admin/professionals/:id/delete-preview` | JWT + `is_admin` | Contagens (clientes, agendamentos, serviços, recorrências, mensagens, despesas) antes de excluir (2026-09-29); inclui `supportTickets` (solicitações da Central de Suporte que seriam apagadas; 0 sem a migration 023) |
 | DELETE | `/admin/professionals/:id` | JWT + `is_admin` | Exclusão definitiva: snapshot em disco → exclui instância na Evolution se houver (aborta sem tocar no banco se falhar) → `DELETE` em transação (cascade apaga tudo que pertence à profissional). Exige digitar o `business_name` exato no corpo (`businessNameConfirmation`); não permite excluir a própria conta nem a última conta admin (2026-09-29) |
-| GET | `/admin/audit-log` | JWT + `is_admin` | **Auditoria v1 (2026-10-03, `12dcff7`) — somente leitura.** Lista o `admin_audit_log`, do mais recente para o mais antigo (`created_at DESC, id DESC`). Parâmetros: `page` (padrão 1), `pageSize` (padrão 20, máx. 50), `action` (`block`/`unblock`/`update`/`delete`; vazio ou `all` = sem filtro), `from`/`to` (`AAAA-MM-DD`, dias inteiros no fuso `America/Sao_Paulo`, inclusivos; `from` > `to` → 400). Resposta: `{ items, page, pageSize, total, totalPages, summary: { today, last7Days } }`; cada item traz só `id`, `action`, `actorId`, `actorEmail`, `targetId`, `targetBusinessName`, `createdAt`. Parâmetros inválidos → 400 com mensagem em português |
+| GET | `/admin/audit-log` | JWT + `is_admin` | **Auditoria v1 (2026-10-03, `12dcff7`) — somente leitura.** Lista o `admin_audit_log`, do mais recente para o mais antigo (`created_at DESC, id DESC`). Parâmetros: `page` (padrão 1), `pageSize` (padrão 20, máx. 50), `action` (`block`/`unblock`/`update`/`delete` e, com a migration 024, `faq_create`/`faq_update`/`faq_publish`/`faq_unpublish`/`support_status`/`support_priority`; `suporte` = grupo com as seis da Central; vazio ou `all` = sem filtro), `from`/`to` (`AAAA-MM-DD`, dias inteiros no fuso `America/Sao_Paulo`, inclusivos; `from` > `to` → 400). Resposta: `{ items, page, pageSize, total, totalPages, summary: { today, last7Days } }`; cada item traz só `id`, `action`, `actorId`, `actorEmail`, `targetId`, `targetBusinessName`, `createdAt`. Parâmetros inválidos → 400 com mensagem em português |
 
 Middleware `requireAdmin`: valida o JWT e confere `is_admin` no banco; não admin → 403; sem login → 401. Desde 2026-09-29 também expõe `req.actorEmail` (usado pelo audit log). Todas as rotas `/admin/*`, inclusive `/admin/audit-log`, ficam atrás de `requireAdmin` e do rate limit de 100 req/5 min por IP.
 
 Toda ação de sucesso em `block`/`unblock`/`update`/`delete` grava 1 linha em `admin_audit_log` (`actor_id`, `actor_email`, `action`, `target_id`, `target_business_name`, `created_at`) — ver [`BANCO_DE_DADOS.md`](./BANCO_DE_DADOS.md). Falhas/tentativas não são registradas.
 
 **`GET /admin/audit-log` é a única rota de auditoria e é só de leitura:** não existe `POST`/`PUT`/`PATCH`/`DELETE` em `/admin/audit-log` (respondem 404 para admin autenticado; testado). A imutabilidade do log é garantida **só pela API** — não há trigger nem permissão no banco que impeçam alteração direta via SQL.
+
+---
+
+## Central de Suporte — profissional (`/support`) — NÃO publicada
+
+> **Estado:** implementada no código (branch `feat/admin-redesign-fase1`) e testada só em banco descartável. **Não está em produção:** exige as migrations 023 e 024 (não aplicadas) e a variável `SUPPORT_CENTER_ENABLED=true`. Com o interruptor desligado (padrão), tudo abaixo responde `404 { "error": "Recurso não encontrado." }`, **antes** da autenticação, exceto `GET /support/bootstrap`. Só o valor `true` liga (aparado, sem diferenciar caixa); é lido na inicialização (reiniciar o backend). A API da ADM (`/admin/support/*`) ainda não existe.
+
+Todas exigem **JWT** de conta **não administradora** (admin → 403). A titular vem sempre da sessão: nenhum id de profissional, papel ou autor é aceito do corpo (campo extra → 400). Solicitação inexistente ou de outra conta responde o mesmo `404 { "error": "Solicitação não encontrada." }`; `:id` malformado → 400. Erros de regra trazem `reason`; erros de validação trazem `fields: [{ field, message }]`. Corpos de mensagem nunca vão a log nem a erros.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/support/bootstrap` | Exige sessão. `{ enabled, fabHidden, unreadTickets, unreadIds[≤20] }`. Desligado: `{ enabled: false, fabHidden: false, unreadTickets: 0, unreadIds: [] }` sem consultar dados de suporte. |
+| GET | `/support/faq` | `{ categories[6], articles[] }`, só artigos publicados. |
+| GET | `/support/tickets` | Lista as da conta, mais recentes primeiro. `status`, `q` (assunto ou `#número`, ≤100), `page`, `pageSize` (≤50, padrão 20). `{ items, page, pageSize, total, totalPages }`. Sem prioridade nem corpo de mensagens; `unread` por cursor. |
+| POST | `/support/tickets` | `{ subject (3–120), category, body (1–5000), clientRequestId (uuid), relatedTicketNumber? }`. **201** `{ ticket }`; repetição com o mesmo `clientRequestId` e mesmo conteúdo: **200** com a mesma; conteúdo diferente: 409 `idempotency_conflict`; já tem 10 abertas: 409 `too_many_open`. Grava o evento `created` (seq 1) e a descrição como primeira mensagem (seq 2). Limite: 5 por hora por conta (429). |
+| GET | `/support/tickets/:id` | `{ ticket, messages[], events[], hasMore, nextBefore }`. Janela das últimas `limit` atividades (≤50, padrão 50) com `seq < before`. Eventos de prioridade nunca aparecem. `canReopenUntil` só quando resolvida e dentro de 7 x 24 h. |
+| POST | `/support/tickets/:id/messages` | `{ body, clientMessageId (uuid) }`. **201** `{ message, ticket }`; repetição idêntica: 200 com a mesma; conteúdo diferente: 409 `idempotency_conflict`; resolvida: 409 `ticket_resolved`. Se estava `aguardando_profissional` passa a `em_atendimento` (com evento) na mesma transação. Limite: 30 por 10 min por conta (dividido com `reopen`). |
+| POST | `/support/tickets/:id/reopen` | `{ body }`. Só resolvida e até `resolved_at + 7 dias` (relógio do banco): volta a `aberta`, zera `resolved_at`/`resolved_by`, `reopen_count + 1`, evento `reopened` e a mensagem. 409 `not_resolved`, `reopen_window_expired` ou `too_many_open` (reabrir também respeita o limite de 10 abertas; recusa antes de qualquer escrita). Ver [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). |
+| POST | `/support/tickets/:id/read` | `{ upToSeq }` (maior seq exibido). **204**. Cursor só cresce e é limitado ao `activity_seq`. |
+| PUT | `/support/preferences` | `{ fabHidden: boolean }` → `{ fabHidden }` (por conta). |
+
+Não existe rota de mudança manual de status para a profissional: ela só altera o status respondendo (`aguardando_profissional` → `em_atendimento`) ou reabrindo. Código: `backend/src/routes/support.routes.js`, `controllers/supportController.js`, regras puras em `backend/src/utils/support*.js`.
+
+---
+
+## Central de Suporte — ADM (`/admin/support`) — NÃO publicada
+
+> **Estado:** implementada no código e testada só em banco descartável; **não está em produção** (mesmo interruptor `SUPPORT_CENTER_ENABLED` e migrations 023/024 pendentes). Desligado, tudo abaixo responde `404 { "error": "Recurso não encontrado." }` **antes** da autenticação, e o resto de `/admin/*` segue normal.
+
+Exigem **JWT + `is_admin`** (lido do banco a cada requisição; profissional comum → 403, sem sessão → 401, sem confiar em token, corpo, query ou cabeçalhos). Montada **antes** de `/admin` no `server.js`, com limitadores **próprios por administradora**: leituras 300/5 min e escritas (POST/PUT que alteram algo) 60/5 min (429); não consome o limite de 100 req/5 min por IP do `/admin`. Erros: `{ error, reason?, fields? }`.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/admin/support/summary` | `{ abertas, emAtendimento, aguardando, resolvidas7d, naoLidas }`. |
+| GET | `/admin/support/tickets` | Fila, mais recente primeiro. Filtros combináveis: `status`, `priority`, `category`, `professionalId`, `from`/`to` (data de criação, `AAAA-MM-DD`, dias inteiros em `America/Sao_Paulo`, inclusivos), `unread=true`, `q` (assunto, nome do negócio, nome da profissional ou `#número`), `page`, `pageSize` (≤50). Cada item traz prioridade, `unread` e `professional { id, name, businessName }`; sem corpo de mensagens, e-mail ou telefone. |
+| GET | `/admin/support/tickets/:id` | `{ ticket, messages[], events[], hasMore, nextBefore }` (janela por `seq`, `before`/`limit` ≤50). A ADM vê todos os eventos, inclusive de prioridade, e o `authorId` das respostas. |
+| POST | `/admin/support/tickets/:id/messages` | `{ body, clientMessageId }`. 201 (200 se repetida; 409 `idempotency_conflict`; 409 `ticket_resolved`). Aberta/em atendimento → `aguardando_profissional` com evento, na mesma transação. Não é auditada. |
+| POST | `/admin/support/tickets/:id/status` | `{ status, expectedStatus? }`. Qualquer sentido entre aberta/em atendimento/aguardando; resolver grava `resolved_at`/`resolved_by`; `resolvida` → `aberta`/`em_atendimento` é a reabertura pela ADM (evento `reopened`, sem contar `reopen_count`). Mesmo status → 200 sem evento. 409 `stale_status` / `invalid_transition`. Audita `support_status`. |
+| PUT | `/admin/support/tickets/:id/priority` | `{ priority }`. Passa a `manual`; evento `priority_changed` (não notifica a profissional). Audita `support_priority` só quando a prioridade muda. |
+| POST | `/admin/support/tickets/:id/read` | `{ upToSeq }` → 204. Cursor da ADM, compartilhado entre administradoras (limitação P9). |
+| GET | `/admin/support/faq` | Todas as categorias e **todos** os artigos, rascunhos inclusive. |
+| POST | `/admin/support/faq/articles` | `{ categorySlug, title (3–120), body (1–8000), position? }` → 201 rascunho. Audita `faq_create`. |
+| PUT | `/admin/support/faq/articles/:id` | Mesmo corpo. Sem mudança → 200 sem auditoria; senão `faq_update`. Não despublica. |
+| POST | `/admin/support/faq/articles/:id/publish` · `/unpublish` | Idempotentes. Auditam `faq_publish` / `faq_unpublish` só quando mudam o estado. |
+| PUT | `/admin/support/faq/reorder` | `{ categorySlug, orderedIds[] }` → 204. A lista deve conter exatamente os artigos da categoria (rascunhos inclusive); posições 1..n; uma linha `faq_update` por artigo cuja posição mudou. |
+
+Não há `DELETE` de artigo nem de mensagem. **Auditoria** (`admin_audit_log`, migration 024) gravada na **mesma transação** da mudança: nas ações `support_*` o alvo é a profissional da solicitação (`target_id` e nome do negócio); nas `faq_*`, o artigo (id e título). Nunca grava texto de mensagem nem assunto. Código: `routes/adminSupport.routes.js`, `controllers/adminSupportController.js`, `utils/supportHttp.js`.
+
+**Exclusão de profissional com a Central:** quando as tabelas de suporte existem, o snapshot de `DELETE /admin/professionals/:id` passa a incluir `support_tickets`, `support_messages` e `support_ticket_events`; `delete-preview` devolve também `supportTickets`; e a exclusão trava as solicitações e a conta, confere que nada de suporte foi gravado depois do snapshot e, se foi, aborta com 409 sem excluir nada. Sem a migration 023 aplicada, tudo continua como antes (`supportTickets: 0`, snapshot sem as chaves de suporte).
 
 ---
 
