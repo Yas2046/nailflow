@@ -6,8 +6,10 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { IconBan, IconRefresh } from '../components/AdminIcons';
 import { Badge, PageHeader, Segmented } from '../components/admin-account/AccountUi';
 import { ACTIVITY_META, ActionIcon } from '../components/admin-account/AccountBlocks';
+import { auditTargetLabel, type AuditAction } from '../components/admin-account/useAccountOverview';
 
-type AuditAction = 'update' | 'block' | 'unblock' | 'delete';
+// Filtro da tela: uma ação ou o grupo "suporte" (todas as ações da Central; o backend entende `action=suporte`).
+type ActionFilter = 'all' | AuditAction | 'suporte';
 
 interface AuditItem {
   id: string;
@@ -45,12 +47,13 @@ function IconChevron({ open }: { open: boolean }) {
   );
 }
 
-const ACTION_FILTERS: Array<{ id: 'all' | AuditAction; label: string }> = [
+const ACTION_FILTERS: Array<{ id: ActionFilter; label: string }> = [
   { id: 'all', label: 'Todas' },
   { id: 'update', label: 'Edição' },
   { id: 'block', label: 'Bloqueio' },
   { id: 'unblock', label: 'Desbloqueio' },
   { id: 'delete', label: 'Exclusão' },
+  { id: 'suporte', label: 'Suporte' },
 ];
 
 type Preset = 'all' | 'today' | '7d' | '30d' | 'custom';
@@ -185,7 +188,7 @@ function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; on
               <DetailRow label="Ação"><Badge tone={meta.tone}>{meta.label}</Badge></DetailRow>
               <DetailRow label="Data e hora">{formatFull(item.createdAt)}</DetailRow>
               <DetailRow label="Feita por">{item.actorEmail}</DetailRow>
-              <DetailRow label="Profissional (nome do negócio no registro)">{item.targetBusinessName}</DetailRow>
+              <DetailRow label={`${auditTargetLabel(item.action)} (nome gravado no registro)`}>{item.targetBusinessName}</DetailRow>
             </dl>
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer rounded font-medium text-wine-600 hover:text-wine-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/50">Detalhes técnicos</summary>
@@ -211,7 +214,7 @@ function AuditRow({ item, open, onToggle }: { item: AuditItem; open: boolean; on
 
 export default function AdminAuditoria() {
   usePageTitle('Auditoria');
-  const [action, setAction] = useState<'all' | AuditAction>('all');
+  const [action, setAction] = useState<ActionFilter>('all');
   const [preset, setPreset] = useState<Preset>('all');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -263,7 +266,7 @@ export default function AdminAuditoria() {
     listRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
   }, [page]);
 
-  function chooseAction(a: 'all' | AuditAction) {
+  function chooseAction(a: ActionFilter) {
     setAction(a);
     setPage(1);
   }
@@ -323,7 +326,7 @@ export default function AdminAuditoria() {
       {/* ── filtros ──────────────────────────────────────────────────────── */}
       <section aria-label="Filtros" className="mb-5 space-y-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <Segmented<'all' | AuditAction>
+          <Segmented<ActionFilter>
             label="Filtrar por ação"
             value={action}
             onChange={chooseAction}
