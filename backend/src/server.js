@@ -15,6 +15,7 @@ import botRoutes from './routes/bot.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import onboardingRoutes from './routes/onboarding.routes.js';
+import supportRoutes from './routes/support.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { startHoldSweeper } from './utils/bookingRules.js';
 
@@ -47,6 +48,7 @@ app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/admin', adminRoutes);
 app.use('/onboarding', onboardingRoutes);
+app.use('/support', supportRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });

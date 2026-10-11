@@ -87,6 +87,27 @@ export const readSchema = z
 
 export const preferencesSchema = z.object({ fabHidden: z.boolean() }).strict();
 
+// Consultas (query string). Parâmetros desconhecidos são ignorados; repetidos ou malformados dão erro.
+export const SEARCH_MAX = 100;
+
+export const listTicketsQuerySchema = z.object({
+  status: enumField(STATUSES, 'Status').optional(),
+  q: z
+    .string({ invalid_type_error: 'Busca inválida.' })
+    .transform(cleanSubject)
+    .refine((v) => charLength(v) <= SEARCH_MAX, { message: `A busca pode ter no máximo ${SEARCH_MAX} caracteres.` })
+    .transform((v) => (v === '' ? undefined : v))
+    .optional(),
+  page: z.coerce.number({ invalid_type_error: 'Página inválida.' }).int('Página inválida.').min(1, 'Página inválida.').max(100000, 'Página inválida.').default(1),
+  pageSize: z.coerce.number({ invalid_type_error: 'Tamanho de página inválido.' }).int('Tamanho de página inválido.').min(1, 'Tamanho de página inválido.').max(50, 'O tamanho da página pode ser no máximo 50.').default(20),
+});
+
+// Janela da conversa: as últimas `limit` atividades com seq menor que `before` (sem before = as mais recentes).
+export const ticketDetailQuerySchema = z.object({
+  before: z.coerce.number({ invalid_type_error: 'Cursor inválido.' }).int('Cursor inválido.').min(1, 'Cursor inválido.').max(Number.MAX_SAFE_INTEGER, 'Cursor inválido.').optional(),
+  limit: z.coerce.number({ invalid_type_error: 'Limite inválido.' }).int('Limite inválido.').min(1, 'Limite inválido.').max(50, 'O limite pode ser no máximo 50.').default(50),
+});
+
 // ── ADM ─────────────────────────────────────────────────────────────────────
 
 export const adminStatusSchema = z
