@@ -3,7 +3,10 @@
  * Evita vazar detalhes internos (stack trace, SQL) para o cliente.
  */
 export function errorHandler(err, req, res, next) {
-  console.error(err);
+  // JSON malformado: o body-parser anexa o corpo bruto ao erro (err.body) e a mensagem do V8 pode trazer um trecho
+  // dele. Em rotas de suporte isso seria texto de mensagem da profissional nos logs, então só o tipo é registrado.
+  if (err.type === 'entity.parse.failed') console.error('JSON inválido na requisição (corpo omitido do log).');
+  else console.error(err);
 
   // Conflito de horário (EXCLUDE constraint do Postgres)
   if (err.code === '23P01') {
