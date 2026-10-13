@@ -29,9 +29,12 @@ no ar, sem retrabalho de código.
    aplicação; em produção ela precisa rodar como `postgres`. Sem o `GRANT`, toda operação falha com
    `permission denied` (reproduzido em banco descartável). Está no checklist de publicação, seção 3.
 
-Recomendado **antes ou logo depois** de ligar (não bloqueia): a correção de permissões dos backups
-([proposta](./SUPORTE_BACKUPS_PROPOSTA.md)); os dumps já têm dados pessoais e hash de senha com as mesmas
-permissões, e a Central só acrescenta texto de mensagens.
+A correção de permissões dos backups, que era recomendada antes ou logo depois de ligar, **foi executada em
+2026-10-13** (detalhes, validações e pendências em [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md),
+seção 0): script novo instalado, `/var/backups/nailflow` e `manual/` em `700 root:root` e `backup.log` em
+`600 root:root`; só o `root` acessa os backups. Não bloqueia ligar a Central, mas há pendências que continuam
+abertas (abaixo, item 4) e um efeito operacional: backups manuais e restaurações passam a seguir o procedimento
+compatível com o diretório em 700.
 
 ## Pendentes que NÃO bloqueiam (precisam de decisão)
 
@@ -44,7 +47,17 @@ permissões, e a Central só acrescenta texto de mensagens.
    por tempo. Os 42 snapshots gerados por testes antigos continuam no diretório real (lista em
    `/root/etapa13_snapshots_para_limpeza.txt` no servidor); **não foram apagados**, e a limpeza depende de conferir
    que nenhuma exclusão real ocorreu nas janelas de teste.
-4. **Execução da correção de permissões dos backups** (proposta pronta, sem execução).
+4. **Correção dos backups: executada em 2026-10-13; pendências restantes** (ver
+   [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0):
+   - **executado e validado por leitura:** script novo instalado (SHA-256 `d450310b…a1b9`), diretório e `manual/`
+     em `700 root:root`, `backup.log` em `600 root:root`, fases B, C, D e E concluídas, verificação final sem
+     divergências;
+   - **pendente:** primeira execução noturna com retenção normal (cron de 2026-10-14, 03:00); **restauração real
+     não ensaiada neste servidor** (só no cluster descartável, em 2026-10-11); atualizar `docs/INFRAESTRUTURA.md`;
+     dono e modo dos 9 dumps antigos (seguem `664 postgres:postgres`, dentro do diretório 700);
+   - **guarda de cópias de dumps** (`/root/backup-fix-20261012-234847/guarda/`, `700 root:root`, dados pessoais):
+     decidido manter por **no máximo 24 horas depois do `T2.ok`** (2026-10-13 19:45:46, ou seja, até 2026-10-14
+     19:45); a remoção **não foi feita** e exige autorização separada, com conferência dos hashes.
 
 ## Limitações aceitas na V1
 
@@ -66,7 +79,7 @@ permissões, e a Central só acrescenta texto de mensagens.
 |---|---|---|
 | Alta (publicação) | A 023 não concede acesso à role da aplicação; em produção as tabelas novas nasceriam do `postgres` e toda a Central falharia com 42501. Não aparecia nos testes porque neles a mesma role cria e usa as tabelas. | Script `_ops/023_grant_app_role.sql` (privilégios mínimos, com verificação final) e etapa obrigatória no checklist. Validado com a divisão de donos de produção reproduzida em banco descartável. |
 | Baixa | JSON malformado em qualquer rota (inclusive as de suporte) fazia o `errorHandler` global registrar o erro inteiro, e o body-parser anexa o corpo bruto: texto de mensagem apareceria nos logs do PM2. | Corrigido (`errorHandler` omite o corpo desse erro) com teste de regressão `tests/error-handler-log.test.js`. |
-| Informativo | Backups: permissões 777/664, `set -e` tornando o ramo de erro inalcançável, dump parcial possível, sem verificação. | Proposta em `SUPORTE_BACKUPS_PROPOSTA.md`; nada executado. |
+| Informativo | Backups: permissões 777/664, `set -e` tornando o ramo de erro inalcançável, dump parcial possível, sem verificação. | Proposta em `SUPORTE_BACKUPS_PROPOSTA.md`; **executada em 2026-10-13** (seção 0 daquele documento, com as pendências). |
 | Informativo | `frontend/src` de produção está desatualizado em relação ao commit base (o `dist` foi construído fora de lá). | Checklist manda construir em pasta temporária. |
 | Informativo | 9 testes antigos falham no commit-base e continuam falhando (esperam `token` no corpo do login, que hoje só vai no cookie): `auth-flow` (2), `availability-check` (1), `price-snapshot` (6). Não são regressão desta entrega. | Registrado; fora do escopo. |
 

@@ -1,8 +1,11 @@
 # Central de Suporte: checklist de publicação e rollback
 
-> Roteiro para a V1. **Nada aqui foi executado em produção.** Cada comando é do projeto como ele está hoje; os
-> fatos de produção abaixo foram conferidos em 2026-10-11 por leitura (sem alterar nada). Decisões que bloqueiam a
-> ativação: [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
+> Roteiro para a V1. **Nada da publicação da Central (migrations, backend, frontend, flag) foi executado em
+> produção.** Cada comando é do projeto como ele está hoje; os fatos de produção abaixo foram conferidos em
+> 2026-10-11 por leitura (sem alterar nada), **exceto a linha de backups, atualizada em 2026-10-13** depois da
+> correção dos backups, que **foi executada** (ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md),
+> seção 0). Decisões que bloqueiam a ativação: [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos:
+> [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
 
 ## Fatos de produção que mudam o procedimento
 
@@ -15,12 +18,16 @@
 | Sem mudança de dependências nos cinco commits (`package.json` e lock idênticos). | Não há `npm install` no backend. |
 | PM2 id 0 `nailflow-backend` (`bash -c "npm start"`, modo fork, cwd `/var/www/nailflow/backend`). `reload` em modo fork equivale a `restart` (~10 s fora do ar; o n8n repete 5 × 3 s, conforme `DEPLOY.md`). | Escolher horário calmo. |
 | nginx serve `/var/www/nailflow/frontend/dist`; `/api/` vai para `localhost:3333/`; CSP `connect-src 'self'`. | A API do bundle precisa ser a mesma origem (`VITE_API_URL`). |
-| Backups: `nailflow-backup.sh` (03:00, retenção de 7 dias). Precedente de backup antes de migration: `/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`. | Backup manual antes da 023. Permissões: ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md). |
+| Backups (conferido em 2026-10-13, depois da correção): `nailflow-backup.sh` novo instalado (SHA-256 `d450310b…a1b9`), cron das 03:00 inalterado, retenção de 7 dias. `/var/backups/nailflow` e `manual/` em `700 root:root`; `backup.log` em `600 root:root`; os 9 dumps antigos seguem `664 postgres:postgres` dentro do diretório 700; os novos nascem `600 root:root`. Precedente de backup antes de migration: `/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`. | Backup manual antes da 023, **no formato compatível com o diretório 700** (arquivo aberto pelo `root`, seção 1). A forma `pg_dump -f <arquivo>` (arquivo criado pelo `postgres`) **falha**. A primeira execução noturna do script novo (2026-10-14) e a restauração real ainda estão **pendentes** de verificação: ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0. |
 | O código novo é **fail-closed**: sem `SUPPORT_CENTER_ENABLED=true` no `.env`, `/support/*` e `/admin/support/*` respondem 404 e a interface não mostra nada. | Dá para publicar migrations, backend e frontend **sem ligar** a Central. |
 
 ## 0. Antes de começar (decisões)
 
 - [ ] **Texto de privacidade/retenção revisado** (bloqueia ligar; ver `SUPORTE_DECISOES.md`).
+- [ ] **Backups conferidos:** o log da noite anterior mostra a execução das 03:00 do script novo sem `ERRO`, existe o
+  dump novo e o diretório continua `700 root:root` (primeira noite ainda **pendente** em 2026-10-13); a guarda de
+  cópias de dumps foi removida **com autorização separada** ou continua dentro do prazo decidido (ver
+  `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700).
 - [ ] Commit aprovado e testado: HEAD da branch (ou o que for mergeado). Anote o hash: `COMMIT=<hash>`.
 - [ ] Horário calmo (reinício do backend ≈ 10 s).
 
@@ -34,8 +41,14 @@ ls -l /var/backups/nailflow/nailflow_pre-migration-023_$STAMP.dump         # tam
 pg_restore --list /var/backups/nailflow/nailflow_pre-migration-023_$STAMP.dump | head -5   # lista o conteúdo: arquivo íntegro
 ```
 
-Prova de restauração (opcional, recomendada): restaurar em um banco **descartável**, nunca sobre `nailflow`. O
-procedimento testado está em `SUPORTE_BACKUPS_PROPOSTA.md` (cluster de teste, banco `nf_*_test`).
+Com `/var/backups/nailflow` em `700 root:root`, só o `root` consegue gravar e ler o arquivo; por isso o
+redirecionamento acima (`>`) é feito pelo shell do `root` e o `postgres` apenas envia os dados. Não use
+`pg_dump … -f <arquivo>` neste diretório (o `postgres` não grava nele).
+
+Prova de restauração (opcional, recomendada): restaurar em um banco **descartável**, nunca sobre `nailflow`, com o
+`root` entregando o arquivo por entrada padrão (`sudo -u postgres pg_restore … < arquivo`). O procedimento testado
+está em `SUPORTE_BACKUPS_PROPOSTA.md` (cluster de teste, banco `nf_*_test`). **Uma restauração de dump de produção
+ainda não foi ensaiada neste servidor** (só no cluster descartável, em 2026-10-11).
 
 ## 2. Frontend atual e preservação do `dist`
 
@@ -143,7 +156,7 @@ pela ADM** (a API não tem exclusão de solicitação; a exclusão da conta leva
 | 1. Desligar | Qualquer problema na Central | `SUPPORT_CENTER_ENABLED=false` (ou remover a linha) no `.env` + `pm2 restart 0 --update-env`. As rotas viram 404 e a interface some. | **Não.** Conversas e FAQ ficam no banco. |
 | 2. Voltar o código | Problema no frontend ou no backend novo | Frontend: `mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Backend: restaurar `src` do `tar` da seção 2 + `pm2 restart 0`. O código antigo ignora as tabelas e a coluna novas. | **Não.** |
 | 3. Reverter a 024 | Só se for indispensável | `_rollback/024_audit_actions_support.down.sql`. **Aborta** se já houver auditoria `faq_*`/`support_*` (proteção). Padrão recomendado: **deixar aplicada** (é aditiva). | Não apaga nada. |
-| 4. Reverter a 023 | Só se for indispensável | **Destrutivo e irreversível:** apaga solicitações, mensagens, eventos, artigos de FAQ e a preferência `support_fab_hidden` de todas as contas. Parar a API, backup novo, exportar antes se quiser guardar (`pg_dump -Fc -t 'support_*' nailflow`), autorizar na mesma sessão (`SET support.confirm_destructive_rollback = 'DESTRUIR-DADOS-DE-SUPORTE'`). Detalhes e limites (`lock_timeout` de 3 s, locks em `professionals`) em `backend/db/migrations/_rollback/README.md`. | **Sim**, tudo da Central. A auditoria permanece (sem FK). |
+| 4. Reverter a 023 | Só se for indispensável | **Destrutivo e irreversível:** apaga solicitações, mensagens, eventos, artigos de FAQ e a preferência `support_fab_hidden` de todas as contas. Parar a API, backup novo, exportar antes se quiser guardar (`pg_dump -Fc -t 'support_*' nailflow`, com o arquivo aberto pelo `root`, `> arquivo`, como na seção 1), autorizar na mesma sessão (`SET support.confirm_destructive_rollback = 'DESTRUIR-DADOS-DE-SUPORTE'`). Detalhes e limites (`lock_timeout` de 3 s, locks em `professionals`) em `backend/db/migrations/_rollback/README.md`. | **Sim**, tudo da Central. A auditoria permanece (sem FK). |
 
 Depois do nível 4 o backend novo continua funcionando com a Central desligada (a exclusão de conta detecta a ausência
 das tabelas). Reaplicar a 023 recria tudo vazio; o `GRANT` da seção 3 precisa ser repetido.
