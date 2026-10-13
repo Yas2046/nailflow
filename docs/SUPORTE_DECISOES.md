@@ -13,7 +13,7 @@
 | Limite de solicitações abertas | **10 por profissional**, valendo na **criação e na reabertura** pela profissional (409 `too_many_open`). Criar e reabrir concorrentes são serializados pelo mesmo lock (`pg_advisory_xact_lock` por profissional); a recusa acontece antes de qualquer escrita. A reabertura pela ADM não é limitada. |
 | Termos de prioridade | Os da especificação, versionados em `backend/src/utils/supportPriority.js` (termos de "alta" só contam na categoria Técnico, exceto "urgente"). Sem termos novos. |
 | "Lido" da ADM | **Compartilhado** entre administradoras (`admin_read_seq` por solicitação): se uma abre, fica lida para todas. Aceito na V1 (há uma ADM). |
-| Retenção | **Sem exclusão automática nesta fase.** Nenhuma rotina apaga solicitações resolvidas; elas permanecem enquanto a conta existir. Não há cron de limpeza. Ao excluir a conta, as conversas vão junto (snapshot de 90 dias incluído; a exclusão aborta com 409 se houver atividade nova depois do snapshot). |
+| Retenção (aprovada como base em 2026-10-13; detalhes em [`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)) | **Chamados abertos:** sem expiração automática. **Chamados resolvidos:** 6 meses depois da **última** resolução, depois apagados por inteiro (mensagens e eventos junto) por rotina testada em banco descartável, **ainda não agendada nem ativa em produção**. **Reabertura pela profissional:** 7 dias, como já implementado. **Snapshots de exclusão:** 30 dias (preparado no código; a limpeza por tempo existe como script, ainda não agendada). **Dumps:** 7 dias (cron). **Auditoria:** 12 meses identificável e até 36 meses no total, **implementada mas desligada**: a ativação depende da validação de privacidade. **Logs do PM2:** rotação de 14 dias **preparada, não instalada**. Ao excluir a conta, as conversas vão junto (a exclusão aborta com 409 se houver atividade nova depois do snapshot). Até a publicação, o que está em produção continua sendo a regra antiga (sem rotina de chamados; snapshots de 90 dias podados só a cada nova exclusão). |
 | Contas administradoras | Não abrem solicitações (403 em `/support/*`); atendem por `/admin/support`. |
 
 ## O que bloqueia a V1
@@ -23,8 +23,11 @@ no ar, sem retrabalho de código.
 
 1. **Texto de privacidade/retenção exibido ao usuário** (revisão jurídica). A tela de nova solicitação mostra
    `PRIVACY_NOTICE` (`frontend/src/services/support.ts`), que remete à "política de privacidade do NailFlow". É
-   preciso confirmar que essa política existe e é a que vale, e **não prometer exclusão definitiva nem prazo**: as
-   conversas ficam enquanto a conta existir, há cópia em snapshot de exclusão (90 dias) e em dumps (7 dias).
+   preciso confirmar que essa política existe e é a que vale, e **não prometer exclusão definitiva nem prazo que o
+   sistema não garanta**. O texto proposto está em `SUPORTE_PRIVACIDADE_RETENCAO.md` (rascunho, **não é o texto
+   definitivo**: contato, política referenciada e pontos de privacidade ainda não foram validados). As conversas
+   ficam até 6 meses depois da resolução (rotina ainda não ativa), com cópia em snapshot de exclusão (30 dias, quando
+   a limpeza por tempo estiver agendada) e em dumps (7 dias).
 2. **Aplicar o `GRANT` depois da 023** (obrigação operacional, não decisão). A 023 não concede acesso à role da
    aplicação; em produção ela precisa rodar como `postgres`. Sem o `GRANT`, toda operação falha com
    `permission denied` (reproduzido em banco descartável). Está no checklist de publicação, seção 3.
@@ -38,15 +41,24 @@ compatível com o diretório em 700.
 
 ## Pendentes que NÃO bloqueiam (precisam de decisão)
 
-1. **Prazo de retenção** das solicitações resolvidas em contas ativas (proposta: 12 meses, com rotina própria,
-   revisada e aprovada). Enquanto não houver, as mensagens ficam indefinidamente (decisão vigente).
-2. **Política do `admin_audit_log`**: prazo e anonimização do `target_business_name` após a exclusão da conta (hoje
-   indefinido e sem FK). A auditoria não grava texto de mensagem nem assunto. Está ligada ao rollback da 024, que
-   aborta se houver auditoria com as ações novas.
-3. **Poda dos snapshots de exclusão**: hoje só roda quando há nova exclusão; para garantir 90 dias, precisa de rotina
-   por tempo. Os 42 snapshots gerados por testes antigos continuam no diretório real (lista em
-   `/root/etapa13_snapshots_para_limpeza.txt` no servidor); **não foram apagados**, e a limpeza depende de conferir
-   que nenhuma exclusão real ocorreu nas janelas de teste.
+1. **Chamados resolvidos: 6 meses** (decisão tomada em 2026-10-13; substitui a proposta de 12 meses). A rotina
+   `backend/db/migrations/_ops/support_retention.sql` está pronta e testada em banco descartável, mas **não está
+   agendada**: precisa de autorização para o cron do sistema e deve estar ativa antes do primeiro vencimento (6 meses
+   depois de a Central ser ligada). Até lá as mensagens ficam enquanto a conta existir.
+2. **`admin_audit_log`:** política aprovada como base (12 meses identificável; `actor_email` e `target_business_name`
+   viram `[anonimizado]`; apagada com mais de 36 meses). **Implementada e desligada por padrão**
+   (`-v audit_enabled=on`): ligar só depois da validação de privacidade. A auditoria não grava texto de mensagem nem
+   assunto. Está ligada ao rollback da 024, que aborta se houver auditoria com as ações novas.
+3. **Snapshots de exclusão (30 dias):** o código e o script `backend/scripts/prune-deleted-snapshots.js` estão
+   prontos (simulação por padrão), mas **falta agendar a limpeza por tempo** (cron do sistema, com autorização) e
+   verificar os snapshots existentes. O diretório real tem **563** (29/09 a 11/10/2026; leitura de 2026-10-13):
+   **42** estão listados como de teste em `/root/etapa13_snapshots_para_limpeza.txt` e a origem dos outros **521**
+   não foi verificada. **Nenhum foi apagado nem alterado**; a limpeza depende de conferir a origem e que nenhuma
+   exclusão real ocorreu nas janelas de teste. Até lá, listar **todos** os nomes existentes em
+   `<diretório>/.retention-hold` os protege (comando em `ops/README.md`, testado). **Atenção na publicação:** o
+   novo prazo (30 dias) vale também para a poda a cada exclusão de conta, e o snapshot mais antigo completa 30 dias
+   em 29/10/2026; sem o `.retention-hold`, a primeira exclusão real depois do deploy removeria os snapshots com mais
+   de 30 dias.
 4. **Correção dos backups: executada em 2026-10-13; pendências restantes** (ver
    [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0):
    - **executado e validado por leitura:** script novo instalado (SHA-256 `d450310b…a1b9`), diretório e `manual/`
@@ -70,8 +82,8 @@ compatível com o diretório em 700.
 - **Sem anexos** e sem edição de mensagens (a tabela é imutável por gatilho).
 - **Reabertura pela profissional só em 7 × 24 h**, medidos com o relógio do banco, e respeita o limite de 10 abertas.
 - **Limitadores por conta** (criação 5/h; mensagens 30/10 min; ADM 300 leituras e 60 escritas / 5 min).
-- Os dados de suporte aparecem nos **dumps diários** (retenção de 7 dias) e nos snapshots de exclusão (90 dias,
-  modo 600).
+- Os dados de suporte aparecem nos **dumps diários** (retenção de 7 dias) e nos snapshots de exclusão (30 dias na
+  política nova; 90 dias enquanto o código antigo estiver em produção; modo 600).
 
 ## Achados da revisão final (2026-10-11)
 

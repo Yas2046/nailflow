@@ -6,6 +6,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { updateMeSchema } from './authController.js';
 import { deleteEvolutionInstanceByName } from './whatsappController.js';
 import { logAdminAction } from '../utils/auditLog.js';
+import { pruneSnapshots } from '../utils/snapshotRetention.js';
 
 export async function listProfessionals(req, res, next) {
   try {
@@ -169,13 +170,12 @@ async function supportCounts(db, professionalId) {
 }
 
 const SNAPSHOT_DIR = process.env.DELETED_PROFESSIONAL_BACKUP_DIR || '/var/backups/nailflow/deleted-professionals';
-const SNAPSHOT_RETENTION_DAYS = 90;
 
 // Cópia de segurança operacional, gravada ANTES de qualquer exclusão física.
 // Fica fora de /var/www (nunca é servida pela aplicação -- nenhuma rota lê
-// esse diretório), com permissão 600 no arquivo e 700 no diretório, e uma
-// retenção de 90 dias podada a cada nova exclusão (arquivos mais antigos são
-// removidos aqui mesmo, sem depender de cron externo).
+// esse diretório), com permissão 600 no arquivo e 700 no diretório. Retenção:
+// SNAPSHOT_RETENTION_DAYS (30 dias, utils/snapshotRetention.js), podada a cada
+// nova exclusão e pela rotina por tempo scripts/prune-deleted-snapshots.js.
 async function writeProfessionalSnapshot(professionalId) {
   await fs.mkdir(SNAPSHOT_DIR, { recursive: true, mode: 0o700 });
   await fs.chmod(SNAPSHOT_DIR, 0o700).catch(() => {});
@@ -199,14 +199,10 @@ async function writeProfessionalSnapshot(professionalId) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
   await fs.chmod(filePath, 0o600).catch(() => {});
 
-  const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  const entries = await fs.readdir(SNAPSHOT_DIR).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.startsWith('professional_') || !entry.endsWith('.json')) continue;
-    const entryPath = path.join(SNAPSHOT_DIR, entry);
-    const stat = await fs.stat(entryPath).catch(() => null);
-    if (stat && stat.mtimeMs < cutoff) await fs.unlink(entryPath).catch(() => {});
-  }
+  // Poda por idade (SNAPSHOT_RETENTION_DAYS) também a cada exclusão. Só arquivos com o nome exato gerado acima e
+  // que não estejam no .retention-hold; a rotina por tempo (scripts/prune-deleted-snapshots.js) cobre o caso de
+  // não haver exclusões. Uma falha de poda nunca impede a exclusão.
+  await pruneSnapshots(SNAPSHOT_DIR, { apply: true }).catch(() => {});
 
   // Contagens de suporte no momento do snapshot (null = banco sem a migration 023): a exclusão confere que
   // nada novo foi gravado depois delas, para nenhuma conversa ser apagada sem estar no snapshot.

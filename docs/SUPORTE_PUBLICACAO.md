@@ -28,6 +28,18 @@
   dump novo e o diretório continua `700 root:root` (primeira noite ainda **pendente** em 2026-10-13); a guarda de
   cópias de dumps foi removida **com autorização separada** ou continua dentro do prazo decidido (ver
   `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700).
+- [ ] **Privacidade e retenção** ([`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)):
+  - aviso de privacidade validado (contato, política referenciada, base legal) e `PRIVACY_NOTICE` atualizado (hoje o
+    texto é o antigo; o rascunho novo **não é definitivo**) (**bloqueia ligar**);
+  - **antes do deploy do código com snapshots de 30 dias:** listar **todos** os 563 snapshots existentes (42
+    identificados como de teste; 521 sem origem verificada) em
+    `/var/backups/nailflow/deleted-professionals/.retention-hold` enquanto a origem não for confirmada (comando em
+    `ops/README.md`; escrita em produção, com autorização) e agendar a limpeza por tempo (cron do sistema, com
+    autorização, modelo em `ops/cron/support-retention.cron.example`), senão a primeira exclusão real remove o que
+    passar de 30 dias (o mais antigo completa 30 dias em 29/10/2026);
+  - rotina de chamados resolvidos (6 meses) agendada com autorização, **antes do primeiro vencimento**;
+  - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
+  - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
 - [ ] Commit aprovado e testado: HEAD da branch (ou o que for mergeado). Anote o hash: `COMMIT=<hash>`.
 - [ ] Horário calmo (reinício do backend ≈ 10 s).
 
