@@ -25,7 +25,7 @@
 
 - [ ] **Texto de privacidade/retenção revisado** (bloqueia ligar; ver `SUPORTE_DECISOES.md`).
 - [ ] **Backups conferidos:** o log da noite anterior mostra a execução das 03:00 do script novo sem `ERRO`, existe o
-  dump novo e o diretório continua `700 root:root` (primeira noite ainda **pendente** em 2026-10-13); a guarda de
+  dump novo e o diretório continua `700 root:root` (primeira noite conferida em 2026-10-14 por leitura (sem `ERRO`, dump novo presente); repetir no dia da publicação); a guarda de
   cópias de dumps foi removida **com autorização separada** ou continua dentro do prazo decidido (ver
   `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700).
 - [ ] **Privacidade e retenção** ([`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)):
@@ -40,6 +40,7 @@
   - rotina de chamados resolvidos (6 meses) agendada com autorização, **antes do primeiro vencimento**;
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
+- [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **commitados localmente** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão é independente da Central e deve sair **antes ou junto** dela.
 - [ ] Commit aprovado e testado: HEAD da branch (ou o que for mergeado). Anote o hash: `COMMIT=<hash>`.
 - [ ] Horário calmo (reinício do backend ≈ 10 s).
 

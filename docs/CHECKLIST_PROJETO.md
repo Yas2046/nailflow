@@ -247,7 +247,7 @@
 - [ ] Mover horário/serviço de uma série recorrente inteira (`updateFromNow` só altera status/notes) — limitação conhecida de v1, documentar para o usuário final
 - [ ] Configurações de notificação (endpoint dedicado) — não localizado/implementado
 - [ ] Advisories moderados do `react-router-dom` (correção adiada — bump major)
-- [ ] Retenção dos snapshots de exclusão de profissional depende de haver uma nova exclusão para autopodar (sem cron dedicado) — funcional, mas não 100% automática
+- [ ] Retenção dos snapshots de exclusão de profissional depende de haver uma nova exclusão para autopodar (sem cron dedicado) — funcional, mas não 100% automática (a rotina por tempo e o prazo de 30 dias estão **implementados só na branch, não publicados**; ver §15)
 - [x] Tela de consulta do `admin_audit_log` — entregue em `12dcff7` (2026-10-03)
 - [ ] Publicar recuperação/troca de senha (depende de conta Brevo/SMTP configurada e autorização)
 - [ ] Migração do PM2 para usuário não-root (backend e n8n)
@@ -434,3 +434,19 @@ Nenhum destes foi auditado de ponta a ponta ainda; o que já existe pontualmente
 - [ ] Fase 4: bot durante o pagamento (estado fora do prefixo `AGUARDANDO_`)
 - [ ] Fase 5: lembretes e mensagens pós-atendimento
 - [ ] Futuro: Pix automático/cartão (tabela `payments` e gateway)
+
+---
+
+## 15. Central de Suporte (branch `feat/admin-redesign-fase1`; **desativada e não publicada**; commits locais, ver `STATUS_ATUAL.md`)
+
+- [x] Backend (migrations 023/024 com rollback, APIs da profissional e da ADM, auditoria, exclusão de conta com suporte) e interface — commitados **localmente** (15 commits à frente de `origin/feat/admin-redesign-fase1` e de `origin/main`, em 2026-10-14); testes de suporte em banco descartável aprovados. Ver [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md) e [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md)
+- [x] Retenção e privacidade implementadas **localmente** (chamados resolvidos 6 meses, auditoria 12/36 meses desligada por padrão, snapshots 30 dias, logs sem mensagem; modelos `ops/` não instalados) — [`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)
+- [x] Correção dos backups **executada em produção em 2026-10-13** (script novo, diretório 700) — [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0
+- [x] Frontend refinado (`c86c9dc`, local, não publicado): hub, FAQ, solicitações, abertura e conversa; fila, filtros e atendimento da ADM; ícones compartilhados; responsivo. `tsc -b` e `vite build` aprovados; **22 cenários E2E repetidos em 2026-10-14: 22 OK** em ambiente descartável (não versionados, modo de desenvolvimento)
+- [x] Rascunhos da Central ligados à conta e apagados no logout, no 401 e no login (`cedf8e3`, local): 22 testes em `frontend/tests/supportDrafts.test.mjs`; limites: 401 atrasado e cache de identidade sem expiração
+- [x] Exclusão de profissional: instância do WhatsApp removida só no fim da transação (`dfd91ce`, local, **frente independente da Central**, deve sair antes ou junto dela); testes com a Evolution simulada
+- [ ] Publicação: nenhum push, merge, PR ou deploy; migrations 023/024 e `GRANT` não aplicados em produção; `SUPPORT_CENTER_ENABLED` desligada
+- [ ] Aviso de privacidade definitivo (validação de privacidade/jurídico)
+- [ ] Proteger os 563 snapshots (`.retention-hold`) e agendar rotinas (chamados, snapshots, logs do PM2); ativar a retenção da auditoria só após validação
+- [ ] Restauração real de um dump em produção (não ensaiada) e atualização de `docs/INFRAESTRUTURA.md`
+- [ ] Guarda temporária dos backups: mantida até a reavaliação de 2026-10-16 (nenhuma autorização de exclusão); a primeira noite do cron de 2026-10-14 foi conferida por leitura, a segunda (2026-10-15) ainda não
