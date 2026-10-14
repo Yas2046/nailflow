@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useSupport } from '../../context/SupportContext';
+import { useAuth } from '../../context/AuthContext';
+import { readSupportDraft, writeSupportDraft } from '../../services/supportDrafts';
 import { useToast } from '../../context/ToastContext';
 import {
   BODY_MAX, CATEGORIES, PRIVACY_NOTICE, SUBJECT_MAX, charCount, newId, supportApi,
@@ -11,13 +13,13 @@ import {
 import { searchArticles, useFaq } from '../../components/support/FaqBrowser';
 import { CharCounter, LoadingList, Notice, Unavailable } from '../../components/support/SupportUi';
 
-const DRAFT_KEY = 'nf_support_new_draft';
+const DRAFT_SCOPE = 'new';
 
 interface Draft { category: SupportCategory | ''; subject: string; body: string }
 
-function readDraft(): Draft {
+function readDraft(ownerId: string | undefined): Draft {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = readSupportDraft(ownerId, DRAFT_SCOPE);
     if (raw) {
       const d = JSON.parse(raw) as Partial<Draft>;
       return { category: (d.category as SupportCategory) ?? '', subject: d.subject ?? '', body: d.body ?? '' };
@@ -35,7 +37,8 @@ export default function SuporteNova() {
   const related = Number(params.get('relacionada'));
   const relatedNumber = Number.isInteger(related) && related > 0 ? related : undefined;
 
-  const [draft, setDraft] = useState<Draft>(readDraft);
+  const ownerId = useAuth().professional?.id;
+  const [draft, setDraft] = useState<Draft>(() => readDraft(ownerId));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Draft, string>>>({});
@@ -44,8 +47,8 @@ export default function SuporteNova() {
   const { faq } = useFaq(enabled);
 
   useEffect(() => {
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* sem armazenamento */ }
-  }, [draft]);
+    writeSupportDraft(ownerId, DRAFT_SCOPE, JSON.stringify(draft));
+  }, [draft, ownerId]);
 
   const suggestions = useMemo(
     () => (faq && draft.subject.trim().length >= 4 ? searchArticles(faq.articles, draft.subject, 3) : []),
@@ -82,7 +85,7 @@ export default function SuporteNova() {
       const { ticket } = await supportApi.create({
         subject, category: draft.category, body, clientRequestId: attempt.current.id, relatedTicketNumber: relatedNumber,
       });
-      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ok */ }
+      writeSupportDraft(ownerId, DRAFT_SCOPE, '');
       toast('Solicitação enviada! Nossa equipe responde por aqui.', 'success');
       void refresh();
       navigate(`/suporte/solicitacoes/${ticket.id}`, { replace: true });

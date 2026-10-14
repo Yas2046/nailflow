@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { readSupportDraft, writeSupportDraft } from '../../services/supportDrafts';
 import {
   BODY_MAX, charCount, eventText, fmtDateTime, newId,
   type SupportEvent, type SupportMessage, type SupportRole,
@@ -94,16 +96,6 @@ export function Thread({
 
 // ── caixa de resposta ───────────────────────────────────────────────────────
 
-function readDraft(key: string): string {
-  try { return localStorage.getItem(`nf_support_draft_${key}`) ?? ''; } catch { return ''; }
-}
-function writeDraft(key: string, value: string) {
-  try {
-    if (value) localStorage.setItem(`nf_support_draft_${key}`, value);
-    else localStorage.removeItem(`nf_support_draft_${key}`);
-  } catch { /* sem armazenamento: o rascunho só não persiste */ }
-}
-
 /**
  * Caixa de resposta. O identificador de idempotência (clientMessageId) vale para o texto exato tentado: se o envio
  * falhar e a pessoa tentar de novo com o mesmo texto, o mesmo id é reutilizado (nunca duplica); se mudar o texto,
@@ -115,7 +107,8 @@ export function Composer({
   draftKey: string; onSend: (body: string, clientMessageId: string) => Promise<void>;
   label?: string; submitLabel?: string; placeholder?: string; hint?: string;
 }) {
-  const [text, setText] = useState(() => readDraft(draftKey));
+  const ownerId = useAuth().professional?.id;
+  const [text, setText] = useState(() => readSupportDraft(ownerId, draftKey));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const attempt = useRef<{ id: string; text: string } | null>(null);
@@ -135,7 +128,7 @@ export function Composer({
       await onSend(body, attempt.current.id);
       attempt.current = null;
       setText('');
-      writeDraft(draftKey, '');
+      writeSupportDraft(ownerId, draftKey, '');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Não foi possível enviar. Sua mensagem foi mantida: tente de novo.');
     } finally {
@@ -157,7 +150,7 @@ export function Composer({
         placeholder={placeholder}
         aria-describedby={hintId}
         aria-invalid={tooLong || undefined}
-        onChange={(e) => { setText(e.target.value); writeDraft(draftKey, e.target.value); if (error) setError(null); }}
+        onChange={(e) => { setText(e.target.value); writeSupportDraft(ownerId, draftKey, e.target.value); if (error) setError(null); }}
         onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void submit(); } }}
         disabled={sending}
       />
