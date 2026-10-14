@@ -243,9 +243,16 @@ const deleteProfessionalSchema = z.object({
 
 // DELETE /admin/professionals/:id
 // Exclusão física e definitiva: profissional + tudo que o ON DELETE CASCADE
-// alcança (ver migration 017). Ordem: 1) snapshot em disco, 2) excluir
-// instância na Evolution SE houver (chamada externa, fora da transação SQL
-// -- se falhar, aborta e não mexe no banco), 3) DELETE em transação.
+// alcança (ver migration 017). Ordem: 1) snapshot em disco, 2) transação: confere
+// o suporte e executa o DELETE, 3) por ÚLTIMO, ainda dentro da transação, exclui
+// a instância na Evolution SE houver, 4) COMMIT.
+// A Evolution é externa e irreversível, e não é atômica com o PostgreSQL. Por isso
+// a chamada externa só acontece depois de tudo o que pode falhar no banco (conferências
+// e DELETE) e imediatamente antes do COMMIT: se a Evolution falhar, a transação é
+// desfeita e a conta continua intacta; a única janela restante é uma falha do próprio
+// COMMIT depois de a instância já ter sido removida (tratada abaixo com mensagem fiel).
+// Repetir a exclusão é seguro: a Evolution devolve 404 para instância inexistente, e
+// isso conta como sucesso.
 export async function deleteProfessional(req, res, next) {
   try {
     const { id } = req.params;
@@ -278,17 +285,9 @@ export async function deleteProfessional(req, res, next) {
     // 1) Rede de segurança operacional -- antes de qualquer exclusão.
     const { supportCounts: snapshotSupport } = await writeProfessionalSnapshot(id);
 
-    // 2) Evolution é externa ao Postgres: resolve antes de abrir a transação.
-    //    Se falhar, aborta aqui -- a profissional NÃO é excluída do banco.
-    if (target.wa_instance_name) {
-      const deleted = await deleteEvolutionInstanceByName(target.wa_instance_name);
-      if (!deleted) {
-        throw new HttpError(502, 'Falha ao excluir a instância do WhatsApp na Evolution. A profissional não foi excluída.');
-      }
-    }
-
-    // 3) Exclusão física em transação. Os CASCADEs (migration 017) apagam
+    // 2) Exclusão física em transação. Os CASCADEs (migration 017) apagam
     //    clients/appointments/services/... na mesma operação.
+    let instanceRemoved = false;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -303,10 +302,40 @@ export async function deleteProfessional(req, res, next) {
           throw new HttpError(409, 'Houve atividade de suporte nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
         }
       }
-      await client.query('DELETE FROM professionals WHERE id = $1', [id]);
+      // O nome da instância vem da própria linha apagada (travada por esta transação), não de uma leitura anterior.
+      const { rows: deletedRows } = await client.query(
+        'DELETE FROM professionals WHERE id = $1 RETURNING wa_instance_name',
+        [id]
+      );
+
+      // 3) Evolution por último, ainda antes do COMMIT. Falha (ou exceção de rede/tempo esgotado) => ROLLBACK:
+      //    a conta fica como estava. 404 (instância já inexistente) conta como sucesso.
+      const instanceName = deletedRows[0]?.wa_instance_name ?? null;
+      if (instanceName) {
+        let removed = false;
+        try {
+          removed = await deleteEvolutionInstanceByName(instanceName);
+        } catch {
+          removed = false;
+        }
+        if (!removed) {
+          throw new HttpError(502, 'Falha ao excluir a instância do WhatsApp na Evolution. A conta não foi excluída; tente novamente.');
+        }
+        instanceRemoved = true;
+      }
+
+      // 4) COMMIT.
       await client.query('COMMIT');
     } catch (err) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
+      if (instanceRemoved) {
+        // A instância já saiu da Evolution e o COMMIT não foi confirmado. Uma falha de conexão no COMMIT pode ter
+        // deixado o resultado no banco indeterminado: a mensagem não afirma o estado final da conta.
+        throw new HttpError(
+          503,
+          'A instância do WhatsApp foi removida, mas não foi possível confirmar a conclusão da exclusão da conta. Atualize a lista e, se a conta ainda aparecer, tente novamente.'
+        );
+      }
       throw err;
     } finally {
       client.release();

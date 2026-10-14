@@ -2,6 +2,9 @@
 // snapshot e na prévia, são apagadas em cascade sem sobrar órfãos, e nada de suporte é apagado fora do snapshot.
 // Também prova que, sem a migration 023 aplicada, a exclusão continua exatamente como antes.
 //
+// A ordem entre a exclusão da instância do WhatsApp (Evolution, externa) e a transação da conta também é provada
+// aqui, com a Evolution SIMULADA por um mock de fetch (nenhuma chamada de rede real).
+//
 // Só roda com SUPPORT_API_TEST_DB_URL (banco DESCARTÁVEL com migrations 023/024; guarda em
 // tests/helpers/supportTestDb.js). O snapshot vai para um diretório temporário criado e removido aqui
 // (DELETED_PROFESSIONAL_BACKUP_DIR), nunca para /var/backups. Rode uma suíte de banco por vez no mesmo banco.
@@ -18,6 +21,26 @@ let h;
 let admin;
 let snapshotDir;
 
+// ── Evolution simulada: só intercepta /instance/delete/<instância cadastrada em evo.mode>; o resto passa. ──
+const realFetch = global.fetch;
+const evo = { mode: new Map(), calls: [], onCall: null }; // mode: 'ok' | '404' | 'fail' (HTTP 500) | 'throw' (erro de rede)
+const callsOf = (name) => evo.calls.filter((c) => c === name).length;
+global.fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : (input?.url ?? String(input));
+  const m = url.match(/\/instance\/delete\/([^/?]+)/);
+  const name = m ? decodeURIComponent(m[1]) : null;
+  if (name && evo.mode.has(name)) {
+    evo.calls.push(name);
+    return (async () => {
+      if (evo.onCall) await evo.onCall(name);
+      const mode = evo.mode.get(name);
+      if (mode === 'throw') throw new TypeError('fetch failed (simulado)');
+      return new Response('{}', { status: mode === 'fail' ? 500 : mode === '404' ? 404 : 200 });
+    })();
+  }
+  return realFetch(input, init);
+};
+
 before(async () => {
   if (!dbWanted) return;
   snapshotDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nf-del-snap-'));
@@ -25,6 +48,7 @@ before(async () => {
   admin = await h.newProf({ admin: true });
 });
 after(async () => {
+  global.fetch = realFetch;
   if (h) await h.stop();
   if (snapshotDir) await fs.rm(snapshotDir, { recursive: true, force: true });
 });
@@ -40,6 +64,13 @@ const snapshotOf = async (profId) => {
   const file = path.join(snapshotDir, files[0]);
   return { file, data: JSON.parse(await fs.readFile(file, 'utf8')), mode: (await fs.stat(file)).mode & 0o777 };
 };
+async function profWithInstance(label, mode) {
+  const out = await profWithConversations(label);
+  const instance = `wa-${h.runId}-${label.toLowerCase()}`;
+  await h.pool.query('UPDATE professionals SET wa_instance_name = $2 WHERE id = $1', [out.prof.id, instance]);
+  evo.mode.set(instance, mode);
+  return { ...out, instance };
+}
 const supportCounts = async (profId) => Object.fromEntries(await Promise.all(
   ['support_tickets', 'support_messages', 'support_ticket_events'].map(async (t) =>
     [t, Number((await h.one(`SELECT count(*) AS n FROM ${t} WHERE professional_id = $1`, [profId])).n)])
@@ -158,6 +189,9 @@ test('sem a migration 023 aplicada (tabelas ausentes): prévia e exclusão funci
 test('atividade de suporte gravada entre o snapshot e a exclusão: 409, nada é apagado, e o retry inclui a mensagem nova', opts, async () => {
   const { prof, businessName, ticketIds } = await profWithConversations('Corrida');
   const before = await supportCounts(prof.id);
+  const instance = `wa-${h.runId}-corrida`;
+  await h.pool.query('UPDATE professionals SET wa_instance_name = $2 WHERE id = $1', [prof.id, instance]);
+  evo.mode.set(instance, 'ok');
 
   // Uma escrita de suporte ainda não confirmada segura o lock da solicitação; a exclusão tira o snapshot (sem
   // enxergá-la), espera esse lock e, quando a escrita confirma, vê mais linhas do que o snapshot tem.
@@ -186,9 +220,11 @@ test('atividade de suporte gravada entre o snapshot e a exclusão: 409, nada é 
   assert.equal(mid.support_messages, before.support_messages + 1);
   assert.equal(mid.support_tickets, before.support_tickets);
   assert.deepEqual(await h.auditRows('target_id = $1', [prof.id]), []);                     // sem registro de exclusão
+  assert.equal(callsOf(instance), 0);                                                       // a instância do WhatsApp NÃO foi tocada
 
   const retry = await del(prof, businessName);
   assert.equal(retry.status, 204, retry.text);
+  assert.equal(callsOf(instance), 1);
   const files = (await fs.readdir(snapshotDir)).filter((f) => f.startsWith(`professional_${prof.id}_`)).sort();
   assert.equal(files.length, 2);                                                            // o 1º snapshot (abortado) e o do retry
   const last = JSON.parse(await fs.readFile(path.join(snapshotDir, files[files.length - 1]), 'utf8'));
@@ -217,4 +253,120 @@ test('falha no meio da exclusão não deixa conversas parciais (a transação de
   assert.ok(await h.one('SELECT 1 FROM professionals WHERE id = $1', [prof.id]));
   assert.deepEqual(await supportCounts(prof.id), before);
   assert.deepEqual(await h.auditRows('target_id = $1', [prof.id]), []);
+});
+
+// ── Instância do WhatsApp (Evolution) x transação da conta ────────────────────────────────────────────────────
+const ownerRow = (id) => h.one('SELECT id, wa_instance_name FROM professionals WHERE id = $1', [id]);
+const noDeleteAudit = async (id) => assert.deepEqual(await h.auditRows(`target_id = $1 AND action = 'delete'`, [id]), []);
+
+test('com instância: a Evolution só é chamada com a exclusão já executada e ainda não confirmada; sucesso apaga conta e instância', opts, async () => {
+  const { prof, businessName, instance } = await profWithInstance('Sucesso', 'ok');
+  let seen = null;
+  evo.onCall = async () => {
+    seen = {
+      stillVisible: Boolean(await ownerRow(prof.id)),                                              // o COMMIT ainda não aconteceu
+      rowLocked: !(await h.one('SELECT 1 FROM professionals WHERE id = $1 FOR UPDATE SKIP LOCKED', [prof.id])), // a transação segura a linha
+    };
+  };
+  const r = await del(prof, businessName);
+  evo.onCall = null;
+  assert.equal(r.status, 204, r.text);
+  assert.deepEqual(seen, { stillVisible: true, rowLocked: true });
+  assert.equal(callsOf(instance), 1);
+  assert.equal(await ownerRow(prof.id), undefined);
+  assert.deepEqual(await supportCounts(prof.id), { support_tickets: 0, support_messages: 0, support_ticket_events: 0 });
+  assert.equal((await h.auditRows(`target_id = $1 AND action = 'delete'`, [prof.id])).length, 1);
+});
+
+test('falha da Evolution (HTTP 500): 502 com mensagem fiel, a conta e as conversas ficam intactas; repetir depois conclui', opts, async () => {
+  const { prof, businessName, instance } = await profWithInstance('EvoFalha', 'fail');
+  const before = await supportCounts(prof.id);
+  const r = await del(prof, businessName);
+  assert.equal(r.status, 502, r.text);
+  assert.match(r.json.error, /A conta não foi excluída/);
+  assert.equal(callsOf(instance), 1);
+  assert.equal((await ownerRow(prof.id)).wa_instance_name, instance);                              // vínculo intacto
+  assert.deepEqual(await supportCounts(prof.id), before);
+  await noDeleteAudit(prof.id);
+
+  evo.mode.set(instance, 'ok');                                                                    // a Evolution voltou
+  const retry = await del(prof, businessName);
+  assert.equal(retry.status, 204, retry.text);
+  assert.equal(callsOf(instance), 2);
+  assert.equal(await ownerRow(prof.id), undefined);
+
+  const again = await del(prof, businessName);                                                     // repetição depois de concluída
+  assert.equal(again.status, 404, again.text);
+  assert.equal(callsOf(instance), 2);                                                              // não chama a Evolution de novo
+});
+
+test('erro de rede/tempo esgotado na Evolution: mesmo tratamento (502, nada excluído); instância já inexistente (404) conta como sucesso', opts, async () => {
+  const { prof, businessName, instance } = await profWithInstance('EvoRede', 'throw');
+  const r = await del(prof, businessName);
+  assert.equal(r.status, 502, r.text);
+  assert.match(r.json.error, /A conta não foi excluída/);
+  assert.ok(await ownerRow(prof.id));
+  await noDeleteAudit(prof.id);
+
+  evo.mode.set(instance, '404');                                                                   // a instância já não existe lá
+  const retry = await del(prof, businessName);
+  assert.equal(retry.status, 204, retry.text);
+  assert.equal(await ownerRow(prof.id), undefined);
+});
+
+test('falha no banco antes da Evolution: a instância do WhatsApp NÃO é tocada e a conta fica intacta', opts, async () => {
+  const { prof, businessName, instance } = await profWithInstance('DbFalha', 'ok');
+  const before = await supportCounts(prof.id);
+  await h.pool.query(`
+    CREATE OR REPLACE FUNCTION zz_del_db_fail() RETURNS trigger LANGUAGE plpgsql AS $f$
+    BEGIN
+      IF OLD.business_name LIKE 'DbFalha%' THEN RAISE EXCEPTION 'delete bloqueado pelo teste' USING ERRCODE = 'check_violation'; END IF;
+      RETURN OLD;
+    END $f$`);
+  await h.pool.query('CREATE TRIGGER zz_del_db_fail BEFORE DELETE ON professionals FOR EACH ROW EXECUTE FUNCTION zz_del_db_fail()');
+  try {
+    const r = await del(prof, businessName);
+    assert.equal(r.status, 500, r.text);
+  } finally {
+    await h.pool.query('DROP TRIGGER IF EXISTS zz_del_db_fail ON professionals');
+    await h.pool.query('DROP FUNCTION IF EXISTS zz_del_db_fail()');
+  }
+  assert.equal(callsOf(instance), 0);
+  assert.equal((await ownerRow(prof.id)).wa_instance_name, instance);
+  assert.deepEqual(await supportCounts(prof.id), before);
+  await noDeleteAudit(prof.id);
+});
+
+test('falha no COMMIT depois de a Evolution ter removido a instância: mensagem fiel, conta intacta, repetir conclui', opts, async () => {
+  const { prof, businessName, instance } = await profWithInstance('CommitFalha', 'ok');
+  const before = await supportCounts(prof.id);
+  // Gatilho adiado (DEFERRABLE INITIALLY DEFERRED): só dispara no COMMIT, depois da chamada à Evolution.
+  await h.pool.query(`
+    CREATE OR REPLACE FUNCTION zz_del_commit_fail() RETURNS trigger LANGUAGE plpgsql AS $f$
+    BEGIN
+      IF OLD.business_name LIKE 'CommitFalha%' THEN RAISE EXCEPTION 'commit bloqueado pelo teste' USING ERRCODE = 'check_violation'; END IF;
+      RETURN OLD;
+    END $f$`);
+  await h.pool.query(`CREATE CONSTRAINT TRIGGER zz_del_commit_fail AFTER DELETE ON professionals
+                      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION zz_del_commit_fail()`);
+  try {
+    const r = await del(prof, businessName);
+    assert.equal(r.status, 503, r.text);
+    assert.match(r.json.error, /instância do WhatsApp foi removida/);
+    assert.match(r.json.error, /não foi possível confirmar a conclusão da exclusão da conta/);
+    assert.match(r.json.error, /Atualize a lista e, se a conta ainda aparecer, tente novamente/);
+    assert.doesNotMatch(r.json.error, /continua ativa|foi desfeita/);                              // não afirma o estado final
+    assert.equal(callsOf(instance), 1);
+    assert.ok(await ownerRow(prof.id));                                                            // a conta continua ativa
+    assert.deepEqual(await supportCounts(prof.id), before);
+    await noDeleteAudit(prof.id);
+  } finally {
+    await h.pool.query('DROP TRIGGER IF EXISTS zz_del_commit_fail ON professionals');
+    await h.pool.query('DROP FUNCTION IF EXISTS zz_del_commit_fail()');
+  }
+
+  evo.mode.set(instance, '404');                                                                   // a instância já foi removida
+  const retry = await del(prof, businessName);
+  assert.equal(retry.status, 204, retry.text);
+  assert.equal(await ownerRow(prof.id), undefined);
 });
