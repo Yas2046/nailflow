@@ -20,4 +20,6 @@ export interface DeletePreview {
   recurringGroups: number;
   messages: number;
   expenses: number;
+  /** Solicitações da Central de Suporte apagadas junto (0 quando a Central não está instalada). */
+  supportTickets?: number;
 }

@@ -49,3 +49,7 @@ export function IconBan({ className = 'h-5 w-5' }: P) {
 export function IconCheckCircle({ className = 'h-5 w-5' }: P) {
   return <svg {...base} className={className}><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" strokeLinejoin="round" d="m8.5 12.3 2.4 2.4 4.6-5" /></svg>;
 }
+
+export function IconLifebuoy({ className = 'h-5 w-5' }: P) {
+  return <svg {...base} className={className}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.2" /><path strokeLinecap="round" d="m6 6 3.8 3.8M18 6l-3.8 3.8M6 18l3.8-3.8M18 18l-3.8-3.8" /></svg>;
+}

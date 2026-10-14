@@ -162,7 +162,7 @@ export async function createAppointment(req, res, next) {
 // a transação segura uma conexão (com o pool esgotado isso travaria a API inteira). COMMIT em caso
 // de sucesso, ROLLBACK em qualquer exceção, e a conexão é sempre devolvida (descartada se o
 // ROLLBACK falhar).
-async function withTransaction(fn) {
+export async function withTransaction(fn) {
   const client = await pool.connect();
   let broken = false;
   try {

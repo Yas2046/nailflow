@@ -282,7 +282,11 @@ psql $DATABASE_URL -f backend/db/migrations/019_admin_audit_log.sql
 psql $DATABASE_URL -f backend/db/migrations/020_public_profile.sql
 psql $DATABASE_URL -f backend/db/migrations/021_appointment_cancel_reason_source.sql
 psql $DATABASE_URL -f backend/db/migrations/022_confirmation_modes_and_holds.sql
+psql $DATABASE_URL -f backend/db/migrations/023_support_center.sql                    # Central de Suporte (ainda nao publicada)
+psql $DATABASE_URL -f backend/db/migrations/024_audit_actions_support.sql
 ```
+
+**023/024 e a role da aplicação.** A 023 não tem `GRANT`. Em produção as migrations rodam como `postgres` (dono de `professionals`) e a aplicação conecta como `nailflow`; sem o `GRANT` as tabelas de suporte ficam inacessíveis (`permission denied`). Depois da 023, aplicar `backend/db/migrations/_ops/023_grant_app_role.sql` com `-v app_role=<role da aplicação>` (ver `docs/SUPORTE_PUBLICACAO.md`). Em bancos onde a própria role da aplicação aplica a 023 (bancos descartáveis dos testes) não é necessário.
 
 A lista acima reproduz a ordem usada para montar um banco novo (e os bancos descartáveis dos testes); em produção cada migration foi aplicada uma vez, manualmente, e as de 020 a 022 sempre depois de um backup (`/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`). O seed (`backend/db/seed.sql`) vem depois de todas.
 
@@ -305,6 +309,8 @@ A lista acima reproduz a ordem usada para montar um banco novo (e os bancos desc
 | 020 | Colunas `professionals.bio` (VARCHAR 280, apresentação da página pública) e `professionals.public_theme` (VARCHAR 20, padrão `vinho`, CHECK em `vinho`/`verde`/`azul`, independente do tema do painel). Aplicada em produção em 2026-10-02 (backup `nailflow_pre-migration-020_2026-10-02_191104.dump`) |
 | 021 | `appointments.cancel_reason` (VARCHAR 20) e `appointments.source` (VARCHAR 10, CHECK `public`/`bot` ou nulo). Aplicada em produção em 2026-10-02 (backup `nailflow_pre-migration-021_2026-10-02_210443.dump`) |
 | 022 | `022_confirmation_modes_and_holds.sql` — `professionals.confirmation_mode`, `deposit_required`, `deposit_type`, `deposit_value`, `pix_key` e CHECK `professionals_deposit_check`; `appointments.expires_at`, `deposit_cents`, `paid_at` e índice `idx_appointments_expires_at`; status ganha `aguardando_pagamento`. Aplicada em produção em 2026-10-02 (commit `cb07d38`) após backup `/var/backups/nailflow/nailflow_pre-migration-022_2026-10-02_222934.dump` |
+| 023 | `023_support_center.sql` — Central de Suporte: `support_faq_categories` (6 categorias fixas), `support_faq_articles`, `support_tickets`, `support_messages`, `support_ticket_events` (mensagens e eventos imutáveis, contador de atividade por solicitação, cursores de leitura), 5 funções de gatilho e `professionals.support_fab_hidden`. Rollback destrutivo em `db/migrations/_rollback/` |
+| 024 | `024_audit_actions_support.sql` — amplia o CHECK de `admin_audit_log.action` com `faq_create`, `faq_update`, `faq_publish`, `faq_unpublish`, `support_status` e `support_priority`. Rollback aborta se já houver auditoria com essas ações |
 
 ### Migration obsoleta: `002_bot_tables.sql`
 

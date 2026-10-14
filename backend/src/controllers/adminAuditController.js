@@ -4,12 +4,15 @@ import { HttpError } from '../middleware/errorHandler.js';
 
 // Consulta SOMENTE LEITURA do admin_audit_log (migration 019). O log guarda,
 // por ação administrativa concluída com sucesso: quem fez (actor_id/actor_email),
-// o quê (block | unblock | update | delete), em qual conta (target_id/
-// target_business_name) e quando (created_at). Nada além disso existe no
+// o quê (block | unblock | update | delete e, desde a migration 024, as ações da Central de Suporte: faq_* e
+// support_*), em qual conta/artigo (target_id/target_business_name) e quando (created_at). Nada além disso existe no
 // banco, e nada além disso é devolvido aqui.
 
 const TZ = 'America/Sao_Paulo';
-export const AUDIT_ACTIONS = ['block', 'unblock', 'update', 'delete'];
+export const SUPPORT_AUDIT_ACTIONS = ['faq_create', 'faq_update', 'faq_publish', 'faq_unpublish', 'support_status', 'support_priority'];
+export const AUDIT_ACTIONS = ['block', 'unblock', 'update', 'delete', ...SUPPORT_AUDIT_ACTIONS];
+// "suporte" não é uma ação: é o grupo com todas as ações da Central (filtro da tela de Auditoria).
+export const AUDIT_ACTION_FILTERS = [...AUDIT_ACTIONS, 'suporte'];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -26,7 +29,7 @@ const dateParam = z
 const querySchema = z.object({
   page: z.coerce.number({ invalid_type_error: 'Página inválida.' }).int('Página inválida.').min(1, 'Página inválida.').max(100000, 'Página inválida.').default(1),
   pageSize: z.coerce.number({ invalid_type_error: 'Tamanho de página inválido.' }).int('Tamanho de página inválido.').min(1, 'Tamanho de página inválido.').max(50, 'O tamanho máximo da página é 50.').default(20),
-  action: z.enum(AUDIT_ACTIONS, { errorMap: () => ({ message: 'Ação inválida.' }) }).optional(),
+  action: z.enum(AUDIT_ACTION_FILTERS, { errorMap: () => ({ message: 'Ação inválida.' }) }).optional(),
   from: dateParam.optional(),
   to: dateParam.optional(),
 });
@@ -72,7 +75,8 @@ export async function listAuditLog(req, res, next) {
 
     const where = [];
     const params = [];
-    if (action) { params.push(action); where.push(`action = $${params.length}`); }
+    if (action === 'suporte') { params.push(SUPPORT_AUDIT_ACTIONS); where.push(`action = ANY($${params.length}::text[])`); }
+    else if (action) { params.push(action); where.push(`action = $${params.length}`); }
     if (from) { params.push(from); where.push(`created_at >= ($${params.length}::date::timestamp AT TIME ZONE '${TZ}')`); }
     if (to) { params.push(to); where.push(`created_at < (($${params.length}::date + 1)::timestamp AT TIME ZONE '${TZ}')`); }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

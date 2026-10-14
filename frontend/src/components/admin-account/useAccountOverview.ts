@@ -11,7 +11,21 @@ export interface AccountMe {
   is_admin: boolean;
 }
 
-export type AuditAction = 'update' | 'block' | 'unblock' | 'delete';
+// Ações do admin_audit_log: as quatro originais e, desde a migration 024, as da Central de Suporte.
+export type AuditAction =
+  | 'update' | 'block' | 'unblock' | 'delete'
+  | 'faq_create' | 'faq_update' | 'faq_publish' | 'faq_unpublish'
+  | 'support_status' | 'support_priority';
+
+export const isSupportAudit = (a: AuditAction) => a.startsWith('faq_') || a.startsWith('support_');
+
+/** O que target_business_name guarda em cada ação: o nome do negócio da conta, o título do artigo (faq_*) ou o
+ *  nome do negócio da profissional da solicitação (support_*). Nenhum texto de conversa é registrado. */
+export function auditTargetLabel(a: AuditAction): string {
+  if (a.startsWith('faq_')) return 'Artigo da FAQ';
+  if (a.startsWith('support_')) return 'Solicitação de';
+  return 'Profissional';
+}
 
 export interface AuditItem {
   id: string;

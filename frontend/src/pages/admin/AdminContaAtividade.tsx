@@ -4,7 +4,7 @@ import AccountShell from '../../components/admin-account/AccountShell';
 import { Eyebrow, Panel, Segmented, Skeleton } from '../../components/admin-account/AccountUi';
 import { ACTIVITY_META, ActionIcon, ENTER, ErrorState, dayLabel, timeLabel } from '../../components/admin-account/AccountBlocks';
 import { useAccountActivity, type AccountActivity } from '../../components/admin-account/useAccountActivity';
-import type { AuditAction, AuditItem } from '../../components/admin-account/useAccountOverview';
+import { auditTargetLabel, isSupportAudit, type AuditAction, type AuditItem } from '../../components/admin-account/useAccountOverview';
 import { usePageTitle } from '../../hooks/usePageTitle';
 
 // Só aparece o que existe de verdade no admin_audit_log: quatro tipos de ação (edição, bloqueio,
@@ -18,15 +18,22 @@ const FIRST_PERSON: Record<AuditAction, string> = {
   block: 'Você bloqueou uma conta',
   unblock: 'Você desbloqueou uma conta',
   delete: 'Você excluiu uma conta',
+  faq_create: 'Você criou um artigo da FAQ',
+  faq_update: 'Você editou um artigo da FAQ',
+  faq_publish: 'Você publicou um artigo da FAQ',
+  faq_unpublish: 'Você despublicou um artigo da FAQ',
+  support_status: 'Você alterou o status de uma solicitação de suporte',
+  support_priority: 'Você alterou a prioridade de uma solicitação de suporte',
 };
 
-type FilterId = 'todas' | 'edicoes' | 'bloqueios' | 'exclusoes';
+type FilterId = 'todas' | 'edicoes' | 'bloqueios' | 'exclusoes' | 'suporte';
 
 const FILTERS: Array<{ id: FilterId; label: string; match: (a: AuditAction) => boolean }> = [
   { id: 'todas', label: 'Todas', match: () => true },
   { id: 'edicoes', label: 'Edições', match: (a) => a === 'update' },
   { id: 'bloqueios', label: 'Bloqueios', match: (a) => a === 'block' || a === 'unblock' },
   { id: 'exclusoes', label: 'Exclusões', match: (a) => a === 'delete' },
+  { id: 'suporte', label: 'Suporte', match: (a) => isSupportAudit(a) },
 ];
 
 // ── datas ───────────────────────────────────────────────────────────────────
@@ -100,7 +107,7 @@ function Row({ item, group }: { item: AuditItem; group: GroupId }) {
       <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${meta.tile}`}><ActionIcon action={item.action} /></span>
       <div className="min-w-0 pt-0.5">
         <p className="text-[15px] font-medium leading-snug text-ink/90">{FIRST_PERSON[item.action]}</p>
-        <p className="mt-0.5 break-words text-sm text-ink/70">Profissional · {item.targetBusinessName}</p>
+        <p className="mt-0.5 break-words text-sm text-ink/70">{auditTargetLabel(item.action)} · {item.targetBusinessName}</p>
       </div>
     </li>
   );

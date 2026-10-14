@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { api } from '../services/api';
+import { clearSupportDrafts } from '../services/supportDrafts';
 
 interface Professional {
   id: string;
@@ -40,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api.post<{ token: string; professional: Professional }>('/auth/login', { email, password });
       localStorage.setItem('nailflow_professional', JSON.stringify(data.professional));
+      // Rascunhos de outra conta (ou antigos, sem vínculo) nunca aparecem para quem acabou de entrar.
+      clearSupportDrafts(data.professional.id);
       setProfessional(data.professional);
     } finally {
       setLoading(false);
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     api.post('/auth/logout', {}).catch(() => {});
     localStorage.removeItem('nailflow_professional');
+    clearSupportDrafts();
     setProfessional(null);
   }
 

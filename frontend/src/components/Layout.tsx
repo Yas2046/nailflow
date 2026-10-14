@@ -4,6 +4,9 @@ import { api } from '../services/api';
 import type { WhatsAppInstanceConfig, WhatsAppStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from './LogoMark';
+import { SupportProvider, useSupport } from '../context/SupportContext';
+import SupportLauncher from './support/SupportLauncher';
+import { UnreadBadge } from './support/SupportUi';
 
 // ─── ícones de navegação ──────────────────────────────────────────────────────
 
@@ -84,6 +87,36 @@ const links = [
   { to: '/configuracoes', label: 'Configurações', shortLabel: 'Config',   end: false, icon: <IconSettings /> },
 ];
 
+// ─── link de ajuda ────────────────────────────────────────────────────────────
+// Só aponta para /suporte quando o bootstrap informa que a Central está ligada; senão segue no guia (/ajuda).
+
+function HelpLink({ variant }: { variant: 'sidebar' | 'mobile' }) {
+  const { enabled, unreadTickets } = useSupport();
+  const to = enabled ? '/suporte' : '/ajuda';
+  if (variant === 'mobile') {
+    return (
+      <Link
+        to={to}
+        aria-label={enabled ? 'Ajuda e suporte' : 'Ajuda: guia rápido'}
+        className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-cream/40 text-cream/90 hover:text-white hover:border-white text-xs font-medium leading-none"
+      >
+        Ajuda
+        {enabled && <UnreadBadge count={unreadTickets} />}
+      </Link>
+    );
+  }
+  return (
+    <Link
+      to={to}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-wine-100/70 hover:bg-white/10 hover:text-white transition-all"
+    >
+      <span className="shrink-0 opacity-70 w-5 h-5 rounded-full border border-current flex items-center justify-center text-[11px] font-semibold leading-none" aria-hidden="true">?</span>
+      {enabled ? 'Ajuda e suporte' : 'Ajuda'}
+      {enabled && <UnreadBadge count={unreadTickets} className="ml-auto" />}
+    </Link>
+  );
+}
+
 // ─── layout ───────────────────────────────────────────────────────────────────
 
 export default function Layout() {
@@ -110,6 +143,7 @@ export default function Layout() {
   const initial = (professional.name || professional.businessName || '?')[0].toUpperCase();
 
   return (
+    <SupportProvider>
     <div className="min-h-screen flex flex-col md:flex-row">
 
       {/* ── sidebar desktop ────────────────────────────────────────────────── */}
@@ -158,13 +192,7 @@ export default function Layout() {
 
         {/* ajuda / guia rápido */}
         <div className="px-3 pb-3">
-          <Link
-            to="/ajuda"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-wine-100/70 hover:bg-white/10 hover:text-white transition-all"
-          >
-            <span className="shrink-0 opacity-70 w-5 h-5 rounded-full border border-current flex items-center justify-center text-[11px] font-semibold leading-none" aria-hidden="true">?</span>
-            Ajuda
-          </Link>
+          <HelpLink variant="sidebar" />
         </div>
 
         {/* badge WhatsApp desconectado */}
@@ -205,13 +233,7 @@ export default function Layout() {
             <span title="WhatsApp desconectado" className="w-2 h-2 rounded-full bg-rose-400 animate-pulse shrink-0" />
           )}
           <p className="font-display text-xs italic text-cream/80 truncate max-w-[120px]">{professional.businessName}</p>
-          <Link
-            to="/ajuda"
-            aria-label="Ajuda: guia rápido"
-            className="shrink-0 px-2.5 py-1 rounded-full border border-cream/40 text-cream/90 hover:text-white hover:border-white text-xs font-medium leading-none"
-          >
-            Ajuda
-          </Link>
+          <HelpLink variant="mobile" />
         </div>
       </div>
 
@@ -251,6 +273,9 @@ export default function Layout() {
         ))}
       </nav>
 
+      <SupportLauncher />
+
     </div>
+    </SupportProvider>
   );
 }

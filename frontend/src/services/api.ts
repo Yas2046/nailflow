@@ -1,3 +1,5 @@
+import { clearSupportDrafts } from './supportDrafts';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
 
 /**
@@ -37,6 +39,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     if (res.status === 401 && path !== '/auth/login') {
       localStorage.removeItem('nailflow_professional');
+      clearSupportDrafts();
       window.location.href = '/login';
       return new Promise(() => {}) as Promise<T>;
     }

@@ -6,6 +6,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { updateMeSchema } from './authController.js';
 import { deleteEvolutionInstanceByName } from './whatsappController.js';
 import { logAdminAction } from '../utils/auditLog.js';
+import { pruneSnapshots } from '../utils/snapshotRetention.js';
 
 export async function listProfessionals(req, res, next) {
   try {
@@ -145,14 +146,36 @@ const CASCADED_TABLES = [
   'recurring_groups', 'recurring_exceptions', 'expenses', 'conversation_states', 'message_history',
 ];
 
+// Central de Suporte (migration 023): solicitações, mensagens e eventos também caem em cascade (FK composta,
+// ON DELETE CASCADE) e têm professional_id. Só entram no snapshot/contagem quando as três tabelas existem:
+// em bancos sem a migration 023 aplicada a exclusão continua funcionando exatamente como antes.
+const SUPPORT_TABLES = ['support_tickets', 'support_messages', 'support_ticket_events'];
+
+async function supportTablesPresent(db) {
+  const { rows } = await db.query(
+    `SELECT to_regclass('public.support_tickets') IS NOT NULL
+        AND to_regclass('public.support_messages') IS NOT NULL
+        AND to_regclass('public.support_ticket_events') IS NOT NULL AS present`
+  );
+  return rows[0].present === true;
+}
+
+async function supportCounts(db, professionalId) {
+  const counts = {};
+  for (const table of SUPPORT_TABLES) {
+    const { rows } = await db.query(`SELECT count(*)::int AS n FROM ${table} WHERE professional_id = $1`, [professionalId]);
+    counts[table] = rows[0].n;
+  }
+  return counts;
+}
+
 const SNAPSHOT_DIR = process.env.DELETED_PROFESSIONAL_BACKUP_DIR || '/var/backups/nailflow/deleted-professionals';
-const SNAPSHOT_RETENTION_DAYS = 90;
 
 // Cópia de segurança operacional, gravada ANTES de qualquer exclusão física.
 // Fica fora de /var/www (nunca é servida pela aplicação -- nenhuma rota lê
-// esse diretório), com permissão 600 no arquivo e 700 no diretório, e uma
-// retenção de 90 dias podada a cada nova exclusão (arquivos mais antigos são
-// removidos aqui mesmo, sem depender de cron externo).
+// esse diretório), com permissão 600 no arquivo e 700 no diretório. Retenção:
+// SNAPSHOT_RETENTION_DAYS (30 dias, utils/snapshotRetention.js), podada a cada
+// nova exclusão e pela rotina por tempo scripts/prune-deleted-snapshots.js.
 async function writeProfessionalSnapshot(professionalId) {
   await fs.mkdir(SNAPSHOT_DIR, { recursive: true, mode: 0o700 });
   await fs.chmod(SNAPSHOT_DIR, 0o700).catch(() => {});
@@ -165,7 +188,8 @@ async function writeProfessionalSnapshot(professionalId) {
   if (professionalRow) delete professionalRow.password_hash; // nunca persistir hash de senha no snapshot
 
   const data = { snapshotTakenAt: new Date().toISOString(), professional: professionalRow };
-  for (const table of CASCADED_TABLES) {
+  const withSupport = await supportTablesPresent(pool);
+  for (const table of withSupport ? [...CASCADED_TABLES, ...SUPPORT_TABLES] : CASCADED_TABLES) {
     const { rows } = await pool.query(`SELECT * FROM ${table} WHERE professional_id = $1`, [professionalId]);
     data[table] = rows;
   }
@@ -175,16 +199,17 @@ async function writeProfessionalSnapshot(professionalId) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
   await fs.chmod(filePath, 0o600).catch(() => {});
 
-  const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  const entries = await fs.readdir(SNAPSHOT_DIR).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.startsWith('professional_') || !entry.endsWith('.json')) continue;
-    const entryPath = path.join(SNAPSHOT_DIR, entry);
-    const stat = await fs.stat(entryPath).catch(() => null);
-    if (stat && stat.mtimeMs < cutoff) await fs.unlink(entryPath).catch(() => {});
-  }
+  // Poda por idade (SNAPSHOT_RETENTION_DAYS) também a cada exclusão. Só arquivos com o nome exato gerado acima e
+  // que não estejam no .retention-hold; a rotina por tempo (scripts/prune-deleted-snapshots.js) cobre o caso de
+  // não haver exclusões. Uma falha de poda nunca impede a exclusão.
+  await pruneSnapshots(SNAPSHOT_DIR, { apply: true }).catch(() => {});
 
-  return filePath;
+  // Contagens de suporte no momento do snapshot (null = banco sem a migration 023): a exclusão confere que
+  // nada novo foi gravado depois delas, para nenhuma conversa ser apagada sem estar no snapshot.
+  const snapshotSupportCounts = withSupport
+    ? Object.fromEntries(SUPPORT_TABLES.map((t) => [t, data[t].length]))
+    : null;
+  return { filePath, supportCounts: snapshotSupportCounts };
 }
 
 // GET /admin/professionals/:id/delete-preview
@@ -202,7 +227,11 @@ export async function getDeleteProfessionalPreview(req, res, next) {
          (SELECT count(*)::int FROM expenses WHERE professional_id = $1) AS expenses`,
       [id]
     );
-    res.json(rows[0]);
+    // Solicitações da Central de Suporte que seriam apagadas junto (0 quando a migration 023 não está aplicada).
+    const supportTickets = (await supportTablesPresent(pool))
+      ? (await supportCounts(pool, id)).support_tickets
+      : 0;
+    res.json({ ...rows[0], supportTickets });
   } catch (err) {
     next(err);
   }
@@ -214,9 +243,16 @@ const deleteProfessionalSchema = z.object({
 
 // DELETE /admin/professionals/:id
 // Exclusão física e definitiva: profissional + tudo que o ON DELETE CASCADE
-// alcança (ver migration 017). Ordem: 1) snapshot em disco, 2) excluir
-// instância na Evolution SE houver (chamada externa, fora da transação SQL
-// -- se falhar, aborta e não mexe no banco), 3) DELETE em transação.
+// alcança (ver migration 017). Ordem: 1) snapshot em disco, 2) transação: confere
+// o suporte e executa o DELETE, 3) por ÚLTIMO, ainda dentro da transação, exclui
+// a instância na Evolution SE houver, 4) COMMIT.
+// A Evolution é externa e irreversível, e não é atômica com o PostgreSQL. Por isso
+// a chamada externa só acontece depois de tudo o que pode falhar no banco (conferências
+// e DELETE) e imediatamente antes do COMMIT: se a Evolution falhar, a transação é
+// desfeita e a conta continua intacta; a única janela restante é uma falha do próprio
+// COMMIT depois de a instância já ter sido removida (tratada abaixo com mensagem fiel).
+// Repetir a exclusão é seguro: a Evolution devolve 404 para instância inexistente, e
+// isso conta como sucesso.
 export async function deleteProfessional(req, res, next) {
   try {
     const { id } = req.params;
@@ -247,26 +283,59 @@ export async function deleteProfessional(req, res, next) {
     }
 
     // 1) Rede de segurança operacional -- antes de qualquer exclusão.
-    await writeProfessionalSnapshot(id);
+    const { supportCounts: snapshotSupport } = await writeProfessionalSnapshot(id);
 
-    // 2) Evolution é externa ao Postgres: resolve antes de abrir a transação.
-    //    Se falhar, aborta aqui -- a profissional NÃO é excluída do banco.
-    if (target.wa_instance_name) {
-      const deleted = await deleteEvolutionInstanceByName(target.wa_instance_name);
-      if (!deleted) {
-        throw new HttpError(502, 'Falha ao excluir a instância do WhatsApp na Evolution. A profissional não foi excluída.');
-      }
-    }
-
-    // 3) Exclusão física em transação. Os CASCADEs (migration 017) apagam
+    // 2) Exclusão física em transação. Os CASCADEs (migration 017) apagam
     //    clients/appointments/services/... na mesma operação.
+    let instanceRemoved = false;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('DELETE FROM professionals WHERE id = $1', [id]);
+      if (snapshotSupport) {
+        // Trava as solicitações e depois a conta (mesma ordem de quem grava mensagem: solicitação -> conta),
+        // o que impede novas atividades de suporte até o COMMIT, e confere que nada novo foi gravado depois do
+        // snapshot. Se foi, aborta sem excluir: nenhuma conversa é apagada fora do snapshot.
+        await client.query('SELECT id FROM support_tickets WHERE professional_id = $1 FOR UPDATE', [id]);
+        await client.query('SELECT id FROM professionals WHERE id = $1 FOR UPDATE', [id]);
+        const now = await supportCounts(client, id);
+        if (SUPPORT_TABLES.some((t) => now[t] > snapshotSupport[t])) {
+          throw new HttpError(409, 'Houve atividade de suporte nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
+        }
+      }
+      // O nome da instância vem da própria linha apagada (travada por esta transação), não de uma leitura anterior.
+      const { rows: deletedRows } = await client.query(
+        'DELETE FROM professionals WHERE id = $1 RETURNING wa_instance_name',
+        [id]
+      );
+
+      // 3) Evolution por último, ainda antes do COMMIT. Falha (ou exceção de rede/tempo esgotado) => ROLLBACK:
+      //    a conta fica como estava. 404 (instância já inexistente) conta como sucesso.
+      const instanceName = deletedRows[0]?.wa_instance_name ?? null;
+      if (instanceName) {
+        let removed = false;
+        try {
+          removed = await deleteEvolutionInstanceByName(instanceName);
+        } catch {
+          removed = false;
+        }
+        if (!removed) {
+          throw new HttpError(502, 'Falha ao excluir a instância do WhatsApp na Evolution. A conta não foi excluída; tente novamente.');
+        }
+        instanceRemoved = true;
+      }
+
+      // 4) COMMIT.
       await client.query('COMMIT');
     } catch (err) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
+      if (instanceRemoved) {
+        // A instância já saiu da Evolution e o COMMIT não foi confirmado. Uma falha de conexão no COMMIT pode ter
+        // deixado o resultado no banco indeterminado: a mensagem não afirma o estado final da conta.
+        throw new HttpError(
+          503,
+          'A instância do WhatsApp foi removida, mas não foi possível confirmar a conclusão da exclusão da conta. Atualize a lista e, se a conta ainda aparecer, tente novamente.'
+        );
+      }
       throw err;
     } finally {
       client.release();

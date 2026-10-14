@@ -3,11 +3,13 @@ import { Outlet, Navigate, NavLink, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { AdminShellContext } from './adminShell';
-import { IconClipboard, IconHome, IconLogout, IconUser, IconUsers } from './AdminIcons';
+import { IconClipboard, IconHome, IconLifebuoy, IconLogout, IconUser, IconUsers } from './AdminIcons';
+import { useAdminSupportSummary } from './support/useAdminSupport';
+import { UnreadBadge } from './support/SupportUi';
 import { StatusDot } from './admin-account/AccountUi';
 import LogoMark from './LogoMark';
 
-interface NavItem { to: string; label: string; short: string; icon: ReactNode; end: boolean }
+interface NavItem { to: string; label: string; short: string; icon: ReactNode; end: boolean; badge?: number }
 
 // Duas áreas: gestão da plataforma e a conta de quem administra.
 const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
@@ -24,12 +26,17 @@ const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
     items: [{ to: '/admin/conta', label: 'Central da conta', short: 'Conta', icon: <IconUser />, end: false }],
   },
 ];
-const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+// "Suporte" só entra na navegação quando a Central está ligada (GET /admin/support/summary respondeu 200).
+const supportItem = (unread: number): NavItem => ({ to: '/admin/suporte', label: 'Suporte', short: 'Suporte', icon: <IconLifebuoy />, end: false, badge: unread });
+const withSupport = (enabled: boolean, unread: number) =>
+  NAV_GROUPS.map((g) => (g.title === 'Gestão' && enabled ? { ...g, items: [g.items[0], g.items[1], supportItem(unread), ...g.items.slice(2)] } : g));
 
 const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400';
 
 // Trilha da barra superior, derivada da rota (nenhum dado novo).
 const CRUMBS: Array<[string, string[]]> = [
+  ['/admin/suporte/faq', ['Suporte', 'FAQ']],
+  ['/admin/suporte', ['Suporte', 'Solicitações']],
   ['/admin/conta/perfil', ['Conta', 'Perfil']],
   ['/admin/conta/seguranca', ['Conta', 'Segurança']],
   ['/admin/conta/atividade', ['Conta', 'Atividade']],
@@ -70,6 +77,7 @@ export default function AdminLayout() {
   const mainRef = useRef<HTMLElement>(null);
   const firstRender = useRef(true);
   const apiStatus = useApiStatus(!!professional?.isAdmin);
+  const support = useAdminSupportSummary(!!professional?.isAdmin);
 
   // foto da administradora no menu (dado real de GET /auth/me; sem foto, aparecem as iniciais)
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -88,6 +96,8 @@ export default function AdminLayout() {
   if (!professional.isAdmin) return <Navigate to="/" replace />;
 
   const initial = (professional.name?.trim()[0] ?? 'A').toUpperCase();
+  const groups = withSupport(support.enabled, support.summary?.naoLidas ?? 0);
+  const allItems = groups.flatMap((g) => g.items);
   const crumbs = crumbsFor(pathname);
 
   const avatarBubble = (size: string) => (
@@ -126,7 +136,7 @@ export default function AdminLayout() {
         </div>
 
         <nav aria-label="Navegação administrativa" className="flex-1 space-y-7 overflow-y-auto px-3 py-2">
-          {NAV_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.title}>
               <p className="mb-2 px-3 font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#8F847D]">{group.title}</p>
               <ul className="space-y-0.5">
@@ -146,6 +156,7 @@ export default function AdminLayout() {
                           {isActive && <span className="absolute -left-3 top-2 bottom-2 w-[3px] rounded-r bg-gold-400" aria-hidden="true" />}
                           <span className={isActive ? 'text-gold-300' : 'text-[#8F847D]'}>{item.icon}</span>
                           {item.label}
+                          {item.badge ? <UnreadBadge count={item.badge} className="ml-auto" /> : null}
                         </>
                       )}
                     </NavLink>
@@ -225,7 +236,7 @@ export default function AdminLayout() {
           tabIndex={-1}
           className="relative px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-7 focus:outline-none sm:px-8 sm:pt-9 lg:pb-14 xl:px-12"
         >
-          <Outlet context={{ setAvatar } satisfies AdminShellContext} />
+          <Outlet context={{ setAvatar, support: { enabled: support.enabled, checked: support.checked, summary: support.summary, refresh: () => { void support.refresh(); } } } satisfies AdminShellContext} />
         </main>
       </div>
 
@@ -234,8 +245,8 @@ export default function AdminLayout() {
         aria-label="Navegação administrativa"
         className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-night-950/95 pb-[env(safe-area-inset-bottom)] text-cream backdrop-blur lg:hidden"
       >
-        <ul className="mx-auto grid max-w-lg grid-cols-4 px-2">
-          {ALL_ITEMS.map((item) => (
+        <ul className={`mx-auto grid max-w-lg px-2 ${allItems.length > 4 ? 'grid-cols-5' : 'grid-cols-4'}`}>
+          {allItems.map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}
@@ -249,7 +260,10 @@ export default function AdminLayout() {
                 {({ isActive }) => (
                   <>
                     {isActive && <span className="absolute inset-x-6 top-0 h-[3px] rounded-b bg-gold-400" aria-hidden="true" />}
-                    <span className={isActive ? 'text-gold-300' : ''}>{item.icon}</span>
+                    <span className={`relative ${isActive ? 'text-gold-300' : ''}`}>
+                      {item.icon}
+                      {item.badge ? <UnreadBadge count={item.badge} className="absolute -right-3 -top-1.5 !min-w-[1.1rem] !px-1 !text-[10px] !leading-[1.1rem]" /> : null}
+                    </span>
                     {item.short}
                   </>
                 )}

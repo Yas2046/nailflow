@@ -1,0 +1,29 @@
+# Rotação dos logs do PM2 (nailflow-backend, n8n). Retenção: 14 dias.
+# NÃO instalado: copiar para /etc/logrotate.d/nailflow-pm2 só com autorização (ops/README.md).
+# copytruncate: o PM2 mantém o arquivo aberto; sem reiniciar o processo. Pode perder linhas escritas entre a cópia e o
+# truncamento (aceitável para logs de diagnóstico). Os logs do backend não devem conter texto de mensagens (ver
+# src/middleware/errorHandler.js); os do n8n estão fora do escopo da Central, mas seguem a mesma rotação.
+/root/.pm2/logs/*.log {
+    daily
+    rotate 14
+    maxage 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root root
+}
+
+# Log das rotinas de retenção (só contagens): ver ops/cron/support-retention.cron.example.
+/var/log/nailflow-support-retention.log {
+    daily
+    rotate 14
+    maxage 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root root
+}

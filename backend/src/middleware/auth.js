@@ -34,7 +34,7 @@ export async function requireAuth(req, res, next) {
 
   try {
     const { rows } = await pool.query(
-      'SELECT blocked_at, token_version FROM professionals WHERE id = $1',
+      'SELECT blocked_at, token_version, is_admin FROM professionals WHERE id = $1',
       [payload.sub]
     );
     const professional = rows[0];
@@ -43,6 +43,7 @@ export async function requireAuth(req, res, next) {
     }
     req.professionalId = payload.sub;
     req.tokenVersion = professional.token_version; // usado por troca de senha / sair de todos
+    req.isAdmin = professional.is_admin === true; // usado por rotas que recusam contas administradoras (/support)
     next();
   } catch (err) {
     next(err);

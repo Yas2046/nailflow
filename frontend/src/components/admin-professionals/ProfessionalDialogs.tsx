@@ -174,6 +174,7 @@ export function DeleteProfessionalDialog({
           <li>{preview.recurringGroups} recorrência(s)</li>
           <li>{preview.messages} mensagem(ns) de WhatsApp</li>
           <li>{preview.expenses} despesa(s)</li>
+          {(preview.supportTickets ?? 0) > 0 && <li>{preview.supportTickets} solicitação(ões) de suporte, com todas as mensagens</li>}
         </ul>
       ) : null}
 

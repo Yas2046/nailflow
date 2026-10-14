@@ -26,6 +26,13 @@ import AdminContaAtividade from './pages/admin/AdminContaAtividade';
 import Ajuda from './pages/Ajuda';
 import AjudaPasso from './pages/AjudaPasso';
 import AjudaImprimir from './pages/AjudaImprimir';
+import SuporteHub from './pages/suporte/SuporteHub';
+import SuporteSolicitacoes from './pages/suporte/SuporteSolicitacoes';
+import SuporteNova from './pages/suporte/SuporteNova';
+import SuporteConversa from './pages/suporte/SuporteConversa';
+import AdminSuporte from './pages/admin/AdminSuporte';
+import AdminSuporteFaq from './pages/admin/AdminSuporteFaq';
+import AdminSuporteAtendimento from './pages/admin/AdminSuporteAtendimento';
 
 export default function App() {
   return (
@@ -49,6 +56,10 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/profissionais" element={<AdminProfissionais />} />
             <Route path="/admin/auditoria" element={<AdminAuditoria />} />
+            {/* Central de Suporte (as telas se escondem quando GET /admin/support/summary responde 404) */}
+            <Route path="/admin/suporte" element={<AdminSuporte />} />
+            <Route path="/admin/suporte/faq" element={<AdminSuporteFaq />} />
+            <Route path="/admin/suporte/:id" element={<AdminSuporteAtendimento />} />
             <Route path="/admin/conta" element={<AdminContaVisaoGeral />} />
             <Route path="/admin/conta/perfil" element={<AdminContaPerfil />} />
             <Route path="/admin/conta/seguranca" element={<AdminContaSeguranca />} />
@@ -66,6 +77,11 @@ export default function App() {
             <Route path="/disponibilidade" element={<Disponibilidade />} />
             <Route path="/perfil" element={<Perfil />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
+            {/* Central de Suporte (cada tela mostra "indisponível" quando o bootstrap informa que está desligada) */}
+            <Route path="/suporte" element={<SuporteHub />} />
+            <Route path="/suporte/solicitacoes" element={<SuporteSolicitacoes />} />
+            <Route path="/suporte/solicitacoes/nova" element={<SuporteNova />} />
+            <Route path="/suporte/solicitacoes/:id" element={<SuporteConversa />} />
           </Route>
         </Routes>
       </AuthProvider>

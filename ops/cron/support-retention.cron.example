@@ -1,0 +1,26 @@
+# EXEMPLO. NÃO instalado. Formato de /etc/cron.d (6º campo = usuário). Instalar só com autorização e depois de
+# aprovada a política (docs/SUPORTE_PRIVACIDADE_RETENCAO.md):
+#   install -m 644 -o root -g root ops/cron/support-retention.cron.example /etc/cron.d/nailflow-support-retention
+# (o nome do arquivo em /etc/cron.d não pode ter ponto nem til; o cron ignora esses nomes.)
+#
+# Todos os comandos usam caminhos ABSOLUTOS (o cron roda com ambiente mínimo; o PATH abaixo é só reserva) e começam
+# com `flock -n`: se uma execução anterior ainda estiver rodando, esta é pulada em vez de acumular. O redirecionamento
+# para o log é feito pelo root (o shell do cron roda como root), nunca pelo postgres. Em caso de falha (psql ou node
+# saem com código diferente de zero), uma linha FALHA é anexada ao log; nada é apagado pela metade (o SQL roda numa
+# única transação) e a rotina tenta de novo no dia seguinte. `flock -n -E 0`: se a execução anterior ainda estiver
+# rodando, esta é pulada em silêncio (sem erro). O log só recebe contagens, sem dados pessoais.
+# Os caminhos de /var/www/nailflow só existem depois do deploy desta versão.
+# Horários longe do backup das 03:00.
+SHELL=/bin/sh
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+# 1) Chamados resolvidos há mais de 6 meses (como postgres, pelo socket local). Diário, 04:30.
+30 4 * * * root /usr/bin/flock -n -E 0 /run/lock/nailflow-support-retention.lock /usr/sbin/runuser -u postgres -- /usr/bin/psql -d nailflow -X -v ON_ERROR_STOP=1 -f /var/www/nailflow/backend/db/migrations/_ops/support_retention.sql >> /var/log/nailflow-support-retention.log 2>&1 || echo "FALHA support_retention (chamados) rc=$? $(/bin/date -Is)" >> /var/log/nailflow-support-retention.log
+
+# 2) Snapshots de exclusão de conta com mais de 30 dias (como root; sem --apply só simula). Diário, 04:40.
+#    Respeita .retention-hold. Só ativar depois de proteger os snapshots existentes (ver ops/README.md).
+40 4 * * * root /usr/bin/flock -n -E 0 /run/lock/nailflow-snapshot-prune.lock /usr/bin/node /var/www/nailflow/backend/scripts/prune-deleted-snapshots.js --apply >> /var/log/nailflow-support-retention.log 2>&1 || echo "FALHA prune-deleted-snapshots rc=$? $(/bin/date -Is)" >> /var/log/nailflow-support-retention.log
+
+# 3) Auditoria (anonimizar >12 meses, apagar >36 meses): DESLIGADA. Só depois da validação de privacidade, SUBSTITUINDO
+#    a linha 1 por esta (a mesma linha com `-v audit_enabled=on`; não manter as duas):
+# 30 4 * * * root /usr/bin/flock -n -E 0 /run/lock/nailflow-support-retention.lock /usr/sbin/runuser -u postgres -- /usr/bin/psql -d nailflow -X -v ON_ERROR_STOP=1 -v audit_enabled=on -f /var/www/nailflow/backend/db/migrations/_ops/support_retention.sql >> /var/log/nailflow-support-retention.log 2>&1 || echo "FALHA support_retention (chamados+auditoria) rc=$? $(/bin/date -Is)" >> /var/log/nailflow-support-retention.log

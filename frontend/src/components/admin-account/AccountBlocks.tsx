@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Eyebrow, Panel, StatusDot, type BadgeTone } from './AccountUi';
-import type { AuditAction, AuditItem } from './useAccountOverview';
+import { auditTargetLabel, type AuditAction, type AuditItem } from './useAccountOverview';
 
 // Entrada suave das seções (respeita "reduzir movimento"); o atraso escalona a leitura.
 export const ENTER = 'motion-safe:animate-fade-in-up [animation-fill-mode:backwards]';
@@ -40,6 +40,12 @@ export const ACTIVITY_META: Record<AuditAction, { title: string; label: string; 
   block: { title: 'Conta bloqueada', label: 'Bloqueio', tone: 'danger', ring: 'border-rose-500', tile: 'bg-rose-50 text-rose-600' },
   unblock: { title: 'Conta desbloqueada', label: 'Desbloqueio', tone: 'ok', ring: 'border-sage-500', tile: 'bg-sage-100 text-sage-700' },
   delete: { title: 'Conta excluída', label: 'Exclusão', tone: 'danger', ring: 'border-rose-600', tile: 'bg-rose-100 text-rose-700' },
+  faq_create: { title: 'Artigo da FAQ criado', label: 'FAQ criado', tone: 'info', ring: 'border-wine-500', tile: 'bg-wine-50 text-wine-600' },
+  faq_update: { title: 'Artigo da FAQ editado', label: 'FAQ editado', tone: 'info', ring: 'border-wine-500', tile: 'bg-wine-50 text-wine-600' },
+  faq_publish: { title: 'Artigo da FAQ publicado', label: 'FAQ publicado', tone: 'ok', ring: 'border-sage-500', tile: 'bg-sage-100 text-sage-700' },
+  faq_unpublish: { title: 'Artigo da FAQ despublicado', label: 'FAQ despublicado', tone: 'warn', ring: 'border-gold-500', tile: 'bg-gold-300/30 text-gold-700' },
+  support_status: { title: 'Status de solicitação alterado', label: 'Status do suporte', tone: 'info', ring: 'border-wine-500', tile: 'bg-wine-50 text-wine-600' },
+  support_priority: { title: 'Prioridade de solicitação alterada', label: 'Prioridade do suporte', tone: 'warn', ring: 'border-gold-500', tile: 'bg-gold-300/30 text-gold-700' },
 };
 
 const aiProps = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, viewBox: '0 0 24 24', 'aria-hidden': true } as const;
@@ -54,6 +60,15 @@ export function ActionIcon({ action, className = 'h-[18px] w-[18px]' }: { action
       return <svg {...aiProps} className={className}><rect x="5" y="11" width="14" height="9" rx="2" /><path strokeLinecap="round" d="M8 11V8a4 4 0 0 1 7.5-1.9" /></svg>;
     case 'delete':
       return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M5 7h14M10 7V4h4v3m-7 0 1 13h8l1-13M10 11v6m4-6v6" /></svg>;
+    case 'faq_create':
+    case 'faq_update':
+    case 'faq_publish':
+    case 'faq_unpublish':
+      return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l4 4v14H7V3Zm7 0v4h4M10 12h5M10 16h5" /></svg>;
+    case 'support_status':
+      return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16v11H9l-5 4V5Zm5 4h6M9 12h4" /></svg>;
+    case 'support_priority':
+      return <svg {...aiProps} className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6 21V4m0 1h11l-2.5 4L17 13H6" /></svg>;
   }
 }
 
@@ -90,7 +105,7 @@ export function ActivityItemRow({ item, last }: { item: AuditItem; last: boolean
       <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><ActionIcon action={item.action} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-medium leading-snug text-ink/90">{meta.title}</p>
-        <p className="mt-0.5 truncate text-sm text-ink/65">Profissional · {item.targetBusinessName}</p>
+        <p className="mt-0.5 truncate text-sm text-ink/65">{auditTargetLabel(item.action)} · {item.targetBusinessName}</p>
       </div>
       <p className="shrink-0 text-right font-mono text-xs leading-5 text-ink/65">
         <span className="block font-medium text-ink/80">{dayLabel(item.createdAt)}</span>

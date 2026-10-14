@@ -217,7 +217,8 @@ export async function createEvolutionInstance(req, res, next) {
 // Reaproveitada pelo self-service abaixo e pela exclusão administrativa de
 // profissional inteira (adminController.deleteProfessional).
 export async function deleteEvolutionInstanceByName(instanceName) {
-  const deleteResp = await evolutionFetch(`/instance/delete/${instanceName}`, { method: 'DELETE' });
+  // Tempo limite: a exclusão administrativa de conta chama isto com uma transação aberta e não pode ficar pendurada.
+  const deleteResp = await evolutionFetch(`/instance/delete/${instanceName}`, { method: 'DELETE', signal: AbortSignal.timeout(15_000) });
   return deleteResp.ok || deleteResp.status === 404;
 }
 
