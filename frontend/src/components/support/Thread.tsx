@@ -3,10 +3,10 @@ import { ApiError } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { readSupportDraft, writeSupportDraft } from '../../services/supportDrafts';
 import {
-  BODY_MAX, charCount, eventText, fmtDateTime, newId,
+  BODY_MAX, charCount, dayKey, dayLabel, eventText, fmtTime, newId,
   type SupportEvent, type SupportMessage, type SupportRole,
 } from '../../services/support';
-import { CharCounter, Notice } from './SupportUi';
+import { Avatar, CharCounter, Notice } from './SupportUi';
 
 type Item =
   | { kind: 'message'; seq: number; id: string; message: SupportMessage }
@@ -61,15 +61,28 @@ export function Thread({
         </div>
       )}
       <ol role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversa" className="space-y-3">
-        {items.map((it) => {
+        {items.map((it, idx) => {
+          const at = it.kind === 'event' ? it.event.createdAt : it.message.createdAt;
+          const prev = idx > 0 ? items[idx - 1] : null;
+          const prevAt = prev ? (prev.kind === 'event' ? prev.event.createdAt : prev.message.createdAt) : null;
+          const newDay = !prevAt || dayKey(prevAt) !== dayKey(at);
+          const separator = newDay ? (
+            <li key={`d-${it.id}`} className="flex items-center gap-3 pt-3 first:pt-0" aria-hidden="true">
+              <span className="h-px flex-1 bg-wine-100" />
+              <span className="rounded-full bg-white px-3 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink/50 ring-1 ring-inset ring-wine-100">{dayLabel(at)}</span>
+              <span className="h-px flex-1 bg-wine-100" />
+            </li>
+          ) : null;
+
           if (it.kind === 'event') {
-            return (
+            return [
+              separator,
               <li key={it.id} className="flex justify-center">
                 <p className="rounded-full bg-wine-50 px-3 py-1 text-center text-xs text-ink/65">
-                  {eventText(it.event, viewer)} · {fmtDateTime(it.event.createdAt)}
+                  {eventText(it.event, viewer)} · {fmtTime(it.event.createdAt)}
                 </p>
-              </li>
-            );
+              </li>,
+            ];
           }
           const m = it.message;
           const mine = viewer === 'professional'
@@ -78,15 +91,18 @@ export function Thread({
           const who = viewer === 'professional'
             ? (mine ? 'Você' : 'Equipe NailFlow')
             : (m.authorRole === 'professional' ? (professionalName ?? 'Profissional') : (mine ? 'Você' : 'Equipe NailFlow'));
-          return (
-            <li key={it.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[88%] rounded-2xl px-4 py-2.5 sm:max-w-[75%] ${mine ? 'bg-wine-600 text-white' : 'border border-wine-100 bg-white text-ink/90'}`}>
+          const fromTeam = m.authorRole === 'admin';
+          return [
+            separator,
+            <li key={it.id} className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
+              {!mine && <Avatar name={who} tone={fromTeam ? 'gold' : 'wine'} />}
+              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[75%] ${mine ? 'rounded-br-md bg-wine-600 text-white' : 'rounded-bl-md border border-wine-100 bg-white text-ink/90'}`}>
                 <p className={`mb-0.5 text-[11px] font-semibold uppercase tracking-wide ${mine ? 'text-white/75' : 'text-wine-600'}`}>{who}</p>
                 <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{m.body}</p>
-                <p className={`mt-1 text-right text-[11px] ${mine ? 'text-white/70' : 'text-ink/50'}`}>{fmtDateTime(m.createdAt)}</p>
+                <p className={`mt-1 text-right text-[11px] ${mine ? 'text-white/70' : 'text-ink/50'}`}>{fmtTime(m.createdAt)}</p>
               </div>
-            </li>
-          );
+            </li>,
+          ];
         })}
       </ol>
       <div ref={endRef} />

@@ -5,10 +5,11 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useVisiblePolling } from '../../hooks/useVisiblePolling';
 import { useSupport } from '../../context/SupportContext';
 import {
-  STATUSES, categoryTitle, fmtDate, fmtShort, statusLabel, supportApi, ticketCode,
+  STATUSES, categoryTitle, fmtDate, fmtShort, relativeTime, statusLabel, supportApi, ticketCode,
   type Paged, type SupportStatus, type SupportTicket,
 } from '../../services/support';
-import { EmptyBox, ErrorBox, LoadingList, Pager, StatusPill, UnreadDot, Unavailable } from '../../components/support/SupportUi';
+import { EmptyBox, ErrorBox, IconBubble, LoadingList, Pager, StatusPill, UnreadDot, Unavailable } from '../../components/support/SupportUi';
+import { CategoryIcon, IconArrowRight, IconInbox, IconSearch } from '../../components/support/SupportIcons';
 
 const PAGE_SIZE = 10;
 
@@ -62,18 +63,27 @@ export default function SuporteSolicitacoes() {
         <Link to="/suporte/solicitacoes/nova" className="btn-primary min-h-[44px]">Nova solicitação</Link>
       </header>
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_14rem]">
-        <div>
-          <label htmlFor="busca-solicitacoes" className="sr-only">Buscar solicitações</label>
-          <input id="busca-solicitacoes" type="search" className="input" placeholder="Buscar por assunto ou número (#0142)" value={search} onChange={(e) => setSearch(e.target.value)} autoComplete="off" />
+      <div className="mb-3">
+        <label htmlFor="busca-solicitacoes" className="sr-only">Buscar solicitações</label>
+        <div className="relative">
+          <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-wine-400" />
+          <input id="busca-solicitacoes" type="search" className="input !pl-10" placeholder="Buscar por assunto ou número (#0142)" value={search} onChange={(e) => setSearch(e.target.value)} autoComplete="off" />
         </div>
-        <div>
-          <label htmlFor="filtro-status" className="sr-only">Filtrar por status</label>
-          <select id="filtro-status" className="input" value={status} onChange={(e) => { setStatus(e.target.value as SupportStatus | ''); setPage(1); }}>
-            <option value="">Todos os status</option>
-            {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s, 'professional')}</option>)}
-          </select>
-        </div>
+      </div>
+      <div className="-mx-1 mb-5 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Filtrar por status">
+        {([{ value: '' as const, label: 'Todas' }, ...STATUSES.map((v) => ({ value: v, label: statusLabel(v, 'professional') }))]).map((o) => (
+          <button
+            key={o.value || 'todas'}
+            type="button"
+            aria-pressed={status === o.value}
+            onClick={() => { setStatus(o.value); setPage(1); }}
+            className={`min-h-[38px] shrink-0 rounded-full px-3.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50 ${
+              status === o.value ? 'bg-wine-600 text-white shadow-sm' : 'bg-white text-wine-700 ring-1 ring-inset ring-wine-100 hover:bg-wine-50'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
 
       {loading ? (
@@ -83,13 +93,14 @@ export default function SuporteSolicitacoes() {
       ) : !data || data.items.length === 0 ? (
         filtered ? (
           <EmptyBox
+            icon={<IconSearch className="h-6 w-6" />}
             title="Nenhuma solicitação encontrada"
             action={<button type="button" className="btn-secondary" onClick={() => { setSearch(''); setQ(''); setStatus(''); setPage(1); }}>Limpar filtros</button>}
           >
             Nenhuma solicitação combina com esses filtros.
           </EmptyBox>
         ) : (
-          <EmptyBox title="Você ainda não abriu nenhuma solicitação" action={<Link to="/suporte/solicitacoes/nova" className="btn-primary">Abrir solicitação</Link>}>
+          <EmptyBox icon={<IconInbox className="h-6 w-6" />} title="Você ainda não abriu nenhuma solicitação" action={<Link to="/suporte/solicitacoes/nova" className="btn-primary">Abrir solicitação</Link>}>
             Quando precisar de ajuda, é só abrir uma solicitação. A resposta chega aqui.
           </EmptyBox>
         )
@@ -100,22 +111,26 @@ export default function SuporteSolicitacoes() {
               <li key={t.id}>
                 <Link
                   to={`/suporte/solicitacoes/${t.id}`}
-                  className={`block rounded-2xl border bg-white p-4 shadow-sm transition-colors hover:border-wine-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50 ${t.unread ? 'border-gold-400' : 'border-wine-100'}`}
+                  className={`group flex items-start gap-3.5 rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-px hover:border-wine-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50 sm:gap-4 ${t.unread ? 'border-gold-400 bg-gold-300/[0.07]' : 'border-wine-100'}`}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="flex min-w-0 items-center gap-2 font-medium text-ink/90">
-                      {t.unread && <UnreadDot />}
-                      <span className="truncate">{t.subject}</span>
+                  <IconBubble tone={t.status === 'resolvida' ? 'sage' : t.unread ? 'gold' : 'wine'}><CategoryIcon category={t.category} className="h-5 w-5" /></IconBubble>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                      <p className="flex min-w-0 items-center gap-2 font-medium text-ink/90">
+                        {t.unread && <UnreadDot />}
+                        <span className="truncate">{t.subject}</span>
+                      </p>
+                      <StatusPill status={t.status} viewer="professional" />
+                    </div>
+                    <p className="mt-1.5 text-xs text-ink/55">
+                      {ticketCode(t.ticketNumber)} · {categoryTitle(t.category)} · <span title={fmtShort(t.lastActivityAt)}>{relativeTime(t.lastActivityAt)}</span>
                     </p>
-                    <StatusPill status={t.status} viewer="professional" />
+                    {t.unread && <p className="mt-1.5 text-xs font-semibold text-gold-700">Nova resposta da equipe</p>}
+                    {t.status === 'resolvida' && t.canReopenUntil && (
+                      <p className="mt-1.5 text-xs text-ink/60">Você pode reabrir até {fmtDate(t.canReopenUntil)}.</p>
+                    )}
                   </div>
-                  <p className="mt-1.5 text-xs text-ink/55">
-                    {ticketCode(t.ticketNumber)} · {categoryTitle(t.category)} · última atividade {fmtShort(t.lastActivityAt)}
-                  </p>
-                  {t.unread && <p className="mt-1.5 text-xs font-semibold text-gold-700">Nova resposta da equipe</p>}
-                  {t.status === 'resolvida' && t.canReopenUntil && (
-                    <p className="mt-1.5 text-xs text-ink/60">Você pode reabrir até {fmtDate(t.canReopenUntil)}.</p>
-                  )}
+                  <IconArrowRight className="mt-2 hidden h-4 w-4 shrink-0 text-wine-300 transition-all group-hover:translate-x-0.5 group-hover:text-wine-600 sm:block" />
                 </Link>
               </li>
             ))}

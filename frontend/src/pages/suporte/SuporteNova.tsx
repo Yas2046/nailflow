@@ -7,11 +7,12 @@ import { useAuth } from '../../context/AuthContext';
 import { readSupportDraft, writeSupportDraft } from '../../services/supportDrafts';
 import { useToast } from '../../context/ToastContext';
 import {
-  BODY_MAX, CATEGORIES, PRIVACY_NOTICE, SUBJECT_MAX, charCount, newId, supportApi,
+  BODY_MAX, CATEGORIES, CATEGORY_HINTS, PRIVACY_NOTICE, SUBJECT_MAX, charCount, newId, supportApi,
   type SupportCategory,
 } from '../../services/support';
 import { searchArticles, useFaq } from '../../components/support/FaqBrowser';
-import { CharCounter, LoadingList, Notice, Unavailable } from '../../components/support/SupportUi';
+import { CharCounter, IconBubble, LoadingList, Notice, Unavailable } from '../../components/support/SupportUi';
+import { CategoryIcon, IconBook } from '../../components/support/SupportIcons';
 
 const DRAFT_SCOPE = 'new';
 
@@ -103,19 +104,33 @@ export default function SuporteNova() {
       <header className="page-header">
         <Link to="/suporte" className="inline-flex min-h-[44px] items-center text-sm text-wine-700 underline-offset-2 hover:underline">← Ajuda e suporte</Link>
         <h1 className="mt-2 font-display text-3xl text-wine-800">Nova solicitação</h1>
-        {relatedNumber && <p className="mt-1 text-sm text-ink/60">Relacionada à solicitação #{String(relatedNumber).padStart(4, '0')}.</p>}
+        <p className="mt-1 text-sm text-ink/60">Conte o que aconteceu. A resposta da equipe chega aqui, na Central.</p>
+        {relatedNumber && <p className="mt-2 inline-flex rounded-full bg-wine-50 px-3 py-1 text-xs font-medium text-wine-700 ring-1 ring-inset ring-wine-100">Relacionada à solicitação #{String(relatedNumber).padStart(4, '0')}</p>}
       </header>
 
       <form onSubmit={submit} noValidate className="space-y-5">
-        <div>
-          <label htmlFor="sup-cat" className="mb-1.5 block text-sm font-medium text-ink/80">Categoria</label>
-          <select id="sup-cat" className={fieldClass('category')} value={draft.category} aria-invalid={!!fieldErrors.category} aria-describedby={fieldErrors.category ? 'sup-cat-err' : undefined}
-            onChange={(e) => setDraft({ ...draft, category: e.target.value as SupportCategory | '' })} disabled={sending}>
-            <option value="">Selecione…</option>
-            {CATEGORIES.map((c) => <option key={c.slug} value={c.slug}>{c.title}</option>)}
-          </select>
-          {fieldErrors.category && <p id="sup-cat-err" className="mt-1 text-xs text-rose-600">{fieldErrors.category}</p>}
-        </div>
+        <fieldset disabled={sending} aria-describedby={fieldErrors.category ? 'sup-cat-err' : undefined}>
+          <legend className="mb-2 text-sm font-medium text-ink/80">Sobre o que é?</legend>
+          <div role="radiogroup" aria-label="Categoria" aria-invalid={!!fieldErrors.category} className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {CATEGORIES.map((c) => (
+              <label key={c.slug} className="relative cursor-pointer">
+                <input
+                  type="radio" name="sup-cat" value={c.slug} className="peer sr-only"
+                  checked={draft.category === c.slug}
+                  onChange={() => setDraft({ ...draft, category: c.slug })}
+                />
+                <span className={`flex h-full flex-col items-start gap-2.5 rounded-2xl border bg-white p-3.5 sm:flex-row sm:gap-3 transition-all hover:border-wine-300 peer-checked:border-wine-500 peer-checked:bg-wine-50/70 peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-wine-400/60 ${fieldErrors.category ? 'border-rose-400' : 'border-wine-100'}`}>
+                  <IconBubble size="sm"><CategoryIcon category={c.slug} className="h-[18px] w-[18px]" /></IconBubble>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-ink/90">{c.title}</span>
+                    <span className="mt-0.5 block text-xs leading-snug text-ink/55">{CATEGORY_HINTS[c.slug]}</span>
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {fieldErrors.category && <p id="sup-cat-err" className="mt-1.5 text-xs text-rose-600">{fieldErrors.category}</p>}
+        </fieldset>
 
         <div>
           <label htmlFor="sup-subject" className="mb-1.5 block text-sm font-medium text-ink/80">Assunto</label>
@@ -126,12 +141,18 @@ export default function SuporteNova() {
             <CharCounter value={subjectLen} max={SUBJECT_MAX} />
           </div>
           {suggestions.length > 0 && (
-            <div className="mt-2 rounded-xl border border-wine-100 bg-wine-50/60 p-3 text-sm">
-              <p className="font-medium text-ink/80">Talvez estes artigos já resolvam:</p>
-              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-ink/70">
-                {suggestions.map((a) => <li key={a.id}>{a.title}</li>)}
+            <div className="mt-2.5 rounded-xl border border-gold-400/40 bg-gold-300/10 p-3.5 text-sm">
+              <p className="flex items-center gap-2 font-medium text-ink/80"><IconBook className="h-4 w-4 text-gold-700" />Talvez estes artigos já resolvam:</p>
+              <ul className="mt-2 space-y-1.5">
+                {suggestions.map((a) => (
+                  <li key={a.id}>
+                    <details className="group rounded-lg bg-white/80 px-3 py-2 ring-1 ring-inset ring-wine-100">
+                      <summary className="cursor-pointer list-none font-medium text-wine-800 marker:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/50">{a.title}</summary>
+                      <p className="mt-2 whitespace-pre-line text-ink/70">{a.body}</p>
+                    </details>
+                  </li>
+                ))}
               </ul>
-              <Link to="/suporte" className="mt-2 inline-block font-medium text-wine-700 underline underline-offset-2">Abrir a ajuda para ler</Link>
             </div>
           )}
         </div>

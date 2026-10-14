@@ -10,7 +10,8 @@ import {
   type SupportEvent, type SupportMessage, type SupportTicket,
 } from '../../services/support';
 import { Composer, Thread, maxSeq, mergeById } from '../../components/support/Thread';
-import { ErrorBox, LoadingList, Notice, StatusPill, Unavailable } from '../../components/support/SupportUi';
+import { ErrorBox, IconBubble, LoadingList, Notice, StatusPill, StatusProgress, Unavailable } from '../../components/support/SupportUi';
+import { CategoryIcon, IconSearch } from '../../components/support/SupportIcons';
 
 const POLL_MS = 20_000;   // dentro de uma conversa aberta
 
@@ -108,7 +109,9 @@ export default function SuporteConversa() {
     return error.notFound
       ? (
         <div className="mx-auto max-w-md rounded-2xl border border-wine-100 bg-white p-10 text-center">
+          <div className="mb-3 flex justify-center"><IconBubble size="lg"><IconSearch className="h-6 w-6" /></IconBubble></div>
           <p className="font-display text-xl font-semibold text-wine-800">Solicitação não encontrada</p>
+          <p className="mt-1.5 text-sm text-ink/65">Ela pode ter sido removida ou o endereço está incorreto.</p>
           <Link to="/suporte/solicitacoes" className="btn-primary mt-5">Voltar às solicitações</Link>
         </div>
       )
@@ -120,15 +123,21 @@ export default function SuporteConversa() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <header className="mb-5 border-b border-wine-100/70 pb-5">
-        <Link to="/suporte/solicitacoes" className="inline-flex min-h-[44px] items-center text-sm text-wine-700 underline-offset-2 hover:underline">← Minhas solicitações</Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
-          <h1 className="min-w-0 break-words font-display text-2xl text-wine-800 sm:text-3xl">{ticket.subject}</h1>
-          <StatusPill status={ticket.status} viewer="professional" />
+      <Link to="/suporte/solicitacoes" className="inline-flex min-h-[44px] items-center text-sm text-wine-700 underline-offset-2 hover:underline">← Minhas solicitações</Link>
+      <header className="mb-6 mt-1 rounded-2xl border border-wine-100 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex items-start gap-3.5">
+          <IconBubble size="lg"><CategoryIcon category={ticket.category} className="h-6 w-6" /></IconBubble>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+              <h1 className="min-w-0 break-words font-display text-2xl text-wine-800 sm:text-3xl">{ticket.subject}</h1>
+              <StatusPill status={ticket.status} viewer="professional" />
+            </div>
+            <p className="mt-1 text-xs text-ink/55">
+              {ticketCode(ticket.ticketNumber)} · {categoryTitle(ticket.category)} · aberta em {fmtDateTime(ticket.createdAt)}
+            </p>
+          </div>
         </div>
-        <p className="mt-1 text-xs text-ink/55">
-          {ticketCode(ticket.ticketNumber)} · {categoryTitle(ticket.category)} · aberta em {fmtDateTime(ticket.createdAt)}
-        </p>
+        <StatusProgress status={ticket.status} viewer="professional" />
       </header>
 
       <Thread messages={messages} events={events} viewer="professional" hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadOlder()} />

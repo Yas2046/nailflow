@@ -239,3 +239,46 @@ export const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 export const fmtShort = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/** Tempo decorrido em linguagem simples ("há 5 min", "ontem"); datas antigas voltam para dd/mm/aaaa. */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const min = Math.floor((now - t) / 60_000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'ontem';
+  if (days < 7) return `há ${days} dias`;
+  return fmtDate(iso);
+}
+
+/** Rótulo do dia para separar mensagens: "Hoje", "Ontem" ou a data. Compara dias do calendário local. */
+export function dayLabel(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+  if (diff === 0) return 'Hoje';
+  if (diff === 1) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+/** Chave do dia local (AAAA-MM-DD), para agrupar mensagens. */
+export const dayKey = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Textos de apoio ao escolher a categoria (só orientação visual; os valores enviados são os slugs). */
+export const CATEGORY_HINTS: Record<SupportCategory, string> = {
+  agenda: 'Horários, reagendamentos e bloqueios',
+  clientes: 'Cadastro, etiquetas e histórico',
+  servicos_config: 'Serviços, preços e WhatsApp',
+  perfil_acesso: 'Conta, senha e acesso',
+  financeiro: 'Gastos e relatórios',
+  tecnico: 'Erros e comportamentos inesperados',
+};
+
+export const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

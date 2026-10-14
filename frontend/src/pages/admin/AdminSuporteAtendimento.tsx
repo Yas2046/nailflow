@@ -8,11 +8,12 @@ import { useVisiblePolling } from '../../hooks/useVisiblePolling';
 import { Eyebrow, Panel } from '../../components/admin-account/AccountUi';
 import { useAdminShell } from '../../components/adminShell';
 import {
-  PRIORITIES, STATUSES, adminSupportApi, categoryTitle, fmtDateTime, priorityLabel, statusLabel, ticketCode,
+  PRIORITIES, STATUSES, adminSupportApi, categoryTitle, fmtDateTime, priorityLabel, relativeTime, statusLabel, ticketCode,
   type AdminTicket, type SupportEvent, type SupportMessage, type SupportPriority, type SupportStatus,
 } from '../../services/support';
 import { Composer, Thread, maxSeq, mergeById } from '../../components/support/Thread';
-import { ErrorBox, LoadingList, Notice, PriorityPill, StatusPill, Unavailable } from '../../components/support/SupportUi';
+import { Avatar, ErrorBox, IconBubble, LoadingList, Notice, PriorityPill, StatusPill, StatusProgress, Unavailable } from '../../components/support/SupportUi';
+import { IconSearch } from '../../components/support/SupportIcons';
 
 const POLL_MS = 20_000;
 
@@ -39,8 +40,8 @@ export default function AdminSuporteAtendimento() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<{ message: string; notFound: boolean; off: boolean } | null>(null);
-  const [nextStatus, setNextStatus] = useState<SupportStatus | ''>('');
   const [saving, setSaving] = useState<'status' | 'priority' | null>(null);
+  const [savingTo, setSavingTo] = useState<SupportStatus | null>(null);
   const readSent = useRef(0);
 
   usePageTitle(ticket ? `${ticketCode(ticket.ticketNumber)} · Suporte` : 'Suporte');
@@ -65,7 +66,7 @@ export default function AdminSuporteAtendimento() {
 
   useEffect(() => {
     readSent.current = 0;
-    setTicket(null); setMessages([]); setEvents([]); setNextStatus('');
+    setTicket(null); setMessages([]); setEvents([]);
     void fetchLatest(true);
   }, [fetchLatest]);
 
@@ -115,10 +116,10 @@ export default function AdminSuporteAtendimento() {
   async function changeStatus(to: SupportStatus) {
     if (!ticket) return;
     setSaving('status');
+    setSavingTo(to);
     try {
       const r = await adminSupportApi.setStatus(id, to, ticket.status);
       setTicket(r.ticket);
-      setNextStatus('');
       toast(`Status alterado para “${statusLabel(to, 'admin')}”.`, 'success');
       await fetchLatest(false);
       refreshSummary?.();
@@ -127,6 +128,7 @@ export default function AdminSuporteAtendimento() {
       if (e instanceof ApiError && e.reason === 'stale_status') void fetchLatest(false);
     } finally {
       setSaving(null);
+      setSavingTo(null);
     }
   }
 
@@ -152,6 +154,7 @@ export default function AdminSuporteAtendimento() {
     return error.notFound
       ? (
         <div className="mx-auto max-w-md rounded-2xl border border-wine-100 bg-white p-10 text-center">
+          <div className="mb-3 flex justify-center"><IconBubble size="lg"><IconSearch className="h-6 w-6" /></IconBubble></div>
           <p className="font-display text-xl font-semibold text-wine-800">Solicitação não encontrada</p>
           <Link to="/admin/suporte" className="btn-primary mt-5">Voltar à fila</Link>
         </div>
@@ -171,12 +174,21 @@ export default function AdminSuporteAtendimento() {
           <div className="min-w-0">
             <Eyebrow>{ticketCode(ticket.ticketNumber)} · {categoryTitle(ticket.category)}</Eyebrow>
             <h1 className="mt-1.5 break-words font-display text-2xl font-semibold text-wine-800 sm:text-[1.9rem]">{ticket.subject}</h1>
+            <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink/65">
+              <Avatar name={ticket.professional.businessName} />
+              <span className="font-medium text-ink/80">{ticket.professional.businessName}</span>
+              <span aria-hidden="true">·</span>
+              <span>{ticket.professional.name}</span>
+              <span aria-hidden="true">·</span>
+              <span title={fmtDateTime(ticket.lastActivityAt)}>última atividade {relativeTime(ticket.lastActivityAt)}</span>
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <PriorityPill priority={ticket.priority} />
             <StatusPill status={ticket.status} viewer="admin" />
           </div>
         </div>
+        <div className="max-w-md"><StatusProgress status={ticket.status} viewer="admin" /></div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -215,19 +227,21 @@ export default function AdminSuporteAtendimento() {
             <div className="mt-3 space-y-3">
               {!resolved && (
                 <button type="button" className="btn-primary w-full" disabled={saving !== null} onClick={() => void changeStatus('resolvida')}>
-                  {saving === 'status' ? 'Salvando…' : 'Marcar como resolvida'}
+                  {savingTo === 'resolvida' ? 'Salvando…' : 'Marcar como resolvida'}
                 </button>
               )}
-              <div>
-                <label htmlFor="novo-status" className="mb-1 block text-xs font-medium text-ink/70">{resolved ? 'Reabrir como' : 'Mudar para'}</label>
-                <div className="flex gap-2">
-                  <select id="novo-status" className="input" value={nextStatus} onChange={(e) => setNextStatus(e.target.value as SupportStatus | '')} disabled={saving !== null}>
-                    <option value="">Escolha…</option>
-                    {statusOptions.filter((s) => s !== 'resolvida').map((s) => <option key={s} value={s}>{statusLabel(s, 'admin')}</option>)}
-                  </select>
-                  <button type="button" className="btn-secondary shrink-0" disabled={!nextStatus || saving !== null} onClick={() => nextStatus && void changeStatus(nextStatus)}>Aplicar</button>
+              {statusOptions.filter((o) => o !== 'resolvida').length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-ink/70">{resolved ? 'Reabrir como' : 'Mudar para'}</p>
+                  <div className="flex flex-col gap-2">
+                    {statusOptions.filter((o) => o !== 'resolvida').map((o) => (
+                      <button key={o} type="button" className="btn-secondary w-full justify-center" disabled={saving !== null} onClick={() => void changeStatus(o)}>
+                        {savingTo === o ? 'Salvando…' : statusLabel(o, 'admin')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </Panel>
 
