@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from '../context/ToastContext';
 import { api, ApiError } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
+import NovaClienteModal from './NovaClienteModal';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
 interface Props {
@@ -56,6 +57,11 @@ const frequencyOptions: { value: RecurringFrequency; label: string }[] = [
   { value: 'biweekly', label: 'A cada 2 semanas' },
 ];
 
+// Data local (não UTC) no formato do input date: YYYY-MM-DD
+function toYmd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Formata ISO para exibição amigável
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
@@ -80,6 +86,9 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const [timeValue, setTimeValue]   = useState(
     time || (appointment ? new Date(appointment.startsAt).toTimeString().slice(0, 5) : '09:00')
   );
+  // Dia do agendamento existente (editável: remarcar). Na criação o dia vem da Agenda (prop `date`).
+  const [dateValue, setDateValue]   = useState(appointment ? toYmd(new Date(appointment.startsAt)) : '');
+  const [showNewClient, setShowNewClient] = useState(false);
   const [status, setStatus]         = useState<AppointmentStatus>(appointment?.status || 'pendente');
   const [notes, setNotes]           = useState(appointment?.notes || '');
   const [error, setError]           = useState<string | null>(null);
@@ -107,6 +116,12 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   // concluído / com falta: cliente, serviço e horário ficam travados
   const locked = !!appointment && ATTENDED.includes(appointment.status);
   const rules = appointment ? statusRules(appointment) : null;
+  // Data ou horário alterados: "Este e os próximos" só atualiza status e observação (limite da API), então a
+  // mudança de data/horário vale somente para este agendamento.
+  const scheduleChanged = isRecurringAppt && !locked && !!appointment && (
+    (dateValue !== '' && dateValue !== toYmd(new Date(appointment.startsAt)))
+    || timeValue !== new Date(appointment.startsAt).toTimeString().slice(0, 5)
+  );
 
   useEffect(() => {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
@@ -121,6 +136,14 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
     : endsOn;
 
   function clearError() { setError(null); setAlternatives([]); }
+
+  // Cliente recém-cadastrada na própria agenda: entra na lista e já fica selecionada.
+  function handleClientCreated(c: Client) {
+    setClients((prev) => [...prev, c].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+    setClientId(c.id);
+    setShowNewClient(false);
+    toast('Cliente cadastrada com sucesso');
+  }
 
   // ── Salvar / criar ─────────────────────────────────────────────────────────
 
@@ -144,6 +167,10 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
     try {
       const [h, m] = timeValue.split(':').map(Number);
       const startsAt = new Date(date);
+      if (isEditing && dateValue) {
+        const [y, mo, d] = dateValue.split('-').map(Number);
+        startsAt.setFullYear(y, mo - 1, d);
+      }
       startsAt.setHours(h, m, 0, 0);
 
       if (isEditing && scope === 'following') {
@@ -162,7 +189,8 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
         await api.put(`/appointments/${appointment!.id}`, locked
           ? { status, notes: notes || null }
           : { clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null });
-        toast('Agendamento atualizado');
+        const moved = !locked && startsAt.getTime() !== new Date(appointment!.startsAt).getTime();
+        toast(moved ? 'Agendamento remarcado. A cliente não é avisada automaticamente.' : 'Agendamento atualizado');
         onSaved();
         return;
       }
@@ -284,6 +312,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <div
       className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -362,6 +391,11 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
           <div className="p-6 space-y-4 overflow-y-auto">
             <p className="text-sm text-ink/70">Este agendamento faz parte de uma série recorrente. O que deseja alterar?</p>
             <p className="text-xs text-ink/40">Nota: "Este e os próximos" atualiza somente status e observação.</p>
+            {scheduleChanged && (
+              <p className="text-xs text-wine-700 bg-wine-50 border border-wine-100 rounded-lg px-3 py-2">
+                Você alterou a data ou o horário: essa mudança vale somente para este agendamento.
+              </p>
+            )}
             <div className="flex flex-col gap-2 pt-1">
               <button
                 onClick={() => doSave('single')}
@@ -372,8 +406,8 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
               </button>
               <button
                 onClick={() => doSave('following')}
-                disabled={saving}
-                className="w-full px-4 py-3 text-sm rounded-xl bg-wine-600 text-white hover:bg-wine-700 transition-colors text-left font-medium disabled:opacity-60"
+                disabled={saving || scheduleChanged}
+                className="w-full px-4 py-3 text-sm rounded-xl bg-wine-600 text-white hover:bg-wine-700 transition-colors text-left font-medium disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Este e os próximos
               </button>
@@ -560,6 +594,15 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 ))}
               </select>
             </Field>
+            {!locked && (
+              <button
+                type="button"
+                onClick={() => setShowNewClient(true)}
+                className="text-sm font-medium text-wine-600 hover:text-wine-700"
+              >
+                + Cadastrar nova cliente
+              </button>
+            )}
 
             {/* serviço */}
             <Field label="Serviço">
@@ -578,6 +621,24 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 </span>
               )}
             </Field>
+
+            {/* data (somente ao editar: remarcar) */}
+            {isEditing && (
+              <Field label="Data">
+                <input
+                  className="input"
+                  type="date"
+                  value={dateValue}
+                  disabled={locked}
+                  onChange={(e) => setDateValue(e.target.value)}
+                />
+                {!locked && (
+                  <span className="block text-xs text-ink/40 mt-1">
+                    Alterar a data ou o horário remarca este agendamento (conflitos com outros agendamentos são conferidos) e não envia mensagem à cliente.
+                  </span>
+                )}
+              </Field>
+            )}
 
             {/* horário */}
             <Field label="Horário">
@@ -752,6 +813,10 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
       </div>
     </div>
+    {showNewClient && (
+      <NovaClienteModal onClose={() => setShowNewClient(false)} onCreated={handleClientCreated} />
+    )}
+    </>
   );
 }
 

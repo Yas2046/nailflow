@@ -189,8 +189,13 @@ function minutesSinceMidnight(date, referenceDayStart) {
  *   blocked_time             - cai dentro de um bloqueio pontual
  *   appointment_overlap     - conflita com outro agendamento ativo
  *   past_time               - só com `notBefore`: começa antes da antecedência mínima
+ *
+ * `ignoreSchedule` (somente a agenda interna da profissional: criar e remarcar pelo painel): ignora a disponibilidade
+ * configurada (dia de folga, expediente, exceções recorrentes e intervalo de almoço), para a profissional poder abrir
+ * exceções. Bloqueios pontuais e conflito com outro agendamento continuam valendo. Cliente (WhatsApp/bot e página
+ * pública) nunca passa esta opção: a disponibilidade segue limitando esses canais.
  */
-export async function checkSlotAvailability(professionalId, serviceId, startsAtInput, excludeAppointmentId = null, { notBefore } = {}) {
+export async function checkSlotAvailability(professionalId, serviceId, startsAtInput, excludeAppointmentId = null, { notBefore, ignoreSchedule = false } = {}) {
   const { rows: serviceRows } = await pool.query(
     'SELECT duration_minutes, active FROM services WHERE id = $1 AND professional_id = $2',
     [serviceId, professionalId]
@@ -212,34 +217,36 @@ export async function checkSlotAvailability(professionalId, serviceId, startsAtI
   }
   const endsAt = new Date(startsAt.getTime() + service.duration_minutes * 60000);
 
-  const zonedStart = getZonedParts(startsAt);
+  if (!ignoreSchedule) {
+    const zonedStart = getZonedParts(startsAt);
 
-  const { rows: availabilityRows } = await pool.query(
-    `SELECT is_working, start_time, end_time, break_start, break_end
-     FROM weekly_availability
-     WHERE professional_id = $1 AND weekday = $2`,
-    [professionalId, zonedStart.weekday]
-  );
-  const availability = availabilityRows[0];
-  if (!availability || !availability.is_working) {
-    return { available: false, reason: 'outside_working_hours' };
-  }
+    const { rows: availabilityRows } = await pool.query(
+      `SELECT is_working, start_time, end_time, break_start, break_end
+       FROM weekly_availability
+       WHERE professional_id = $1 AND weekday = $2`,
+      [professionalId, zonedStart.weekday]
+    );
+    const availability = availabilityRows[0];
+    if (!availability || !availability.is_working) {
+      return { available: false, reason: 'outside_working_hours' };
+    }
 
-  if (await isRecurringException(professionalId, zonedStart)) {
-    return { available: false, reason: 'outside_working_hours' };
-  }
+    if (await isRecurringException(professionalId, zonedStart)) {
+      return { available: false, reason: 'outside_working_hours' };
+    }
 
-  const workStart = timeStringToUtcOnDate(zonedStart, availability.start_time);
-  const workEnd = timeStringToUtcOnDate(zonedStart, availability.end_time);
-  if (startsAt < workStart || endsAt > workEnd) {
-    return { available: false, reason: 'outside_working_hours' };
-  }
+    const workStart = timeStringToUtcOnDate(zonedStart, availability.start_time);
+    const workEnd = timeStringToUtcOnDate(zonedStart, availability.end_time);
+    if (startsAt < workStart || endsAt > workEnd) {
+      return { available: false, reason: 'outside_working_hours' };
+    }
 
-  if (availability.break_start && availability.break_end) {
-    const breakStart = timeStringToUtcOnDate(zonedStart, availability.break_start);
-    const breakEnd = timeStringToUtcOnDate(zonedStart, availability.break_end);
-    if (startsAt < breakEnd && endsAt > breakStart) {
-      return { available: false, reason: 'lunch_break' };
+    if (availability.break_start && availability.break_end) {
+      const breakStart = timeStringToUtcOnDate(zonedStart, availability.break_start);
+      const breakEnd = timeStringToUtcOnDate(zonedStart, availability.break_end);
+      if (startsAt < breakEnd && endsAt > breakStart) {
+        return { available: false, reason: 'lunch_break' };
+      }
     }
   }
 

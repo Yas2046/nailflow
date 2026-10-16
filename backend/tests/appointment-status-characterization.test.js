@@ -417,7 +417,7 @@ test('INTEG-11 PUT em CONCLUÍDO/FALTA trava cliente, serviço e horário (antes
   assert.equal((await rowOf(id)).status, 'concluido');
 });
 
-test('INTEG-12 editar a observação reenviando o MESMO horário funciona mesmo fora do expediente (antes: 409); mudar para outro horário inválido continua 409', async (t) => {
+test('INTEG-12 editar a observação reenviando o MESMO horário funciona fora do expediente; remarcar para outro horário fora do expediente é exceção permitida na agenda interna, mas conflito continua 409', async (t) => {
   if (!dbAvailable) return t.skip('sem banco');
   const early = startsAtFor('past', 5); // 05:00Z = 02:00 em São Paulo, fora do expediente
   const id = await insertAppt({ status: 'confirmado', startsAt: early });
@@ -425,8 +425,13 @@ test('INTEG-12 editar a observação reenviando o MESMO horário funciona mesmo 
   assert.equal((await put(id, { notes: 'de novo', startsAt: early.toISOString() })).status, 200);
   const other = new Date(early.getTime() + 3600000); // 03:00 SP, ainda fora do expediente
   const moved = await put(id, { notes: 'x', startsAt: other.toISOString() });
-  assert.equal(moved.status, 409);
-  assert.ok(moved.body.reason);
+  assert.equal(moved.status, 200); // agenda interna: fora da disponibilidade configurada é exceção permitida
+  // conflito com outro agendamento ativo continua recusado
+  const busy = new Date(other.getTime() + 2 * 3600000);
+  await insertAppt({ status: 'confirmado', startsAt: busy, clientId: clientA2 });
+  const clash = await put(id, { notes: 'y', startsAt: busy.toISOString() });
+  assert.equal(clash.status, 409);
+  assert.equal(clash.body.reason, 'appointment_overlap');
 });
 
 test('INTEG-13 PUT …/and-following avalia linha a linha: não ressuscita cancelado, respeita validade e transições, devolve resumo', async (t) => {
@@ -708,7 +713,7 @@ test('INTEG-23 corrida: lote e edição simultâneos mantêm a série coerente (
 
 // ───────────────────────── correções da auditoria da Fase 1 ─────────────────────────
 
-test('INTEG-24 reabrir cancelado → pendente revalida bloqueio, expediente, almoço, serviço ativo e conflito', async (t) => {
+test('INTEG-24 reabrir cancelado → pendente revalida bloqueio, serviço ativo e conflito (expediente e almoço são exceção permitida na agenda interna)', async (t) => {
   if (!dbAvailable) return t.skip('sem banco');
   const weekdayOf = (d) => new Date(d).getUTCDay(); // 13:00Z = 10:00 SP: mesmo dia da semana nos dois fusos
   const reopen = (id, extra = {}) => put(id, { status: 'pendente', ...extra });
@@ -731,15 +736,14 @@ test('INTEG-24 reabrir cancelado → pendente revalida bloqueio, expediente, alm
   assert.equal((await reopen(a1)).status, 200);
   assert.equal((await rowOf(a1)).status, 'pendente');
 
-  // 2) fora do expediente (profissional passou a começar às 11:00 nesse dia da semana)
+  // 2) fora do expediente (profissional passou a começar às 11:00 nesse dia da semana): exceção permitida
   const s2 = startsAtFor('future');
   const a2 = await insertAppt({ status: 'cancelado', startsAt: s2 });
   await pool.query(`UPDATE weekly_availability SET start_time = '11:00' WHERE professional_id = $1 AND weekday = $2`, [profA, weekdayOf(s2)]);
   try {
     const r2 = await reopen(a2);
-    assert.equal(r2.status, 409);
-    assert.equal(r2.body.reason, 'outside_working_hours');
-    assert.equal((await rowOf(a2)).status, 'cancelado');
+    assert.equal(r2.status, 200); // agenda interna: fora do expediente é exceção permitida
+    assert.equal((await rowOf(a2)).status, 'pendente');
   } finally {
     await pool.query(`UPDATE weekly_availability SET start_time = '08:00' WHERE professional_id = $1 AND weekday = $2`, [profA, weekdayOf(s2)]);
   }
@@ -750,8 +754,8 @@ test('INTEG-24 reabrir cancelado → pendente revalida bloqueio, expediente, alm
   await pool.query(`UPDATE weekly_availability SET break_start = '09:30', break_end = '10:30' WHERE professional_id = $1 AND weekday = $2`, [profA, weekdayOf(s3)]);
   try {
     const r3 = await reopen(a3);
-    assert.equal(r3.status, 409);
-    assert.equal(r3.body.reason, 'lunch_break');
+    assert.equal(r3.status, 200); // agenda interna: no intervalo de almoço é exceção permitida
+    assert.equal((await rowOf(a3)).status, 'pendente');
   } finally {
     await pool.query(`UPDATE weekly_availability SET break_start = NULL, break_end = NULL WHERE professional_id = $1 AND weekday = $2`, [profA, weekdayOf(s3)]);
   }

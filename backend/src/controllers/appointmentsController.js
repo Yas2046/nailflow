@@ -128,7 +128,8 @@ export async function createAppointment(req, res, next) {
     await assertOwnClient(data.clientId, req.professionalId);
 
     await expireDueHolds({ professionalId: req.professionalId });
-    const check = await checkSlotAvailability(req.professionalId, data.serviceId, data.startsAt);
+    // Agenda interna: a profissional pode agendar fora da disponibilidade configurada (exceção); conflito continua valendo.
+    const check = await checkSlotAvailability(req.professionalId, data.serviceId, data.startsAt, null, { ignoreSchedule: true });
     if (!check.available) {
       const alternatives = check.reason !== 'invalid_datetime'
         ? await suggestAlternatives(req.professionalId, data.startsAt, serviceRows[0].duration_minutes)
@@ -244,7 +245,8 @@ async function planSlot(cur, data, ev, professionalId, appointmentId) {
   const newSnapshot = ev.serviceChanged ? serviceRows[0].price_cents : null;
 
   await expireDueHolds({ professionalId });
-  const check = await checkSlotAvailability(professionalId, serviceId, newStartsAt, appointmentId);
+  // Agenda interna (remarcar/reabrir pelo painel): fora da disponibilidade configurada é exceção permitida; conflito não.
+  const check = await checkSlotAvailability(professionalId, serviceId, newStartsAt, appointmentId, { ignoreSchedule: true });
   if (!check.available) {
     const alternatives = check.reason !== 'invalid_datetime'
       ? await suggestAlternatives(professionalId, newStartsAt, serviceRows[0].duration_minutes)
