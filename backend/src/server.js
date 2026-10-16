@@ -18,6 +18,7 @@ import onboardingRoutes from './routes/onboarding.routes.js';
 import supportRoutes from './routes/support.routes.js';
 import adminSupportRoutes from './routes/adminSupport.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { createOriginGuard } from './middleware/originGuard.js';
 import { startHoldSweeper } from './utils/bookingRules.js';
 
 const app = express();
@@ -29,6 +30,9 @@ app.use(
     credentials: true,
   })
 );
+// Defesa em profundidade contra CSRF: métodos que alteram dados só entram com a origem oficial (ou sem Origin, para
+// n8n/Evolution/curl). Antes da autenticação e dos limitadores; ver middleware/originGuard.js.
+app.use(createOriginGuard());
 app.use(cookieParser());
 app.use(express.json());
 
