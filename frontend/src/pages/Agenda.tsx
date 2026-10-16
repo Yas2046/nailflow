@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { api } from '../services/api';
+import { dayAppointments, dayGridRange, slotAppointment } from '../utils/agendaDay';
 import type { Appointment, Service, WeeklyAvailabilityDay } from '../types';
 import AppointmentModal from '../components/AppointmentModal';
 import BlockTimeModal from '../components/BlockTimeModal';
@@ -298,7 +299,13 @@ function DayView({
   onSlotClick: (time: string, existing: Appointment | null) => void;
   onBlockClick: (time: string) => void;
 }) {
-  if (!availability || !availability.is_working) {
+  // A agenda interna aceita agendamentos fora da disponibilidade configurada (dia de folga, antes/depois do expediente):
+  // eles precisam aparecer. A grade do dia cresce para cobri-los; a folga só é mostrada quando não há nada agendado.
+  const dayStartDate = startOfDay(date);
+  const dayAppts = dayAppointments(appointments, dayStartDate);
+  const working = !!availability?.is_working;
+
+  if (!working && dayAppts.length === 0) {
     return (
       <div className="bg-wine-50 border border-wine-100 rounded-2xl p-12 flex flex-col items-center gap-3 text-center">
         <div className="w-12 h-12 rounded-full bg-wine-100 flex items-center justify-center text-wine-400">
@@ -315,15 +322,16 @@ function DayView({
     );
   }
 
-  const dayStart    = toMinutes(availability.start_time!);
-  const dayEnd      = toMinutes(availability.end_time!);
-  const breakStart  = availability.break_start ? toMinutes(availability.break_start) : null;
-  const breakEnd    = availability.break_end   ? toMinutes(availability.break_end)   : null;
+  const cfgStart    = working ? toMinutes(availability!.start_time!) : null;
+  const cfgEnd      = working ? toMinutes(availability!.end_time!) : null;
+  const breakStart  = working && availability!.break_start ? toMinutes(availability!.break_start) : null;
+  const breakEnd    = working && availability!.break_end   ? toMinutes(availability!.break_end)   : null;
+
+  const { from: dayStart, to: dayEnd } = dayGridRange(cfgStart, cfgEnd, dayAppts, dayStartDate);
 
   const slots: number[] = [];
   for (let m = dayStart; m < dayEnd; m += 30) slots.push(m);
 
-  const dayStartDate = startOfDay(date);
   const now = new Date();
 
   // Detectar próximo atendimento do dia
@@ -359,11 +367,7 @@ function DayView({
             return slotDate.getTime() >= s && slotDate.getTime() < e;
           });
 
-          const apptHere = appointments.find((a) => {
-            const s = new Date(a.startsAt).getTime();
-            const e = new Date(a.endsAt).getTime();
-            return slotDate.getTime() >= s && slotDate.getTime() < e && a.status !== 'cancelado';
-          });
+          const { appt: apptHere, startsHere } = slotAppointment(appointments, slotDate.getTime());
 
           // ── Intervalo ──
           if (isBreak) {
@@ -390,7 +394,8 @@ function DayView({
 
           // ── Com agendamento ──
           if (apptHere) {
-            const isStartSlot = new Date(apptHere.startsAt).getTime() === slotDate.getTime();
+            const isStartSlot = startsHere;
+            const startLabel  = new Date(apptHere.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             const isNext      = nextAppt?.id === apptHere.id;
             const cfg         = getCfg(apptHere.status);
             const svc         = services.find(s => s.id === apptHere.serviceId);
@@ -405,7 +410,7 @@ function DayView({
                   {/* Time */}
                   <div className="shrink-0 pt-0.5">
                     <span className={`text-sm font-bold tabular-nums ${isNext ? 'text-wine-700' : 'text-ink/55'}`}>
-                      {time}
+                      {startLabel}
                     </span>
                   </div>
 
