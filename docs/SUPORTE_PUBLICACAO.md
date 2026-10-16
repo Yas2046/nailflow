@@ -17,7 +17,7 @@
 | A aplicação conecta como a role **`nailflow`** (não superusuária). `professionals` e quase todas as tabelas pertencem a **`postgres`** (com `GRANT` à `nailflow`); `admin_audit_log` e `recurring_exceptions` pertencem a `nailflow`. | A 023 **precisa** rodar como `postgres` (faz `ALTER TABLE professionals`), e ela **não tem GRANT**: as tabelas novas nascem sem acesso para a `nailflow` e toda operação de suporte falha com `permission denied` (42501). **Reproduzido em banco descartável.** É obrigatório aplicar `backend/db/migrations/_ops/023_grant_app_role.sql` depois da 023. |
 | Migrations 023 e 024 **já estão aplicadas em produção**: conferido em 2026-10-16, o catálogo de produção é idêntico ao de um banco construído com essas migrations, e os `GRANT`s da role `nailflow` batem com `_ops/023_grant_app_role.sql`. | A seção 3 é só **verificação em leitura**; não reaplicar. |
 | `backend/src` e `frontend/src` de produção estão no commit `c404c8e` (`main`, checkout limpo). O backend roda esse código desde 2026-10-15 11:21 UTC e o `dist` servido (`index-C9UyQW3Z.js`) é reproduzível: um build de `main` com a URL real da API sai **idêntico byte a byte**. | **Nunca** rodar `npm run build` dentro de `/var/www/nailflow/frontend`: voltaria o frontend. Construir a partir do commit aprovado, em pasta temporária. |
-| Sem mudança de dependências nos cinco commits (`package.json` e lock idênticos). | Não há `npm install` no backend. |
+| Sem mudança de dependências nos commits da branch (`package.json` e lock idênticos). | Não há `npm install` no backend. |
 | PM2 id 0 `nailflow-backend` (`bash -c "npm start"`, modo fork, cwd `/var/www/nailflow/backend`). `reload` em modo fork equivale a `restart` (~10 s fora do ar; o n8n repete 5 × 3 s, conforme `DEPLOY.md`). | Escolher horário calmo. |
 | nginx serve `/var/www/nailflow/frontend/dist`; `/api/` vai para `localhost:3333/`; CSP `connect-src 'self'`. | A API do bundle precisa ser a mesma origem (`VITE_API_URL`). |
 | Backups (conferido em 2026-10-13, depois da correção): `nailflow-backup.sh` novo instalado (SHA-256 `d450310b…a1b9`), cron das 03:00 inalterado, retenção de 7 dias. `/var/backups/nailflow` e `manual/` em `700 root:root`; `backup.log` em `600 root:root`; os 9 dumps antigos seguem `664 postgres:postgres` dentro do diretório 700; os novos nascem `600 root:root`. Precedente de backup antes de migration: `/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`. | Backup manual antes da 023, **no formato compatível com o diretório 700** (arquivo aberto pelo `root`, seção 1). A forma `pg_dump -f <arquivo>` (arquivo criado pelo `postgres`) **falha**. A primeira execução noturna do script novo (2026-10-14) e a restauração real ainda estão **pendentes** de verificação: ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0. |
@@ -61,14 +61,44 @@
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
 - [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **no `main` (`c404c8e`) e em produção** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão já saiu junto, em `c404c8e`.
-- [ ] Commit aprovado e testado: o HEAD da branch `feat/suporte-aviso-privacidade` (hoje `951b65c`, ou o que for mergeado). Ele contém o aviso,
-  a guarda de `Origin`, a carga da FAQ e estes documentos. **A política de privacidade não pode estar nele** (itens B e C acima).
-  Confirmar `git -C /root/nf-guia rev-parse --short HEAD` e anotar o hash completo: `COMMIT=<hash>`.
+- [ ] Commit aprovado e testado: o HEAD da branch `feat/suporte-aviso-privacidade`. O **código** (backend e frontend) foi revisado, testado e ensaiado
+  no commit `a68b87e` (e é idêntico desde `67bc07e`); commits posteriores só podem alterar `docs/`. Ele contém o aviso, a guarda de `Origin`, a carga
+  da FAQ e estes documentos. **A política de privacidade não pode estar nele** (itens B e C acima; os 9 arquivos dela ficam sem commit e
+  `git archive` só exporta o que está commitado). Definir `COMMIT=$(git -C /root/nf-guia rev-parse HEAD)` e provar que o código é o revisado:
+  `git -C /root/nf-guia diff --stat a68b87e $COMMIT -- backend frontend` **sem nenhuma linha** de saída.
 - [ ] **`COMMIT` e `STAMP` são variáveis de shell:** só podem ser reutilizados na **mesma sessão** em que foram definidos. Se a sessão cair
   (ou for aberta outra), **não** invente um novo `STAMP`: redefina `COMMIT` e recupere o `STAMP` dos arquivos já criados
   (`ls /var/backups/nailflow/nailflow_pre-suporte_*.dump /var/www/nailflow/frontend/dist-prev-* /root/server.js.pre-guard-*`).
 - [ ] Horário calmo: **dois** reinícios do backend, de ≈ 10 s cada (o do guarda de `Origin`, seção 4, e o da ativação, seção 7).
 - [ ] Pré-checagem de `FRONTEND_URL` em produção (seção 4): sem ela o servidor não sobe.
+
+## Ordem de execução (resumo; os comandos estão nas seções indicadas)
+
+Uma única sessão de shell como `root`. **Os números das seções não são a ordem de execução**: a guarda de `Origin` (seção 4) vem **depois** do
+frontend (seções 5 e 6), para trocar primeiro o que não exige reinício. Cada etapa só começa se a anterior cumpriu o critério.
+
+| # | Etapa | Seção | Critério de sucesso | Parar e reverter se |
+|---|---|---|---|---|
+| 0 | Pré-voo em leitura e variáveis (`COMMIT`, `STAMP`) | 0, 2 | produção `c404c8e` limpa; flag ausente (0); `/support/faq` 404; contagem exata de `FRONTEND_URL` = 1 e cabeçalho CORS oficial; `diff --stat a68b87e $COMMIT -- backend frontend` vazio; 80 GB livres | qualquer item diferente |
+| 1 | Backup do banco (`pre-suporte`) e `dist.bak` | 1, 2 | dump `600 root:root`, `pg_restore --list` lista as tabelas; `dist.bak_$STAMP-pre-suporte` criado | dump vazio ou erro |
+| 2 | Verificar migrations 023/024 (somente leitura) | 3 | 6 categorias; 3 privilégios `t`; constraint `t` | qualquer `f` ou contagem diferente |
+| 3 | Build em `/tmp`, `dist-new` e conferência do bundle | 5 | `localhost:3333` 0; `VITE_API_URL` 1; contato 1; nome civil, `/privacidade`, texto antigo 0; dono e modo iguais ao `dist` | qualquer contagem fora do esperado (apagar `dist-new`; o site não foi tocado) |
+| 4 | Troca do `dist` e validação com a Central desligada | 5, 6 | `/` 200; login da Camila e da ADM; **nenhum** botão/menu de Suporte; `/suporte` "indisponível"; `/support/faq` 404 | falha de login ou página quebrada: restaurar o `dist` (nível 2) |
+| 5 | Guarda de `Origin`: copiar 2 arquivos e `pm2 restart 0` (**1º reinício**) | 4 | 403, 403, 401, 401; CORS oficial; health 200; 0 erros `originGuard`; canário do n8n só `success`; login e gravação simples no navegador | qualquer 403 "Origem não permitida" em uso legítimo, ou servidor sem subir: reverter a guarda (nível 2) |
+| 6 | Carga das 12 FAQs | 6-A | antes: banco `nailflow` e 0 artigos; `artigos_inseridos = 12` e `do_lote_no_banco_agora = 12`; Central ainda 404 | banco diferente de `nailflow` ou erro: a transação desfaz tudo |
+| 7 | **PONTO DE DECISÃO** (humano) | — | etapas 1-6 verdes; sessão de shell e variáveis ainda válidas; ninguém pediu para esperar | qualquer dúvida: **não** ativar |
+| 8 | Ativação da flag (**2º reinício**) | 7 | `.env` +1 linha; modo `600`; health 200; bootstrap `enabled:true` para a Camila | erro 500 ou botão ausente: remover a linha, conferir o hash, `pm2 restart 0` (nível 1) |
+| 9 | Teste real com Camila e ADM (Central e FAQ apenas) | 7 | 12 artigos para a Camila; chamado criado, respondido, lido e resolvido; `[TESTE]` termina em rascunho; Auditoria com `support_*` e `faq_*` | 500, 403 inesperado ou qualquer notificação: parar e desligar a flag |
+| 10 | Monitoramento por 48 h | 8 | ver seção 8 | ver rollback |
+
+**Já comprovado no ensaio isolado (cópia restaurada do dump das 03:00, backend de `49efb12`/`a68b87e` em modo produção, porta aleatória, sem n8n/Evolution):**
+restauração, estrutura, grants, carga idempotente da FAQ, guarda (403/401/CORS), bootstrap, 12 artigos, chamado de ponta a ponta, permissões ADM x profissional,
+`[TESTE]` em rascunho e auditoria. **Só se valida em produção:** o `FRONTEND_URL` real em uso no reinício, o canário do n8n, o login e a gravação no
+navegador pelo domínio real, a troca do `dist` servido pelo nginx e o teste de cada conta real. A confirmação **em execução** dos headers do n8n/Evolution
+continua **pendente** até o canário da etapa 5 passar.
+
+**Proibido durante todo o teste:** criar ou excluir contas, conectar instâncias WhatsApp, confirmar, cancelar, rejeitar ou criar agendamentos, enviar
+mensagens reais. A conta Camila Souza / Camila Nails Studio (`chip2`) e os dados dela são preservados.
 
 ## 1. Backup do banco e verificação de integridade
 
@@ -84,10 +114,12 @@ Com `/var/backups/nailflow` em `700 root:root`, só o `root` consegue gravar e l
 redirecionamento acima (`>`) é feito pelo shell do `root` e o `postgres` apenas envia os dados. Não use
 `pg_dump … -f <arquivo>` neste diretório (o `postgres` não grava nele).
 
-Prova de restauração (opcional, recomendada): restaurar em um banco **descartável**, nunca sobre `nailflow`, com o
-`root` entregando o arquivo por entrada padrão (`sudo -u postgres pg_restore … < arquivo`). O procedimento testado
-está em `SUPORTE_BACKUPS_PROPOSTA.md` (cluster de teste, banco `nf_*_test`). **Uma restauração de dump de produção
-ainda não foi ensaiada neste servidor** (só no cluster descartável, em 2026-10-11).
+Prova de restauração: **ensaiada em 2026-10-16** com o dump das 03:00 (`nailflow_2026-10-16_030001.dump`) restaurado no cluster descartável da
+porta 55433 (`/tmp/nf-del-iso`, banco `nf_restore_20261016_030001_test`, artefatos em `/root/restore-rehearsal-20261016/`): `pg_restore` com código 0 e **0
+erros**, 17 tabelas, 195 funções, 16 triggers, schema igual ao de produção (só difere a formatação de CHECK), grants da role `nailflow` completos,
+carga das 12 FAQs idempotente e fluxo completo da Central em modo produção. Em caso real, restaurar **sempre** em banco descartável, nunca sobre
+`nailflow`, com o `root` entregando o arquivo por entrada padrão (`sudo -u postgres pg_restore … < arquivo`). Para o dump `pre-suporte` desta
+publicação basta a listagem (`pg_restore --list`) acima; o ensaio completo já foi feito com o dump do dia.
 
 ## 2. Frontend atual e preservação do `dist`
 
@@ -191,6 +223,22 @@ curl -s $B/health; pm2 describe nailflow-backend | grep -E "status|uptime|restar
 pm2 logs nailflow-backend --lines 40 --nostream | grep -c originGuard                      # 0 (nenhum erro da guarda)
 ```
 
+**Canário do n8n (somente leitura, logo após o reinício).** Em produção o workflow principal "WhatsApp NailFlow — Definitivo" roda a cada poucos
+segundos (≈ 2.100 execuções com sucesso em 48 h) e chama `POST /bot/process` sem `Origin`. Conferir que **continua com sucesso depois do reinício**:
+
+```bash
+python3 -I - <<'PY'
+import sqlite3
+c = sqlite3.connect("file:/root/.n8n/database.sqlite?mode=ro", uri=True)
+for st, n, m in c.execute("select e.status, count(*), max(e.startedAt) from execution_entity e join workflow_entity w on w.id = e.workflowId where w.name like 'WhatsApp NailFlow%' and e.startedAt > datetime('now','-10 minutes') group by 1"): print(st, n, m)
+PY
+```
+
+Esperado: só `success` (e nenhum `error`) nos 10 min seguintes ao reinício. **Linha de base conhecida e anterior à publicação (não é efeito da guarda):**
+"Lembretes de Agendamento" e "Abandono de Conversa" já falham todo ciclo com a mensagem **"Profissional bloqueada."** (96 e 192 erros em 48 h, até 2026-10-16 17:30);
+continuam iguais. O que seria **efeito da guarda** é a mensagem **"Origem não permitida."**, que **não** deve aparecer em nenhuma execução. Se aparecer,
+rollback nível 2 (guarda).
+
 Depois, **no navegador**: login da profissional e do ADM e uma gravação simples (por exemplo editar o Perfil) precisam
 funcionar; **qualquer gravação do site com 403 "Origem não permitida." é motivo de rollback imediato** (tabela abaixo). Conferir
 também a próxima execução do workflow principal no n8n (sucesso): `/bot` não é afetado, porque não envia `Origin`.
@@ -209,6 +257,7 @@ sessão = 401 e, com sessão, `{"enabled":false,...}`.
 Em pasta temporária (nunca em `/var/www/nailflow/frontend`: um `npm run build` ali já troca o `dist` servido):
 
 ```bash
+rm -rf /tmp/nf-fe && mkdir -p /tmp/nf-fe          # pasta nova: nunca misturar com restos de outra tentativa
 git -C /root/nf-guia archive $COMMIT frontend | tar -x -C /tmp/nf-fe
 install -m 600 /var/www/nailflow/frontend/.env /tmp/nf-fe/frontend/.env     # VITE_API_URL; NÃO imprimir o conteúdo
 cd /tmp/nf-fe/frontend && npm ci && npm run build                            # tsc -b && vite build
@@ -226,7 +275,7 @@ stat -c '%U:%G %a %n' $FE/dist $FE/dist-new $FE/dist-new/index.html     # mesmo 
 ```
 
 Validar o conteúdo **em `dist-new`** (nada disso toca o que está no ar): (1) `grep -c "localhost:3333"` nos `.js` = **0**; (2) a string de
-`VITE_API_URL` aparece o mesmo número de vezes que no bundle atual; (3) idealmente, provar equivalência com o build anterior trocando
+`VITE_API_URL` aparece o mesmo número de vezes que no bundle atual (hoje **1**; sem imprimir o valor: `U=$(grep '^VITE_API_URL=' $FE/.env | cut -d= -f2-); grep -o -F -- "$U" $FE/dist-new/assets/*.js | wc -l` e o mesmo em `$FE/dist/assets/index-C9UyQW3Z.js`); (3) idealmente, provar equivalência com o build anterior trocando
 só a URL; (4) conferências do aviso (contato 1; nome civil, `/privacidade` e texto antigo 0), em `DEPLOY.md`, apontando o laço para
 `$FE/dist-new/assets/*.js`. **Parar se qualquer contagem fugir do esperado** (apagar `dist-new` e investigar; o site não foi tocado).
 
@@ -247,7 +296,7 @@ basta `cd $FE && mv dist-prev-$STAMP dist`. Conferir depois: `test -s $FE/dist/i
 
 Navegador (profissional e ADM): login funciona; agenda, clientes e finanças como antes; **nenhum** botão
 "Ajuda/Suporte" novo nem item "Suporte" no menu da ADM; `/suporte` mostra "indisponível"; ADM: lista de
-profissionais e prévia de exclusão carregam (agora com `supportTickets: 0`); Auditoria abre (o filtro "Suporte"
+profissionais e prévia de exclusão carregam (agora com `supportTickets: 0`; **só olhar: não confirmar nenhuma exclusão**); Auditoria abre (o filtro "Suporte"
 existe, sem registros). Se algo falhar: voltar o `dist` (seção Rollback, nível 2).
 
 ## 6-A. Carga inicial da FAQ (12 artigos), ainda com a Central desligada
