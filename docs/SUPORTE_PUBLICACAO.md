@@ -23,14 +23,29 @@
 
 ## 0. Antes de começar (decisões)
 
-- [ ] **Texto de privacidade/retenção revisado** (bloqueia ligar; ver `SUPORTE_DECISOES.md`).
+- [ ] **Aviso de privacidade do formulário** (bloqueia ligar; ver `SUPORTE_DECISOES.md`). A política de privacidade completa
+  **não** é pré-requisito (decisão de 2026-10-16): ver os itens A, B e C abaixo.
 - [ ] **Backups conferidos:** o log da noite anterior mostra a execução das 03:00 do script novo sem `ERRO`, existe o
   dump novo e o diretório continua `700 root:root` (primeira noite conferida em 2026-10-14 por leitura (sem `ERRO`, dump novo presente); repetir no dia da publicação); a guarda de
   cópias de dumps foi removida **com autorização separada** ou continua dentro do prazo decidido (ver
   `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700).
 - [ ] **Privacidade e retenção** ([`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)):
-  - aviso de privacidade validado (contato, política referenciada, base legal) e `PRIVACY_NOTICE` atualizado (hoje o
-    texto é o antigo; o rascunho novo **não é definitivo**) (**bloqueia ligar**);
+  - **A. Publicação e ativação da Central (bloqueia ligar):** publicar o aviso curto do formulário, o componente
+    `SupportPrivacyNotice` com o texto de `frontend/src/content/avisoPrivacidade.ts`. Ele mostra o contato de privacidade e **não**
+    linka a política enquanto `POLICY_PAGE_PUBLISHED` for `false`. O aviso antigo ("mantidas conforme a política de privacidade do
+    NailFlow", política que não está publicada) **não pode** ficar no ar com a Central ligada. Hoje o aviso novo está na branch
+    de desenvolvimento `feat/suporte-aviso-privacidade`, ainda não publicado em produção, e o texto em produção é o antigo. Como validar e compilar sem publicar a política: `DEPLOY.md` (build só do aviso) e
+    `node --test frontend/tests/support-notice.test.mjs`;
+  - **B. Publicação futura da política de privacidade (não faz parte desta publicação e não bloqueia ligar):** página `/privacidade`,
+    rota, links de rodapé e documentos de LGPD ficam para depois da revisão jurídica e do preenchimento dos campos pendentes. O
+    link do aviso para a política só pode ser habilitado nessa publicação futura (`POLICY_PAGE_PUBLISHED = true`), e os testes
+    recusam habilitá-lo sem política pronta, sem marcadores, sem rota, sem página e sem documentos livres de pendência;
+  - **C. Trava específica da política (`PRIVACY_RELEASE_CHECK=1`):** vale para o build que **publica a política** (rota `/privacidade`,
+    links de rodapé ou `POLICY_PAGE_PUBLISHED = true`; se `/privacidade` aparecer no bundle, é esse caso). Nele, rodar
+    `PRIVACY_RELEASE_CHECK=1 node --test frontend/tests/privacy.test.mjs` (Node >= 22.18). Ele falha enquanto houver campo
+    pendente, marcador (TODO, A INFORMAR, A DEFINIR, [CONFIRMAR]) ou revisão jurídica sem revisor e data. O teste não prova que a
+    revisão aconteceu: quem publica confirma isso por fora. **Não publicar a política se falhar.** A trava **não foi enfraquecida**
+    e **não é exigida** para o build só do aviso (A);
   - **antes do deploy do código com snapshots de 30 dias:** listar **todos** os 563 snapshots existentes (42
     identificados como de teste; 521 sem origem verificada) em
     `/var/backups/nailflow/deleted-professionals/.retention-hold` enquanto a origem não for confirmada (comando em
@@ -124,7 +139,8 @@ cd /tmp/nf-fe/frontend && npm ci && npm run build                            # t
 
 Antes de trocar o `dist` (lição do deploy de 2026-10-10): (1) `grep -c "localhost:3333"` no bundle = **0**;
 (2) a string de `VITE_API_URL` aparece no bundle o mesmo número de vezes que no bundle atual; (3) idealmente,
-provar equivalência com o build anterior trocando só a URL. Trocar e apagar o `.env` temporário:
+provar equivalência com o build anterior trocando só a URL; (4) conferências do aviso no bundle (contato 1; nome civil, `/privacidade`
+e texto antigo 0), em `DEPLOY.md`. Trocar e apagar o `.env` temporário:
 
 ```bash
 mv /var/www/nailflow/frontend/dist /var/www/nailflow/frontend/dist-prev-$STAMP

@@ -53,7 +53,19 @@ um procedimento do runbook de restauração, sem código.
   (chamados e auditoria), `backend/tests/snapshot-retention.test.js` (snapshots e script, sem banco) e
   `backend/tests/error-handler-log.test.js` (logs).
 
-## 4. Rascunho do aviso de privacidade (NÃO é o texto definitivo)
+## 4. Aviso de privacidade (rascunho; a proposta antiga abaixo foi substituída)
+
+> **Texto atual (na branch de desenvolvimento `feat/suporte-aviso-privacidade`, ainda não publicado em produção; não aprovado
+> juridicamente):** o aviso do formulário é o componente
+> `SupportPrivacyNotice`, com o texto em `frontend/src/content/avisoPrivacidade.ts` (módulo mínimo, que não leva a política ao
+> bundle). Ele mostra o contato de privacidade e **não linka a política** enquanto `POLICY_PAGE_PUBLISHED` for `false`; o link só
+> pode ser habilitado quando a página `/privacidade`, a rota e a política estiverem prontas (guarda executável em
+> `frontend/tests/support-notice.test.mjs`). Não cita prazos, não pede aceite e só mostra contato quando houver um informado. A
+> política de privacidade completa é uma publicação futura e separada, com a sua trava. Registros técnicos (backend e n8n)
+> podem conter telefones e mensagens e não têm retenção.
+>
+> **A proposta a seguir é anterior e está superada.** Os valores entre colchetes (6, 12, 30, 36 meses) são hipóteses, não
+> decisões nem rotinas em funcionamento; não podem ser prometidos ao usuário enquanto a rotina correspondente não existir.
 
 > Colchetes = valores ou informações **ainda não confirmados**. Não publicar sem a revisão de privacidade/jurídico, a
 > confirmação de que a política referenciada existe e o contato do responsável. O sistema só pode prometer o que as
