@@ -96,7 +96,9 @@ git push origin main
 >    resultado: não publicar. Se `politicaPrivacidade.ts` não estiver no commit do build, `NOME` fica vazio e o laço o ignora: nesse
 >    caso confirme que o commit não carrega o nome com `git grep -c controllerName <commit> -- frontend/src` (sem nenhuma saída).
 >
-> Separação completa entre publicar a Central, publicar a política e a trava em `docs/SUPORTE_PUBLICACAO.md`.
+> Separação completa entre publicar a Central, publicar a política e a trava em `docs/SUPORTE_PUBLICACAO.md`. A carga da FAQ
+> (`backend/db/migrations/_ops/support_faq_initial.sql`) e a ativação da flag `SUPPORT_CENTER_ENABLED` (sem copiar o `.env`)
+> seguem as seções 6-A e 7 do mesmo documento.
 
 ### Alternativa: build no VPS (recomendado para garantir consistência)
 

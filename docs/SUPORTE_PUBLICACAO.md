@@ -1,25 +1,28 @@
 # Central de Suporte: checklist de publicação e rollback
 
-> Roteiro para a V1. **Nada da publicação da Central (migrations, backend, frontend, flag) foi executado em
-> produção.** Cada comando é do projeto como ele está hoje; os fatos de produção abaixo foram conferidos em
-> 2026-10-11 por leitura (sem alterar nada), **exceto a linha de backups, atualizada em 2026-10-13** depois da
-> correção dos backups, que **foi executada** (ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md),
-> seção 0). Decisões que bloqueiam a ativação: [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos:
-> [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
+> Roteiro para a V1. **Estado em 2026-10-16:** as migrations 023/024 e o backend (`main` em `c404c8e`, em execução desde
+> 2026-10-15 11:21 UTC) **já estão em produção**, e o `dist` servido (build de 2026-10-15) já carrega a interface da
+> Central, mas **a Central está desativada** (`SUPPORT_CENTER_ENABLED` ausente: as rotas respondem 404 e nada aparece).
+> **Ainda não publicados:** o aviso de privacidade novo do formulário (branch `feat/suporte-aviso-privacidade`), o guarda de
+> `Origin` contra CSRF (backend, **exige reinício**), a FAQ inicial e a flag. Os fatos de produção abaixo foram conferidos por leitura em 2026-10-16 (sem alterar nada), **exceto a
+> linha de backups, atualizada em 2026-10-13** depois da correção dos backups, que **foi executada** (ver
+> [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0). Decisões que bloqueiam a ativação:
+> [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
 
 ## Fatos de produção que mudam o procedimento
 
 | Fato | Consequência |
 |---|---|
-| Banco `nailflow` (PostgreSQL 16, ~11 MB), acessado pelo `postgres` via socket (`sudo -u postgres psql -d nailflow`). | Migrations 023/024 aplicadas assim, como nas anteriores (`docs/BANCO_DE_DADOS.md`). |
+| Banco `nailflow` (PostgreSQL 16, ~11 MB), acessado pelo `postgres` via socket (`sudo -u postgres psql -d nailflow`). | Migrations 023/024 foram aplicadas assim, como as anteriores (`docs/BANCO_DE_DADOS.md`). |
 | A aplicação conecta como a role **`nailflow`** (não superusuária). `professionals` e quase todas as tabelas pertencem a **`postgres`** (com `GRANT` à `nailflow`); `admin_audit_log` e `recurring_exceptions` pertencem a `nailflow`. | A 023 **precisa** rodar como `postgres` (faz `ALTER TABLE professionals`), e ela **não tem GRANT**: as tabelas novas nascem sem acesso para a `nailflow` e toda operação de suporte falha com `permission denied` (42501). **Reproduzido em banco descartável.** É obrigatório aplicar `backend/db/migrations/_ops/023_grant_app_role.sql` depois da 023. |
-| Migrations 023 e 024 **não estão aplicadas** (conferido no catálogo). | Roteiro completo. |
-| `backend/src` de produção é idêntico ao commit `9df3217`; **`frontend/src` de produção está desatualizado** em relação a ele (o `dist` servido foi gerado em outro lugar). | **Nunca** rodar `npm run build` dentro de `/var/www/nailflow/frontend`: voltaria o frontend. Construir a partir do commit aprovado, em pasta temporária. |
+| Migrations 023 e 024 **já estão aplicadas em produção**: conferido em 2026-10-16, o catálogo de produção é idêntico ao de um banco construído com essas migrations, e os `GRANT`s da role `nailflow` batem com `_ops/023_grant_app_role.sql`. | A seção 3 é só **verificação em leitura**; não reaplicar. |
+| `backend/src` e `frontend/src` de produção estão no commit `c404c8e` (`main`, checkout limpo). O backend roda esse código desde 2026-10-15 11:21 UTC e o `dist` servido (`index-C9UyQW3Z.js`) é reproduzível: um build de `main` com a URL real da API sai **idêntico byte a byte**. | **Nunca** rodar `npm run build` dentro de `/var/www/nailflow/frontend`: voltaria o frontend. Construir a partir do commit aprovado, em pasta temporária. |
 | Sem mudança de dependências nos cinco commits (`package.json` e lock idênticos). | Não há `npm install` no backend. |
 | PM2 id 0 `nailflow-backend` (`bash -c "npm start"`, modo fork, cwd `/var/www/nailflow/backend`). `reload` em modo fork equivale a `restart` (~10 s fora do ar; o n8n repete 5 × 3 s, conforme `DEPLOY.md`). | Escolher horário calmo. |
 | nginx serve `/var/www/nailflow/frontend/dist`; `/api/` vai para `localhost:3333/`; CSP `connect-src 'self'`. | A API do bundle precisa ser a mesma origem (`VITE_API_URL`). |
 | Backups (conferido em 2026-10-13, depois da correção): `nailflow-backup.sh` novo instalado (SHA-256 `d450310b…a1b9`), cron das 03:00 inalterado, retenção de 7 dias. `/var/backups/nailflow` e `manual/` em `700 root:root`; `backup.log` em `600 root:root`; os 9 dumps antigos seguem `664 postgres:postgres` dentro do diretório 700; os novos nascem `600 root:root`. Precedente de backup antes de migration: `/var/backups/nailflow/nailflow_pre-migration-02N_*.dump`. | Backup manual antes da 023, **no formato compatível com o diretório 700** (arquivo aberto pelo `root`, seção 1). A forma `pg_dump -f <arquivo>` (arquivo criado pelo `postgres`) **falha**. A primeira execução noturna do script novo (2026-10-14) e a restauração real ainda estão **pendentes** de verificação: ver [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0. |
-| O código novo é **fail-closed**: sem `SUPPORT_CENTER_ENABLED=true` no `.env`, `/support/*` e `/admin/support/*` respondem 404 e a interface não mostra nada. | Dá para publicar migrations, backend e frontend **sem ligar** a Central. |
+| O código novo é **fail-closed**: sem `SUPPORT_CENTER_ENABLED=true` no `.env`, `/support/*` e `/admin/support/*` respondem 404 e a interface não mostra nada. | Foi assim que as migrations e o backend foram publicados; o frontend do aviso e a FAQ também entram **antes** de ligar a Central. |
+| `FRONTEND_URL` de produção é `https://nailflow.duckdns.org` (visto no cabeçalho CORS ao vivo, sem ler o `.env`) e o `.env` define `NODE_ENV=production`. | Com o guarda de `Origin`, em produção essa variável **ausente ou inválida impede o servidor de iniciar**: conferir antes de reiniciar (seção 4). |
 
 ## 0. Antes de começar (decisões)
 
@@ -55,18 +58,20 @@
   - rotina de chamados resolvidos (6 meses) agendada com autorização, **antes do primeiro vencimento**;
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
-- [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **commitados localmente** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão é independente da Central e deve sair **antes ou junto** dela.
-- [ ] Commit aprovado e testado: HEAD da branch (ou o que for mergeado). Anote o hash: `COMMIT=<hash>`.
-- [ ] Horário calmo (reinício do backend ≈ 10 s).
+- [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **no `main` (`c404c8e`) e em produção** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão já saiu junto, em `c404c8e`.
+- [ ] Commit aprovado e testado: o do aviso (branch `feat/suporte-aviso-privacidade`, hoje `7e480ea`, ou o que for mergeado). **A política de
+  privacidade não pode estar nele** (itens B e C acima). Anote o hash: `COMMIT=<hash>`.
+- [ ] Horário calmo: **dois** reinícios do backend, de ≈ 10 s cada (o do guarda de `Origin`, seção 4, e o da ativação, seção 7).
+- [ ] Pré-checagem de `FRONTEND_URL` em produção (seção 4): sem ela o servidor não sobe.
 
 ## 1. Backup do banco e verificação de integridade
 
 ```bash
 STAMP=$(date +%Y%m%d-%H%M%S)
 # o redirecionamento é feito pelo root (arquivo nasce 600 com umask 077); o dump é feito pelo postgres
-( umask 077; sudo -u postgres pg_dump -Fc nailflow > /var/backups/nailflow/nailflow_pre-migration-023_$STAMP.dump )
-ls -l /var/backups/nailflow/nailflow_pre-migration-023_$STAMP.dump         # tamanho plausível (hoje ~260 KB)
-pg_restore --list /var/backups/nailflow/nailflow_pre-migration-023_$STAMP.dump | head -5   # lista o conteúdo: arquivo íntegro
+( umask 077; sudo -u postgres pg_dump -Fc nailflow > /var/backups/nailflow/nailflow_pre-suporte_$STAMP.dump )
+ls -l /var/backups/nailflow/nailflow_pre-suporte_$STAMP.dump         # tamanho plausível (hoje ~330 KB)
+pg_restore --list /var/backups/nailflow/nailflow_pre-suporte_$STAMP.dump | head -5   # lista o conteúdo: arquivo íntegro
 ```
 
 Com `/var/backups/nailflow` em `700 root:root`, só o `root` consegue gravar e ler o arquivo; por isso o
@@ -82,15 +87,28 @@ ainda não foi ensaiada neste servidor** (só no cluster descartável, em 2026-1
 
 ```bash
 cp -a /var/www/nailflow/frontend/dist /var/www/nailflow/frontend/dist.bak_$STAMP-pre-suporte
-tar czf /root/backup_backend_src_pre_suporte_$STAMP.tgz -C /var/www/nailflow/backend src db
+# o backend recebe só 2 arquivos (seção 4); o "backup" deles é o próprio git de produção (volta com git checkout). Ponto de partida (leitura):
+git -C /var/www/nailflow rev-parse --short HEAD; git -C /var/www/nailflow status --short | wc -l      # c404c8e; 0
 # estado de referência: o frontend atual responde e o login funciona (anotar o resultado)
 curl -s -o /dev/null -w "%{http_code}\n" https://nailflow.duckdns.org/ ; curl -s localhost:3333/health
 ```
 
-## 3. Migrations 023 e 024, na ordem, como `postgres`
+## 3. Migrations 023 e 024: **já aplicadas em produção** (só verificar, em leitura)
 
-Rodar os arquivos **do commit aprovado** (`git archive $COMMIT backend/db | tar -x -C /tmp/nf-mig`), conferindo o
-banco antes (`SELECT current_database();` deve ser `nailflow`).
+**Não reaplicar.** Conferir que continuam como esperado (somente leitura; nada é alterado):
+
+```bash
+sudo -u postgres env PGOPTIONS='-c default_transaction_read_only=on' psql -d nailflow -X -At <<'SQL'
+SELECT count(*) FROM support_faq_categories;                                      -- 6
+SELECT has_table_privilege('nailflow', 'support_tickets', 'INSERT');              -- t
+SELECT has_sequence_privilege('nailflow', 'support_tickets_ticket_number_seq', 'USAGE');  -- t
+SELECT pg_get_constraintdef(oid) LIKE '%support_status%' FROM pg_constraint WHERE conname = 'admin_audit_log_action_check';  -- t
+SQL
+```
+
+**Referência, só para uma instalação nova (banco sem a Central):** rodar os arquivos **do commit aprovado**
+(`git archive $COMMIT backend/db | tar -x -C /tmp/nf-mig`), conferindo o banco antes (`SELECT current_database();` deve ser
+`nailflow`).
 
 ```bash
 cd /tmp/nf-mig/backend/db/migrations
@@ -99,7 +117,7 @@ sudo -u postgres psql -d nailflow -v ON_ERROR_STOP=1 -f 024_audit_actions_suppor
 sudo -u postgres psql -d nailflow -v ON_ERROR_STOP=1 -v app_role=nailflow -f _ops/023_grant_app_role.sql   # OBRIGATÓRIO
 ```
 
-Conferir:
+Conferir depois da instalação de referência:
 
 ```sql
 SELECT count(*) FROM support_faq_categories;                                    -- 6
@@ -112,24 +130,74 @@ Efeito com o backend **antigo** ainda no ar: nenhum (ele não toca nas tabelas n
 por instantes (`ACCESS EXCLUSIVE`) e as duas migrations usam `lock_timeout` de 3 s: se abortarem por bloqueio,
 nada foi alterado; repetir em horário mais calmo. As duas são idempotentes.
 
-## 4. Backend com a Central **desligada**
+## 4. Backend: guarda de `Origin` contra CSRF (única alteração de backend; **exige reinício**)
 
-Conferir que `SUPPORT_CENTER_ENABLED` **não** está `true` em `/var/www/nailflow/backend/.env` (ausente = desligada;
-não é preciso editar o arquivo). Copiar `src/` do commit aprovado (sem `.env`, sem `node_modules`) e reiniciar:
+O backend já roda o `main` (`c404c8e`) desde 2026-10-15 11:21 UTC e as migrations já estão aplicadas. Esta publicação leva ao
+backend **só dois arquivos** do commit aprovado: `backend/src/middleware/originGuard.js` (novo) e `backend/src/server.js`
+(+4 linhas). O guarda recusa (**403**, "Origem não permitida.") requisição que **altera dados** (POST, PUT, PATCH, DELETE)
+com `Origin` diferente de `FRONTEND_URL` (inclui `null`). **Sem `Origin`** (n8n, Evolution, curl) a requisição passa, salvo se o
+navegador declarar `Sec-Fetch-Site` `cross-site` ou `same-site`. GET, HEAD e OPTIONS (preflight) não são tocados, e o CORS não
+muda. Roda antes da autenticação e dos limitadores. **Em produção, `FRONTEND_URL` ausente ou inválida impede o servidor de
+iniciar** (a proteção nunca fica desligada em silêncio). Testes: `backend/tests/origin-guard.test.js` (21, com banco
+descartável); a revisão que motivou a mudança está em `PENDENCIAS.md` (revisão de CSRF).
+
+**Pré-checagem obrigatória, somente leitura, ANTES de copiar e reiniciar.** A produção precisa ter `FRONTEND_URL` igual à origem
+oficial; o preflight mostra o valor em uso sem ler o `.env` (as contagens abaixo não imprimem valores):
 
 ```bash
-git -C /root/nf-guia archive $COMMIT backend/src | tar -x -C /tmp/nf-stage
-cp -a /tmp/nf-stage/backend/src/. /var/www/nailflow/backend/src/
-pm2 restart 0 --update-env      # ~10 s fora do ar (DEPLOY.md)
+curl -s -i -X OPTIONS localhost:3333/support/tickets -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin'   # https://nailflow.duckdns.org
+grep -c '^FRONTEND_URL=' /var/www/nailflow/backend/.env                       # 1
+grep -c '^NODE_ENV=production$' /var/www/nailflow/backend/.env                # 1
+git -C /var/www/nailflow rev-parse --short HEAD; git -C /var/www/nailflow status --short | wc -l     # c404c8e; 0
+pm2 describe nailflow-backend | grep -E "status|uptime|restarts"
+grep -c '^SUPPORT_CENTER_ENABLED=' /var/www/nailflow/backend/.env             # 0 (ausente = desligada)
 ```
 
-Validar: `curl -s localhost:3333/health` = 200; `pm2 logs nailflow-backend --lines 50` sem erro de inicialização;
+Se o cabeçalho **não** mostrar `https://nailflow.duckdns.org`, **não publicar**: em produção o servidor não subiria e o site
+cairia no reinício.
+
+**Copiar só os dois arquivos e reiniciar** (antes da ativação da Central, para validar a guarda sozinha; não copiar o `src/` inteiro):
+
+```bash
+rm -rf /tmp/nf-guard && mkdir -p /tmp/nf-guard
+git -C /root/nf-guia archive $COMMIT backend/src/server.js backend/src/middleware/originGuard.js | tar -x -C /tmp/nf-guard
+# cópia de segurança do server.js ATUAL (é ela que a reversão usa; guarde o $STAMP)
+cp -p /var/www/nailflow/backend/src/server.js /root/server.js.pre-guard-$STAMP && ls -l /root/server.js.pre-guard-$STAMP
+test ! -e /var/www/nailflow/backend/src/middleware/originGuard.js && echo "originGuard.js não existia (ok)"
+cp -p /tmp/nf-guard/backend/src/middleware/originGuard.js /var/www/nailflow/backend/src/middleware/originGuard.js
+cp -p /tmp/nf-guard/backend/src/server.js /var/www/nailflow/backend/src/server.js
+pm2 restart 0       # ~10 s fora do ar; o n8n repete 5 × 3 s (DEPLOY.md)
+```
+
+**Validação CSRF** (curl local; usa um e-mail inexistente, e a recusa por origem ocorre antes de qualquer consulta):
+
+```bash
+B=http://localhost:3333; J='Content-Type: application/json'; D='{"email":"csrf-check@teste.local","password":"x"}'
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://evil.example' -d "$D"        # 403 (origem externa)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: null' -d "$D"                         # 403
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://nailflow.duckdns.org' -d "$D"  # 401 (origem oficial segue)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -d "$D"                                            # 401 (sem Origin: n8n, curl)
+curl -s -i -X OPTIONS $B/support/tickets -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin'   # https://nailflow.duckdns.org (CORS inalterado)
+curl -s $B/health; pm2 describe nailflow-backend | grep -E "status|uptime|restarts"       # ok; online; uptime zerado; +1 reinício
+pm2 logs nailflow-backend --lines 40 --nostream | grep -c originGuard                      # 0 (nenhum erro da guarda)
+```
+
+Depois, **no navegador**: login da profissional e do ADM e uma gravação simples (por exemplo editar o Perfil) precisam
+funcionar; **qualquer gravação do site com 403 "Origem não permitida." é motivo de rollback imediato** (tabela abaixo). Conferir
+também a próxima execução do workflow principal no n8n (sucesso): `/bot` não é afetado, porque não envia `Origin`.
+
+**Efeito no checkout de produção:** ele passa a ter `server.js` modificado e `originGuard.js` não rastreado até o merge no
+`main`. **Antes do `git pull` em produção**, restaurar **somente esses dois arquivos** a partir da cópia de segurança (nunca `git checkout .`
+nem `git clean`, que apagariam outras alterações): `cp -p /root/server.js.pre-guard-$STAMP /var/www/nailflow/backend/src/server.js && rm /var/www/nailflow/backend/src/middleware/originGuard.js`
+e conferir que `git -C /var/www/nailflow status --short` ficou vazio (senão o pull recusa o arquivo não rastreado).
+
+Validar também que a Central segue desligada: `curl -s localhost:3333/health` = 200; `pm2 logs nailflow-backend --lines 50` sem erro de inicialização;
 com a Central desligada, `GET /support/faq` e `GET /admin/support/summary` = **404**; `GET /support/bootstrap` sem
 sessão = 401 e, com sessão, `{"enabled":false,...}`.
 
 ## 5. Frontend com a URL real (sem expor segredos)
 
-Em pasta temporária (nunca em `/var/www/nailflow/frontend`, cujo `src/` está desatualizado):
+Em pasta temporária (nunca em `/var/www/nailflow/frontend`: um `npm run build` ali já troca o `dist` servido):
 
 ```bash
 git -C /root/nf-guia archive $COMMIT frontend | tar -x -C /tmp/nf-fe
@@ -155,12 +223,62 @@ Navegador (profissional e ADM): login funciona; agenda, clientes e finanças com
 profissionais e prévia de exclusão carregam (agora com `supportTickets: 0`); Auditoria abre (o filtro "Suporte"
 existe, sem registros). Se algo falhar: voltar o `dist` (seção Rollback, nível 2).
 
-## 7. Ativação controlada e teste real
+## 6-A. Carga inicial da FAQ (12 artigos), ainda com a Central desligada
+
+A FAQ nasce com **0 artigos**: sem a carga, as profissionais não encontrariam respostas. Os 12 artigos aprovados estão em
+`docs/SUPORTE_FAQ_INICIAL.md` e os scripts gerados dele ficam em `backend/db/migrations/_ops/` (`support_faq_initial.sql` e
+`support_faq_initial_revert.sql`; ver o `README.md` da pasta). Foram testados em banco descartável
+(`backend/tests/support-faq-seed.test.js`) e **nunca foram executados em produção**. Características: ids fixos (rodar de novo
+não duplica), uma única transação, só insere nas 6 categorias que a 023 criou, não toca em chamados, mensagens nem em artigos
+de outras origens, e **não grava na Auditoria** (sem autoria: `created_by` e `updated_by` nulos). Entram **publicados**;
+`-v artigo_status=rascunho` os insere como rascunho. O `postgres` não lê `/root`: o `root` abre o arquivo e o entrega por entrada
+padrão.
 
 ```bash
-cp -p /var/www/nailflow/backend/.env /var/backups/nailflow/env_pre-suporte_$STAMP.bak   # 600, como os anteriores
-# editar /var/www/nailflow/backend/.env: SUPPORT_CENTER_ENABLED=true   (só o valor exato "true" liga)
-pm2 restart 0 --update-env
+git -C /root/nf-guia archive $COMMIT backend/db/migrations/_ops | tar -x -C /tmp/nf-ops      # scripts do commit aprovado
+OPS=/tmp/nf-ops/backend/db/migrations/_ops
+# antes (leitura): banco e quantidade
+sudo -u postgres env PGOPTIONS='-c default_transaction_read_only=on' psql -d nailflow -X -At -c "SELECT current_database(), count(*) FROM support_faq_articles"   # nailflow|0
+# carga (imprime só contagens): esperado artigos_inseridos = 12 e do_lote_no_banco_agora = 12
+sudo -u postgres psql -d nailflow -X -v ON_ERROR_STOP=1 < $OPS/support_faq_initial.sql
+```
+
+**Reverter só a FAQ** (o backup da seção 1 já cobre a tabela): apaga **somente** os 12 ids da carga; artigos criados pela tela,
+chamados e mensagens não são tocados. Se algum artigo do lote foi **editado** depois, o script aborta sem apagar nada e informa
+quantos; só com `-v forcar_editados=on` apaga esses também. Reordenar ou publicar/despublicar não conta como edição.
+
+```bash
+sudo -u postgres psql -d nailflow -X -v ON_ERROR_STOP=1 < $OPS/support_faq_initial_revert.sql
+```
+
+## 7. Ativação controlada e teste real
+
+Este é o **segundo** reinício do backend (o primeiro foi o da seção 4; só ative depois de validar a guarda). A flag é lida do `.env` quando o backend inicia (`dotenv`), e ela **não** está no ambiente armazenado do PM2: basta `pm2 restart 0`
+(o `--update-env` não é necessário). **Não copiar o `.env`** (mais uma cópia de segredos): registrar só o hash e a contagem de
+linhas, acrescentar a linha e, para reverter, remover **só essa linha** e conferir que o hash voltou ao de antes. Nenhum comando
+abaixo imprime valores do arquivo.
+
+```bash
+cd /var/www/nailflow/backend
+# 1) estado ANTES, sem copiar o arquivo e sem imprimir valores (anote os dois)
+HASH_ANTES=$(sha256sum .env | cut -c1-16); LINHAS_ANTES=$(wc -l < .env); MODO_ANTES=$(stat -c %a .env); echo "$HASH_ANTES $LINHAS_ANTES $MODO_ANTES"
+# 2) a flag ainda não existe (0) e o arquivo termina com quebra de linha (aparece \n); sem isso a nova linha grudaria na última variável
+grep -c '^SUPPORT_CENTER_ENABLED=' .env; tail -c1 .env | od -An -c
+# 3) acrescentar a linha (só o valor exato "true" liga)
+printf 'SUPPORT_CENTER_ENABLED=true\n' >> .env
+# 4) conferir sem imprimir valores: exatamente +1 linha, 1 linha da flag e o mesmo modo (600)
+echo $(( $(wc -l < .env) - LINHAS_ANTES )); grep -c '^SUPPORT_CENTER_ENABLED=true$' .env; stat -c %a .env
+pm2 restart 0       # ~10 s fora do ar; o n8n repete 5 × 3 s (DEPLOY.md)
+```
+
+**Reverter a flag (nível 1 do rollback):**
+
+```bash
+cd /var/www/nailflow/backend
+sed -i '/^SUPPORT_CENTER_ENABLED=/d' .env
+# prova de que o arquivo voltou exatamente ao que era (use o HASH_ANTES anotado): deve imprimir "restaurado"
+[ "$(sha256sum .env | cut -c1-16)" = "$HASH_ANTES" ] && echo restaurado || echo "ATENCAO: difere do estado anterior"
+stat -c %a .env; pm2 restart 0
 ```
 
 Roteiro com **uma conta de teste** (não uma cliente real): bootstrap `enabled:true` para a profissional e **403**
@@ -182,8 +300,9 @@ pela ADM** (a API não tem exclusão de solicitação; a exclusão da conta leva
 
 | Nível | Quando | Como | Perde dados? |
 |---|---|---|---|
-| 1. Desligar | Qualquer problema na Central | `SUPPORT_CENTER_ENABLED=false` (ou remover a linha) no `.env` + `pm2 restart 0 --update-env`. As rotas viram 404 e a interface some. | **Não.** Conversas e FAQ ficam no banco. |
-| 2. Voltar o código | Problema no frontend ou no backend novo | Frontend: `mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Backend: restaurar `src` do `tar` da seção 2 + `pm2 restart 0`. O código antigo ignora as tabelas e a coluna novas. | **Não.** |
+| 1. Desligar | Qualquer problema na Central | Remover a linha da flag do `.env` (procedimento da seção 7, que confere o hash do arquivo) + `pm2 restart 0`. As rotas viram 404 e a interface some. | **Não.** Conversas e FAQ ficam no banco. |
+| 1b. Retirar a FAQ inicial | Conteúdo errado na FAQ | `support_faq_initial_revert.sql` (seção 6-A): apaga só os 12 artigos da carga; não toca em artigos criados pela tela nem em chamados. | Só os 12 artigos. |
+| 2. Voltar o código | Problema no frontend ou no backend novo | Frontend: `mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Backend (guarda de `Origin`): `cp -p /root/server.js.pre-guard-$STAMP /var/www/nailflow/backend/src/server.js && rm /var/www/nailflow/backend/src/middleware/originGuard.js && pm2 restart 0` (restaura só esses 2 arquivos a partir da cópia feita na seção 4; não usa `git checkout`/`clean`, então nenhuma outra alteração é apagada; conferir `git -C /var/www/nailflow status --short` vazio e a validação da seção 4 devolvendo 401 (e não 403) para o login com `Origin: https://evil.example`, o que prova a guarda removida). O código antigo ignora as tabelas e a coluna novas. | **Não.** |
 | 3. Reverter a 024 | Só se for indispensável | `_rollback/024_audit_actions_support.down.sql`. **Aborta** se já houver auditoria `faq_*`/`support_*` (proteção). Padrão recomendado: **deixar aplicada** (é aditiva). | Não apaga nada. |
 | 4. Reverter a 023 | Só se for indispensável | **Destrutivo e irreversível:** apaga solicitações, mensagens, eventos, artigos de FAQ e a preferência `support_fab_hidden` de todas as contas. Parar a API, backup novo, exportar antes se quiser guardar (`pg_dump -Fc -t 'support_*' nailflow`, com o arquivo aberto pelo `root`, `> arquivo`, como na seção 1), autorizar na mesma sessão (`SET support.confirm_destructive_rollback = 'DESTRUIR-DADOS-DE-SUPORTE'`). Detalhes e limites (`lock_timeout` de 3 s, locks em `professionals`) em `backend/db/migrations/_rollback/README.md`. | **Sim**, tudo da Central. A auditoria permanece (sem FK). |
 

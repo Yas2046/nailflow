@@ -1,8 +1,9 @@
 # Central de Suporte: decisões e limitações da V1
 
-> Registro das decisões tomadas e das pendências. A Central **não está publicada**: depende das migrations 023/024
-> (e do `GRANT` de [`_ops/023_grant_app_role.sql`](../backend/db/migrations/_ops/023_grant_app_role.sql)), de
-> `SUPPORT_CENTER_ENABLED=true` e de reiniciar o backend. Contratos das rotas: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
+> Registro das decisões tomadas e das pendências. A Central **está desativada em produção**: as migrations 023/024 (com o
+> `GRANT` de [`_ops/023_grant_app_role.sql`](../backend/db/migrations/_ops/023_grant_app_role.sql)) e o backend já estão em
+> produção (conferido em 2026-10-16); faltam publicar o aviso novo do formulário e a FAQ inicial, definir
+> `SUPPORT_CENTER_ENABLED=true` e reiniciar o backend. Contratos das rotas: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
 > Roteiro de publicação e rollback: [`SUPORTE_PUBLICACAO.md`](./SUPORTE_PUBLICACAO.md). Backups:
 > [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md).
 
@@ -33,7 +34,7 @@ no ar, sem retrabalho de código.
    está superado. As conversas
    ficam até 6 meses depois da resolução (rotina ainda não ativa), com cópia em snapshot de exclusão (30 dias, quando
    a limpeza por tempo estiver agendada) e em dumps (7 dias).
-2. **Aplicar o `GRANT` depois da 023** (obrigação operacional, não decisão). A 023 não concede acesso à role da
+2. **Aplicar o `GRANT` depois da 023** (obrigação operacional, não decisão; **já aplicado em produção**, conferido em 2026-10-16). A 023 não concede acesso à role da
    aplicação; em produção ela precisa rodar como `postgres`. Sem o `GRANT`, toda operação falha com
    `permission denied` (reproduzido em banco descartável). Está no checklist de publicação, seção 3.
 
