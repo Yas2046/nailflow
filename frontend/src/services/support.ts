@@ -46,8 +46,8 @@ export const SUBJECT_MAX = 120;
 export const BODY_MAX = 5000;
 export const FAQ_TITLE_MAX = 120;
 export const FAQ_BODY_MAX = 8000;
-export const PRIVACY_NOTICE =
-  'As informações enviadas serão utilizadas para atender sua solicitação e mantidas conforme a política de privacidade do NailFlow. Evite incluir senhas ou dados pessoais desnecessários.';
+// O aviso de privacidade do formulário fica em content/avisoPrivacidade.ts: mostra o contato de privacidade e só linka a
+// política quando POLICY_PAGE_PUBLISHED for true (hoje false: a política ainda não está publicada).
 
 /** Conta caracteres como o PostgreSQL (um emoji vale 1). */
 export const charCount = (s: string) => [...s].length;
