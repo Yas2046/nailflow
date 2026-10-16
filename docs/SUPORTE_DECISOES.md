@@ -1,8 +1,9 @@
 # Central de Suporte: decisões e limitações da V1
 
-> Registro das decisões tomadas e das pendências. A Central **não está publicada**: depende das migrations 023/024
-> (e do `GRANT` de [`_ops/023_grant_app_role.sql`](../backend/db/migrations/_ops/023_grant_app_role.sql)), de
-> `SUPPORT_CENTER_ENABLED=true` e de reiniciar o backend. Contratos das rotas: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
+> Registro das decisões tomadas e das pendências. A Central **está desativada em produção**: as migrations 023/024 (com o
+> `GRANT` de [`_ops/023_grant_app_role.sql`](../backend/db/migrations/_ops/023_grant_app_role.sql)) e o backend já estão em
+> produção (conferido em 2026-10-16); faltam publicar o aviso novo do formulário e a FAQ inicial, definir
+> `SUPPORT_CENTER_ENABLED=true` e reiniciar o backend. Contratos das rotas: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
 > Roteiro de publicação e rollback: [`SUPORTE_PUBLICACAO.md`](./SUPORTE_PUBLICACAO.md). Backups:
 > [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md).
 
@@ -21,14 +22,19 @@
 Só duas coisas impedem **ligar** a Central para as profissionais. O restante pode ser decidido depois, com a Central
 no ar, sem retrabalho de código.
 
-1. **Texto de privacidade/retenção exibido ao usuário** (revisão jurídica). A tela de nova solicitação mostra
-   `PRIVACY_NOTICE` (`frontend/src/services/support.ts`), que remete à "política de privacidade do NailFlow". É
-   preciso confirmar que essa política existe e é a que vale, e **não prometer exclusão definitiva nem prazo que o
-   sistema não garanta**. O texto proposto está em `SUPORTE_PRIVACIDADE_RETENCAO.md` (rascunho, **não é o texto
-   definitivo**: contato, política referenciada e pontos de privacidade ainda não foram validados). As conversas
+1. **Aviso de privacidade exibido no formulário** (decisão de 2026-10-16: a Central pode ser ligada **sem** publicar a política
+   de privacidade). A tela de nova solicitação passa a mostrar `SupportPrivacyNotice` (texto em
+   `frontend/src/content/avisoPrivacidade.ts`): texto curto e factual mais o contato de privacidade, **sem link para a política**
+   enquanto ela não estiver publicada (`POLICY_PAGE_PUBLISHED = false`). O aviso antigo ("mantidas conforme a política de
+   privacidade do NailFlow") afirmava uma política que não está publicada e **não pode ficar no ar** com a Central ligada; o texto
+   novo **não promete exclusão definitiva nem prazo que o sistema não garanta**. A política de privacidade (página `/privacidade`,
+   links de rodapé, documentos de LGPD) é outra frente, **futura e separada**: continua em rascunho, com pendências (revisão
+   jurídica, vigência, região do servidor, base legal, transferência internacional), e tem a sua própria trava
+   (`PRIVACY_RELEASE_CHECK=1`), que **não** bloqueia ligar a Central. O texto proposto antigo em `SUPORTE_PRIVACIDADE_RETENCAO.md`
+   está superado. As conversas
    ficam até 6 meses depois da resolução (rotina ainda não ativa), com cópia em snapshot de exclusão (30 dias, quando
    a limpeza por tempo estiver agendada) e em dumps (7 dias).
-2. **Aplicar o `GRANT` depois da 023** (obrigação operacional, não decisão). A 023 não concede acesso à role da
+2. **Aplicar o `GRANT` depois da 023** (obrigação operacional, não decisão; **já aplicado em produção**, conferido em 2026-10-16). A 023 não concede acesso à role da
    aplicação; em produção ela precisa rodar como `postgres`. Sem o `GRANT`, toda operação falha com
    `permission denied` (reproduzido em banco descartável). Está no checklist de publicação, seção 3.
 

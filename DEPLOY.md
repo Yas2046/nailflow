@@ -71,6 +71,35 @@ git commit -m "feat/fix: descrição"
 git push origin main
 ```
 
+> **Trava da política de privacidade (`PRIVACY_RELEASE_CHECK=1`).** Vale para o build que **publica a política**: o que inclui a
+> rota `/privacidade`, os links de rodapé ou `POLICY_PAGE_PUBLISHED = true`. Se `/privacidade` aparecer no bundle, é esse caso.
+> Antes desse build, rodar `PRIVACY_RELEASE_CHECK=1 node --test frontend/tests/privacy.test.mjs`: ele falha enquanto a política
+> tiver pendências ou revisão jurídica sem registro, e **não se publica se falhar**. A trava não foi enfraquecida.
+>
+> **Build só do aviso da Central de Suporte (sem publicar a política):** a trava acima **não** é exigida, porque o build não leva a
+> política. Em vez dela, antes de trocar o `dist`:
+>
+> 1. `node --test frontend/tests/support-notice.test.mjs` (todos devem passar; inclui a guarda que recusa ligar o link da política sem
+>    política pronta, rota, página e documentos sem pendência);
+> 2. `cd frontend && npx tsc -b` e o build normal, a partir do commit aprovado e em pasta temporária (nunca dentro de `/var/www/nailflow/frontend`);
+> 3. no bundle gerado (`dist/assets/*.js`), conferir as contagens:
+>
+>    ```bash
+>    CONTATO=$(grep -o "PRIVACY_CONTACT[^=]*= '[^']*'" frontend/src/content/avisoPrivacidade.ts | sed "s/.*= '//;s/'$//")
+>    NOME=$(grep -o "controllerName: '[^']*'" frontend/src/content/politicaPrivacidade.ts 2>/dev/null | sed "s/.*: '//;s/'$//")
+>    for t in "$CONTATO" "$NOME" "/privacidade" "política de privacidade do NailFlow" "ainda não foi aprovado juridicamente"; do
+>      [ -n "$t" ] && printf '%s -> ' "$t" && grep -o -F -- "$t" frontend/dist/assets/*.js | wc -l
+>    done
+>    ```
+>
+>    Esperado: o contato de privacidade **1**; o nome civil da responsável, `/privacidade` e os dois textos **0**. Qualquer outro
+>    resultado: não publicar. Se `politicaPrivacidade.ts` não estiver no commit do build, `NOME` fica vazio e o laço o ignora: nesse
+>    caso confirme que o commit não carrega o nome com `git grep -c controllerName <commit> -- frontend/src` (sem nenhuma saída).
+>
+> Separação completa entre publicar a Central, publicar a política e a trava em `docs/SUPORTE_PUBLICACAO.md`. A carga da FAQ
+> (`backend/db/migrations/_ops/support_faq_initial.sql`) e a ativação da flag `SUPPORT_CENTER_ENABLED` (sem copiar o `.env`)
+> seguem as seções 6-A e 7 do mesmo documento.
+
 ### Alternativa: build no VPS (recomendado para garantir consistência)
 
 ```bash

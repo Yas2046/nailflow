@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from '../context/ToastContext';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { formatPhone } from '../utils/format';
+import NovaClienteModal from '../components/NovaClienteModal';
 import { api } from '../services/api';
 import AppointmentModal from '../components/AppointmentModal';
 import type { Client, Appointment } from '../types';
@@ -221,13 +222,6 @@ export default function Clientes() {
   const [editSaving, setEditSaving]     = useState(false);
   const [editError, setEditError]       = useState<string | null>(null);
 
-  // form nova cliente
-  const [name, setName]   = useState('');
-  const [phone, setPhone] = useState('');
-  const [notes, setNotes] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
   function reload() {
     api.get<Client[]>('/clients').then(setClients).catch(() => setClients([]));
   }
@@ -405,27 +399,7 @@ export default function Clientes() {
   }
 
   function openNew() {
-    setName(''); setPhone(''); setNotes(''); setError(null);
     setShowNew(true);
-  }
-
-  async function handleCreate() {
-    setError(null);
-    if (!name.trim() || !phone.trim()) {
-      setError('Nome e telefone são obrigatórios.');
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post('/clients', { name: name.trim(), phone: phone.trim(), notes: notes.trim() || null });
-      setShowNew(false);
-      toast('Cliente cadastrada com sucesso');
-      reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao cadastrar cliente.');
-    } finally {
-      setSaving(false);
-    }
   }
 
   // tags únicas para o filtro de tag
@@ -1056,72 +1030,16 @@ export default function Clientes() {
         />
       )}
 
-      {/* ── modal nova cliente ───────────────────────────────────────────── */}
+      {/* ── modal nova cliente (componente compartilhado com a Agenda) ───── */}
       {showNew && (
-        <div
-          className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowNew(false); }}
-        >
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
-            <div className="flex items-center justify-between p-6 pb-4 border-b border-wine-50">
-              <h3 className="font-display text-xl text-wine-700">Nova cliente</h3>
-              <CloseButton onClick={() => setShowNew(false)} />
-            </div>
-
-            <div className="p-6 flex flex-col gap-4">
-              <label className="block">
-                <span className="block text-sm font-medium text-ink/60 mb-1">Nome</span>
-                <input
-                  className="input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Nome completo"
-                  autoFocus
-                />
-              </label>
-
-              <label className="block">
-                <span className="block text-sm font-medium text-ink/60 mb-1">Telefone</span>
-                <input
-                  className="input"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="55319XXXXXXXX"
-                  type="tel"
-                />
-                <span className="block text-xs text-ink/40 mt-1">Formato: código do país + DDD + número</span>
-              </label>
-
-              <label className="block">
-                <span className="block text-sm font-medium text-ink/60 mb-1">
-                  Observações <span className="font-normal text-ink/30">(opcional)</span>
-                </span>
-                <textarea
-                  className="input"
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Alergias, preferências, etc."
-                />
-              </label>
-
-              {error && (
-                <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setShowNew(false)} className="btn-secondary">
-                  Cancelar
-                </button>
-                <button onClick={handleCreate} disabled={saving} className="btn-primary disabled:opacity-60">
-                  {saving ? 'Cadastrando…' : 'Cadastrar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <NovaClienteModal
+          onClose={() => setShowNew(false)}
+          onCreated={() => {
+            setShowNew(false);
+            toast('Cliente cadastrada com sucesso');
+            reload();
+          }}
+        />
       )}
     </div>
   );

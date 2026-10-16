@@ -7,12 +7,13 @@ import { useAuth } from '../../context/AuthContext';
 import { readSupportDraft, writeSupportDraft } from '../../services/supportDrafts';
 import { useToast } from '../../context/ToastContext';
 import {
-  BODY_MAX, CATEGORIES, CATEGORY_HINTS, PRIVACY_NOTICE, SUBJECT_MAX, charCount, newId, supportApi,
+  BODY_MAX, CATEGORIES, CATEGORY_HINTS, SUBJECT_MAX, charCount, newId, supportApi,
   type SupportCategory,
 } from '../../services/support';
 import { searchArticles, useFaq } from '../../components/support/FaqBrowser';
 import { CharCounter, IconBubble, LoadingList, Notice, Unavailable } from '../../components/support/SupportUi';
 import { CategoryIcon, IconBook } from '../../components/support/SupportIcons';
+import SupportPrivacyNotice from '../../components/support/SupportPrivacyNotice';
 
 const DRAFT_SCOPE = 'new';
 
@@ -168,7 +169,7 @@ export default function SuporteNova() {
         </div>
 
         <Notice tone="info">
-          Não é possível enviar anexos nesta versão. {PRIVACY_NOTICE}
+          <SupportPrivacyNotice />
         </Notice>
         {error && <Notice tone="error">{error}</Notice>}
 
