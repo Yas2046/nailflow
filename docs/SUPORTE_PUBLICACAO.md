@@ -1,13 +1,95 @@
 # Central de Suporte: checklist de publicação e rollback
 
-> Roteiro para a V1. **Estado em 2026-10-16:** as migrations 023/024 e o backend (`main` em `c404c8e`, em execução desde
-> 2026-10-15 11:21 UTC) **já estão em produção**, e o `dist` servido (build de 2026-10-15) já carrega a interface da
-> Central, mas **a Central está desativada** (`SUPPORT_CENTER_ENABLED` ausente: as rotas respondem 404 e nada aparece).
-> **Ainda não publicados:** o aviso de privacidade novo do formulário (branch `feat/suporte-aviso-privacidade`), o guarda de
-> `Origin` contra CSRF (backend, **exige reinício**), a FAQ inicial e a flag. Os fatos de produção abaixo foram conferidos por leitura em 2026-10-16 (sem alterar nada), **exceto a
-> linha de backups, atualizada em 2026-10-13** depois da correção dos backups, que **foi executada** (ver
-> [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0). Decisões que bloqueiam a ativação:
-> [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos: [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md).
+> Roteiro para a V1 e **registro da publicação real**. **Estado em 2026-10-16, depois da publicação:** a Central de Suporte está **ativa em
+> produção** (`SUPPORT_CENTER_ENABLED=true`), com o frontend novo (aviso de privacidade do formulário), a guarda de `Origin` contra CSRF e as 12
+> FAQs publicadas. O que foi feito, quando e com que resultado está no **Registro da publicação** logo abaixo. As seções numeradas seguem como o
+> **roteiro executado e de referência de rollback**: onde falam "ainda não publicado" ou descrevem o estado "antes", vale como o estado
+> **imediatamente anterior** à publicação. Decisões: [`SUPORTE_DECISOES.md`](./SUPORTE_DECISOES.md). Contratos:
+> [`ROTAS_E_ENDPOINTS.md`](./ROTAS_E_ENDPOINTS.md). Backups: [`SUPORTE_BACKUPS_PROPOSTA.md`](./SUPORTE_BACKUPS_PROPOSTA.md), seção 0.
+
+## Registro da publicação (2026-10-16)
+
+**Referências.** Código publicado: commit **`8e41e3d`** (`8e41e3d91629a063408d891670a3153eeae8b47f`), branch `feat/suporte-aviso-privacidade`; é a referência
+histórica do que foi para produção (o código de backend e frontend é idêntico ao revisado em `a68b87e`). **Este registro é um commit documental
+posterior, só de `docs/`, com hash próprio: ele não altera o código publicado.** `STAMP=20261016-194103`. Como cada passo rodou em uma sessão de shell
+separada, `STAMP` e `COMMIT` ficaram guardados em `/root/pub-state-20261016.env` (também com o hash e a contagem de linhas do `.env` de antes da flag).
+Horários em **UTC**; o horário local do servidor é CEST (**UTC+2**), indicado entre parênteses quando foi medido.
+
+| UTC | Local | Evento (evidência) |
+|---|---|---|
+| 17:41:03 | 19:41:03 | Início; `STAMP` definido; pré-voo somente de leitura sem divergência |
+| 17:41:14 | 19:41:14 | Dump `nailflow_pre-suporte_20261016-194103.dump` (data do arquivo) |
+| entre 17:41:14 e 17:42:37 | — | Cópia `dist.bak_20261016-194103-pre-suporte` e build do frontend (horário exato não registrado) |
+| 17:42:37 | 19:42:37 | Troca do `dist` (data de alteração do diretório `dist-prev-20261016-194103`): site 200 e Central ainda desligada |
+| 17:42:50 | 19:42:50 | Cópia de segurança `/root/server.js.pre-guard-20261016-194103` |
+| 17:42:59 | 19:42:59 | **1º reinício do PM2** (guarda de `Origin` instalada); health 200 em cerca de 2 s |
+| 17:48:38 | 19:48:38 | Execução natural do workflow "WhatsApp NailFlow — Definitivo": sucesso (sem chegar aos nós que fazem POST: ver pendências) |
+| 17:49:35 | 19:49:35 | Carga das 12 FAQs (`created_at` e `published_at` dos artigos) |
+| 17:51:17 e 17:51:59 | 19:51:17 e 19:51:59 | Salvamento de perfil de teste da Camila (`PUT /api/auth/me`) e pela ADM (`PUT /api/admin/professionals/<id>`), antes da flag; ambos 200 |
+| 17:53:10 | 19:53:10 | `SUPPORT_CENTER_ENABLED=true` no `.env` e **2º reinício do PM2** (contador 243 → 244) |
+| 17:55:55 | 19:55:55 | Camila abre o chamado nº 1 |
+| 17:58:37 e 17:58:42 | 19:58:37 e 19:58:42 | A ADM responde e muda o status (aguardando a profissional, depois resolvida) |
+| ~18:04 | ~20:04 | Auditoria pós-publicação, somente leitura (última leitura às 18:04:55Z) |
+
+**Backups e cópias criados (preservados; nada foi apagado).**
+- Banco: `/var/backups/nailflow/nailflow_pre-suporte_20261016-194103.dump`, 414.329 bytes, `600 root:root`; `pg_restore --list` com 192 entradas, 17 tabelas
+  com dados e as 5 tabelas `support_*`.
+- Frontend anterior (duas cópias): `/var/www/nailflow/frontend/dist.bak_20261016-194103-pre-suporte` (idêntica ao `dist` de antes, conferida com `diff -r`)
+  e `/var/www/nailflow/frontend/dist-prev-20261016-194103` (o próprio diretório que estava no ar).
+- Backend: `/root/server.js.pre-guard-20261016-194103` (idêntico ao `server.js` do `c404c8e`).
+- Ensaio de restauração e do fluxo completo da Central em cópia isolada: `/root/restore-rehearsal-20261016/` (contém dados de produção copiados; mantido `700`, acesso só do `root`).
+
+**Resultados da publicação.**
+- *Frontend:* build do commit `8e41e3d`; `index-ChT4ZqRf.js` (638.149 bytes; +769 sobre o anterior `index-C9UyQW3Z.js`). No `dist-new`: `localhost:3333` 0;
+  `VITE_API_URL` 1 (igual ao bundle anterior); contato de privacidade 1; `/privacidade`, texto antigo do aviso e texto "ainda não foi aprovado juridicamente" 0;
+  `POLICY_PAGE_PUBLISHED = false`. Dono e modo iguais aos do `dist` anterior (`root:root`, 755/644). A política de privacidade **não** foi publicada.
+- *Guarda de `Origin` (`originGuard.js` `576bf60838624deb`, `server.js` `3774438675b40350`, iguais aos do commit):* `Origin` externo, `null`, prefixo
+  (`https://nailflow.duckdns.org.evil.example`) e `Sec-Fetch-Site: cross-site` sem `Origin` = **403**; `Origin` oficial e sem `Origin` = **401** (e-mail inexistente);
+  pelo nginx, oficial 401 e externo 403; CORS inalterado (`Access-Control-Allow-Origin: https://nailflow.duckdns.org`, `Allow-Credentials: true`); 0 erros de `originGuard` nos logs.
+- *FAQs:* SQL idêntico ao do ensaio (sha256 iniciando em `c067a295e44f0d9b`); antes banco `nailflow` e 0 artigos; `artigos_inseridos = 12` e `do_lote_no_banco_agora = 12`;
+  12 publicados e 12 sem autoria. Por categoria: agenda 4, clientes 1, financeiro 1, perfil_acesso 1, servicos_config 3, tecnico 2. Nenhum artigo `[TESTE]` foi criado.
+- *Ativação:* `.env` com hash `cb01e34ee440a095` e 23 linhas antes; `bc99794ec1a37fb6` e 24 linhas depois (exatamente +1 linha, uma única `SUPPORT_CENTER_ENABLED`), modo `600`.
+  Com a flag, `/support/faq`, `/support/bootstrap` e `/admin/support/summary` sem sessão passaram de 404 para 401.
+
+**Testes funcionais aprovados (feitos pela usuária no navegador; senhas nunca digitadas por automação).** Login nas contas **Camila Souza / Camila Nails Studio (`chip2`)** e
+**Admin NailFlow**, e gravações de perfil sem erro (antes da flag). Com a Central ativa: a Camila viu as **12 FAQs**, abriu um chamado e viu a resposta; a ADM viu o chamado,
+respondeu e o resolveu. Nenhum agendamento, cliente, mensagem real ou vínculo WhatsApp foi usado.
+
+**Chamado nº 1 (ensaio).** Camila Souza, categoria `agenda`, assunto "Teste", prioridade baixa, status **resolvida**. Mensagem da Camila (seq 2) e resposta da Admin NailFlow (seq 3, 17:58:37Z),
+ambas ligadas ao chamado (2 de 2 consistentes com o chamado e a profissional). Eventos: `created` (seq 1, Camila), `status_changed` aberta → aguardando_profissional (seq 4) e
+→ resolvida (seq 5), ambos pela ADM. Auditoria: `support_status` (17:58:42Z, ADM sobre Camila) e `update` (17:51:59Z, ADM sobre Camila, o salvamento de perfil).
+**O chamado permanece no banco** e só será removido por uma limpeza **explicitamente autorizada** (a API não exclui solicitação e a rotina de retenção só apaga resolvidos há mais de 6 meses e não está agendada).
+
+**Auditoria pós-publicação (leitura, 18:04Z).** Health ok, site 200, PM2 online (reinícios 244, `unstable restarts` 0); log de erros do PM2 sem entradas novas depois do 2º reinício (a última, 17:43Z, é um teste de login 401 feito na validação da guarda);
+sem `originGuard`, "Origem não permitida", `permission denied` ou `support: erro` nos logs; nginx sem 5xx; o único 403 em `/api` depois da troca é o teste da guarda.
+**Dados da Camila preservados:** `chip2`, 57 agendamentos, 16 clientes e 3.380 mensagens, sem agendamento criado ou alterado, sem cliente tocado e sem mensagem nova desde as 17:00Z; totais globais inalterados
+(7 contas, 4.857 mensagens, 176 agendamentos, 78 clientes); nenhuma conta criada ou excluída. **O salvamento de perfil alterou apenas `updated_at`** (comparação campo a campo da linha da Camila, sem a senha, contra o dump das 03:00).
+Os 569 snapshots seguem no diretório (563 no `.retention-hold`); backups e flag conferidos.
+
+**n8n (execuções naturais, sem execução manual).** Desde o 1º reinício: "WhatsApp NailFlow — Definitivo" 1 sucesso; "Lembretes de Agendamento" e "Abandono de Conversa" **falharam com
+"Profissional bloqueada."**, que é uma **falha anterior à publicação** (já ocorria no ciclo de 30 em 30 minutos antes de qualquer mudança: 96 e 192 erros nas 48 h anteriores, até 2026-10-16 17:30Z)
+e **não** tem relação com a guarda nem com a Central. **"Origem não permitida" não apareceu em nenhuma execução.**
+
+**Pendências abertas (nada abaixo foi dado como concluído).**
+1. **POSTs do n8n para `/bot` não comprovados em execução real.** Nas últimas 300 execuções do workflow principal nenhuma chegou aos nós `Processar no NailFlow`, `Enviar via Evolution` e `Registrar Mensagem Bot`,
+   e Lembretes e Abandono param em "Profissional bloqueada." antes de qualquer POST. A configuração dos workflows não define `Origin` e a guarda deixa passar chamada sem `Origin` (provado com `curl` e testes),
+   mas a confirmação em execução depende de uma execução **natural** que chegue a esses nós. Não executar workflows manualmente para provocar isso.
+2. **"Profissional bloqueada." em Lembretes e Abandono:** falha preexistente a investigar à parte (hipótese: conta bloqueada usada pela chave do bot); não é efeito da publicação.
+3. **Monitoramento de 48 h** (a partir do 2º reinício, 17:53:10Z, até **2026-10-18 ~17:53Z**) — critérios:
+   - **Backup das 03:00** de 2026-10-17 e de 2026-10-18 (hora local): dump novo criado, `backup.log` sem `ERRO` e `pg_restore --list` do dia com as 5 tabelas `support_*` (`grep -c 'TABLE DATA.* support_'` = 5);
+   - **Contador de reinícios do PM2:** deve ficar em **244** (nenhum reinício além dos dois planejados) e `unstable restarts` em 0;
+   - **Logs:** sem `support: erro de banco`, `permission denied`, 500 inesperados nem "Origem não permitida"; respostas 429 apenas por uso real;
+   - **n8n:** execuções naturais do workflow principal sem "Origem não permitida"; Lembretes e Abandono continuam com a falha anterior e **sem mensagem nova** diferente dela;
+   - uso real: profissionais sem relato de botão ausente ou 500 ao enviar mensagem.
+4. **Checkout de produção com duas alterações da guarda** (ver abaixo) e **integração da branch** (merge no `main`) ainda **não** feitos.
+5. **Limpeza autorizada, futura:** chamado nº 1; os diretórios `dist-prev-20261016-194103`, `dist.bak_20261016-194103-pre-suporte` e os `dist.bak_*` antigos só depois da janela de monitoramento e com autorização; `/root/server.js.pre-guard-*` até a integração.
+6. **Abertas, fora desta publicação:** retenção (cron de limpeza e 6 snapshots sintéticos fora do hold), rotação de logs do PM2, rotina de chamados resolvidos, `audit_enabled`, rotação de segredos, FAQ P1 a P7, **a política de privacidade e a LGPD** (os 9 arquivos seguem sem commit) e as 31 falhas anteriores da suíte de testes.
+
+**Situação do checkout de produção e cuidados antes de qualquer integração.** `/var/www/nailflow` está em `c404c8e` com **duas alterações locais**, as da guarda: `backend/src/server.js` modificado (+4 linhas) e
+`backend/src/middleware/originGuard.js` **não rastreado**. O backend em execução já roda esse código. Antes de qualquer `git pull`, `merge` ou `checkout` ali:
+(a) **não** usar `git checkout .`, `git stash -u` nem `git clean`; (b) restaurar **somente esses dois arquivos** a partir da cópia (`cp -p /root/server.js.pre-guard-20261016-194103 /var/www/nailflow/backend/src/server.js && rm /var/www/nailflow/backend/src/middleware/originGuard.js`)
+e conferir `git -C /var/www/nailflow status --short` vazio, **ou** conferir que os hashes do que está lá (`3774438675b40350` e `576bf60838624deb`) são os do commit que será integrado; (c) lembrar que um `pull` traz o repositório inteiro (fontes do frontend e documentos),
+mas **não** recompila o `dist` e **não** reinicia o PM2 (o código só vale no próximo reinício); (d) a integração não deve incluir os 9 arquivos da política; (e) depois de integrar, o backend em execução continuará igual (a guarda já está carregada).
 
 ## Fatos de produção que mudam o procedimento
 
@@ -26,18 +108,18 @@
 
 ## 0. Antes de começar (decisões)
 
-- [ ] **Aviso de privacidade do formulário** (bloqueia ligar; ver `SUPORTE_DECISOES.md`). A política de privacidade completa
-  **não** é pré-requisito (decisão de 2026-10-16): ver os itens A, B e C abaixo.
-- [ ] **Backups conferidos:** o log da noite anterior mostra a execução das 03:00 do script novo sem `ERRO`, existe o
+- [x] **Aviso de privacidade do formulário** (bloqueia ligar; ver `SUPORTE_DECISOES.md`). A política de privacidade completa
+  **não** é pré-requisito (decisão de 2026-10-16): ver os itens A, B e C abaixo. *Feito em 2026-10-16: aviso publicado (bundle `index-ChT4ZqRf.js`: contato 1; `/privacidade` e texto antigo 0).*
+- [x] **Backups conferidos:** o log da noite anterior mostra a execução das 03:00 do script novo sem `ERRO`, existe o
   dump novo e o diretório continua `700 root:root` (primeira noite conferida em 2026-10-14 por leitura (sem `ERRO`, dump novo presente); repetir no dia da publicação); a guarda de
   cópias de dumps foi removida **com autorização separada** ou continua dentro do prazo decidido (ver
-  `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700).
+  `SUPORTE_BACKUPS_PROPOSTA.md`, seção 0). Quem executar o backup do passo 1 deve ser o `root` (diretório 700). *Feito em 2026-10-16: dump das 03:00 criado e registrado no `backup.log`, diretório `700 root:root`; backup `pre-suporte` feito pelo `root`.*
 - [ ] **Privacidade e retenção** ([`SUPORTE_PRIVACIDADE_RETENCAO.md`](./SUPORTE_PRIVACIDADE_RETENCAO.md)):
   - **A. Publicação e ativação da Central (bloqueia ligar):** publicar o aviso curto do formulário, o componente
     `SupportPrivacyNotice` com o texto de `frontend/src/content/avisoPrivacidade.ts`. Ele mostra o contato de privacidade e **não**
     linka a política enquanto `POLICY_PAGE_PUBLISHED` for `false`. O aviso antigo ("mantidas conforme a política de privacidade do
-    NailFlow", política que não está publicada) **não pode** ficar no ar com a Central ligada. Hoje o aviso novo está na branch
-    de desenvolvimento `feat/suporte-aviso-privacidade`, ainda não publicado em produção, e o texto em produção é o antigo. Como validar e compilar sem publicar a política: `DEPLOY.md` (build só do aviso) e
+    NailFlow", política que não está publicada) **não pode** ficar no ar com a Central ligada. O aviso novo foi **publicado em 2026-10-16** (ver o Registro); até então o
+    texto em produção era o antigo. Como validar e compilar sem publicar a política: `DEPLOY.md` (build só do aviso) e
     `node --test frontend/tests/support-notice.test.mjs`;
   - **B. Publicação futura da política de privacidade (não faz parte desta publicação e não bloqueia ligar):** página `/privacidade`,
     rota, links de rodapé e documentos de LGPD ficam para depois da revisão jurídica e do preenchimento dos campos pendentes. O
@@ -61,16 +143,16 @@
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
 - [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **no `main` (`c404c8e`) e em produção** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão já saiu junto, em `c404c8e`.
-- [ ] Commit aprovado e testado: o HEAD da branch `feat/suporte-aviso-privacidade`. O **código** (backend e frontend) foi revisado, testado e ensaiado
+- [x] Commit aprovado e testado: o HEAD da branch `feat/suporte-aviso-privacidade`. O **código** (backend e frontend) foi revisado, testado e ensaiado
   no commit `a68b87e` (e é idêntico desde `67bc07e`); commits posteriores só podem alterar `docs/`. Ele contém o aviso, a guarda de `Origin`, a carga
   da FAQ e estes documentos. **A política de privacidade não pode estar nele** (itens B e C acima; os 9 arquivos dela ficam sem commit e
   `git archive` só exporta o que está commitado). Definir `COMMIT=$(git -C /root/nf-guia rev-parse HEAD)` e provar que o código é o revisado:
-  `git -C /root/nf-guia diff --stat a68b87e $COMMIT -- backend frontend` **sem nenhuma linha** de saída.
-- [ ] **`COMMIT` e `STAMP` são variáveis de shell:** só podem ser reutilizados na **mesma sessão** em que foram definidos. Se a sessão cair
+  `git -C /root/nf-guia diff --stat a68b87e $COMMIT -- backend frontend` **sem nenhuma linha** de saída. *Feito: publicado o commit `8e41e3d`, com esse diff vazio.*
+- [x] **`COMMIT` e `STAMP` são variáveis de shell:** só podem ser reutilizados na **mesma sessão** em que foram definidos. Se a sessão cair
   (ou for aberta outra), **não** invente um novo `STAMP`: redefina `COMMIT` e recupere o `STAMP` dos arquivos já criados
-  (`ls /var/backups/nailflow/nailflow_pre-suporte_*.dump /var/www/nailflow/frontend/dist-prev-* /root/server.js.pre-guard-*`).
-- [ ] Horário calmo: **dois** reinícios do backend, de ≈ 10 s cada (o do guarda de `Origin`, seção 4, e o da ativação, seção 7).
-- [ ] Pré-checagem de `FRONTEND_URL` em produção (seção 4): sem ela o servidor não sobe.
+  (`ls /var/backups/nailflow/nailflow_pre-suporte_*.dump /var/www/nailflow/frontend/dist-prev-* /root/server.js.pre-guard-*`). *Na publicação real ficaram em `/root/pub-state-20261016.env`.*
+- [x] Horário calmo: **dois** reinícios do backend, de ≈ 10 s cada (o do guarda de `Origin`, seção 4, e o da ativação, seção 7). *Feitos às 17:42:59Z e 17:53:10Z.*
+- [x] Pré-checagem de `FRONTEND_URL` em produção (seção 4): sem ela o servidor não sobe. *Feita: linha exata (contagem 1) e CORS oficial.*
 
 ## Ordem de execução (resumo; os comandos estão nas seções indicadas)
 
@@ -304,7 +386,7 @@ existe, sem registros). Se algo falhar: voltar o `dist` (seção Rollback, níve
 A FAQ nasce com **0 artigos**: sem a carga, as profissionais não encontrariam respostas. Os 12 artigos aprovados estão em
 `docs/SUPORTE_FAQ_INICIAL.md` e os scripts gerados dele ficam em `backend/db/migrations/_ops/` (`support_faq_initial.sql` e
 `support_faq_initial_revert.sql`; ver o `README.md` da pasta). Foram testados em banco descartável
-(`backend/tests/support-faq-seed.test.js`) e **nunca foram executados em produção**. Características: ids fixos (rodar de novo
+(`backend/tests/support-faq-seed.test.js`) e **foram executados em produção em 2026-10-16 às 17:49:35Z** (12 artigos inseridos; ver o Registro). Características: ids fixos (rodar de novo
 não duplica), uma única transação, só insere nas 6 categorias que a 023 criou, não toca em chamados, mensagens nem em artigos
 de outras origens, e **não grava na Auditoria** (sem autoria: `created_by` e `updated_by` nulos). Entram **publicados**;
 `-v artigo_status=rascunho` os insere como rascunho. O `postgres` não lê `/root`: o `root` abre o arquivo e o entrega por entrada
