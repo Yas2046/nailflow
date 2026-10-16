@@ -55,7 +55,8 @@
     2026-11-15 e **não** foram apagados. O snapshot mais antigo é de 2026-09-29 (hoje com 17 dias; completaria 30 em 2026-10-29,
     mas está no hold). A limpeza por tempo (`pruneSnapshots`) roda **na exclusão de uma conta pela ADM** e respeita o hold; o
     cron de limpeza (`ops/cron/support-retention.cron.example`) **não** está instalado e fica para depois, com autorização.
-    Antes de excluir a conta de teste (seção 7), conferir que o hold continua em pé: `wc -l < /var/backups/nailflow/deleted-professionals/.retention-hold` = 563;
+    **Esta publicação não exclui nenhuma conta** (a conta de teste, Camila Souza, é preservada: seção 7); portanto não gera snapshot nem aciona a limpeza.
+    Se alguma exclusão de conta vier a ocorrer depois, conferir antes que o hold continua em pé: `wc -l < /var/backups/nailflow/deleted-professionals/.retention-hold` = 563;
   - rotina de chamados resolvidos (6 meses) agendada com autorização, **antes do primeiro vencimento**;
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
@@ -307,7 +308,15 @@ sed -i '/^SUPPORT_CENTER_ENABLED=/d' .env
 stat -c %a .env; pm2 restart 0
 ```
 
-Roteiro com **uma conta de teste** (não uma cliente real): bootstrap `enabled:true` para a profissional e **403**
+**Contas do teste.** Profissional de teste: **Camila Souza / Camila Nails Studio** (instância WhatsApp `chip2`). Administradora: **Admin NailFlow**
+(usada à parte, para validar permissões administrativas). Não use a conta "Teste NailFlow" (bloqueada, instância `chip2-teste`). Quem tem as senhas
+faz o login: **senhas nunca são digitadas por automação nem registradas**. A conta da Camila **é uma conta real de teste com dados** (agenda,
+clientes, mensagens e o vínculo WhatsApp `chip2`): **preservar tudo; não criar contas, não excluir a conta e não alterar o vínculo**. Para não
+disparar notificações, o teste usa **somente a Central de Suporte e a FAQ**: **não** confirmar, cancelar nem rejeitar agendamentos, **não** fazer
+agendamento público, **não** conectar nem reconectar o WhatsApp. A Central não envia nada a n8n/Evolution (conferido no código). Se algum passo
+puder notificar alguém, **parar e confirmar destinatário e instância antes**.
+
+Roteiro (profissional: Camila; ADM: Admin NailFlow): bootstrap `enabled:true` para a profissional e **403**
 para a ADM; criar solicitação (aparece na fila da ADM, não lida); ADM responde ("Aguardando você"); a profissional
 vê não lida, abre e marca como lida; resolver; reabrir dentro de 7 dias; criar, publicar e despublicar **um artigo de teste
 com título `[TESTE]`** (ver abaixo); conferir na Auditoria `support_status`, `support_priority` e `faq_*`. **Artigo `[TESTE]` (não há rota de exclusão de artigo):** use o título `[TESTE] Verificação da publicação` e **anote o ID** do artigo criado. Ele
@@ -323,16 +332,26 @@ BEGIN; DELETE FROM support_faq_articles WHERE id = '<ID-ANOTADO>' AND title LIKE
 COMMIT;   -- ROLLBACK se o DELETE não afetar exatamente 1 linha
 ```
 
-Os registros de Auditoria (`faq_*`) desse artigo permanecem (a tabela não tem FK). Ao terminar, **excluir a conta de teste
-pela ADM** (a API não tem exclusão de solicitação; a exclusão da conta leva as conversas junto e deixa o snapshot
-600 em `deleted-professionals/`).
+Os registros de Auditoria (`faq_*`) desse artigo permanecem (a tabela não tem FK).
+
+**O que fica no banco depois do teste (de propósito):** a conta da Camila, com tudo o que ela já tem, **permanece intacta**, e os **chamados**
+(e mensagens e eventos) criados nos testes **permanecem no banco até uma eventual limpeza autorizada**: a API não tem exclusão de
+solicitação, e a rotina de retenção (`_ops/support_retention.sql`) só apaga chamados **resolvidos há mais de 6 meses** e não está agendada.
+Para não deixar chamados em aberto, **resolva** os chamados de teste pela ADM ao final (título com `[ENSAIO]` para identificá-los). **Nenhuma
+exclusão de conta, de chamado ou de artigo faz parte desta publicação**; qualquer limpeza posterior exige **autorização explícita**, com os IDs
+exatos conferidos em leitura antes.
 
 ## 8. Monitoramento (primeiras 48 h)
 
-- `pm2 logs nailflow-backend`: procurar `support: erro de banco` (loga só código/constraint, nunca o texto) e
-  `permission denied` (grants da seção 3 faltando); `pm2 describe nailflow-backend` (contador de reinícios).
+- **Logs:** `pm2 logs nailflow-backend`: procurar `support: erro de banco` (loga só código/constraint, nunca o texto), `permission denied`
+  (grants da seção 3 faltando) e qualquer `Origem não permitida` inesperado (403 da guarda em uso legítimo).
+- **Reinícios:** `pm2 describe nailflow-backend` (contador de reinícios e uptime). Hoje o contador está em **242**; esta publicação adiciona **2**
+  reinícios planejados (guarda e ativação) e **mais nenhum** deve aparecer nas 48 h (`unstable restarts` = 0).
+- **n8n (headers em execução, ainda pendente de confirmação):** conferir a **próxima execução** de cada workflow que chama `/bot/*`
+  (principal "WhatsApp NailFlow — Definitivo", "Lembretes de Agendamento" e "Abandono de Conversa") **com sucesso**, sem 403 "Origem não
+  permitida". Isso fecha a confirmação de que n8n/Evolution não enviam `Origin`; se aparecer 403 nelas, rollback nível 2 (guarda).
 - Respostas 429 nos limitadores (criação 5/h por conta; mensagens 30/10 min; ADM 300 leituras e 60 escritas / 5 min).
-- Backup das 03:00 incluindo as tabelas novas: `pg_restore --list <dump do dia> | grep support_`.
+- **Backup das tabelas da Central:** depois das 03:00 de cada dia, `pg_restore --list /var/backups/nailflow/nailflow_$(date +%F)_0300*.dump | grep -c 'TABLE DATA.* support_'` deve listar as 5 tabelas `support_*` (dados), e o log (`backup.log`) sem `ERRO`.
 - Sinal de problema: profissionais relatando botão ausente (bootstrap falhando) ou 500 ao enviar mensagem.
 
 ## Rollback (do mais leve ao mais pesado)
