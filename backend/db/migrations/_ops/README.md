@@ -7,6 +7,8 @@ sobre `db/migrations` para aplicar migrations.
 | Arquivo | Quando usar |
 |---|---|
 | `023_grant_app_role.sql` | **Depois da 023**, quando ela foi aplicada por uma role diferente da que a aplicação usa (em produção: `postgres` aplica, `nailflow` usa). Concede só os privilégios que a Central de Suporte usa e termina conferindo-os. |
+| `support_faq_initial.sql` | **Carga inicial da FAQ da Central** (12 artigos de `docs/SUPORTE_FAQ_INICIAL.md`): ids fixos, idempotente, uma transação; não grava na Auditoria. Entra publicado (`-v artigo_status=rascunho` para rascunho). |
+| `support_faq_initial_revert.sql` | **Reverte a carga acima**: apaga só os 12 ids; aborta se algum foi editado depois (`-v forcar_editados=on` para forçar). |
 | `support_retention.sql` | **Retenção da Central** (não agendado): apaga chamados resolvidos há mais de 6 meses (mensagens e eventos junto); a auditoria só com `-v audit_enabled=on` (desligada por padrão). Rodar como `postgres`: `sudo -u postgres psql -d nailflow -X -v ON_ERROR_STOP=1 -f backend/db/migrations/_ops/support_retention.sql`. Política e testes: `docs/SUPORTE_PRIVACIDADE_RETENCAO.md`. |
 
 ```bash
