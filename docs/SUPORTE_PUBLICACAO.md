@@ -49,25 +49,30 @@
     pendente, marcador (TODO, A INFORMAR, A DEFINIR, [CONFIRMAR]) ou revisão jurídica sem revisor e data. O teste não prova que a
     revisão aconteceu: quem publica confirma isso por fora. **Não publicar a política se falhar.** A trava **não foi enfraquecida**
     e **não é exigida** para o build só do aviso (A);
-  - **antes do deploy do código com snapshots de 30 dias:** listar **todos** os 563 snapshots existentes (42
-    identificados como de teste; 521 sem origem verificada) em
-    `/var/backups/nailflow/deleted-professionals/.retention-hold` enquanto a origem não for confirmada (comando em
-    `ops/README.md`; escrita em produção, com autorização) e agendar a limpeza por tempo (cron do sistema, com
-    autorização, modelo em `ops/cron/support-retention.cron.example`), senão a primeira exclusão real remove o que
-    passar de 30 dias (o mais antigo completa 30 dias em 29/10/2026);
+  - **retenção dos snapshots de exclusão (30 dias), estado conferido em 2026-10-16 por leitura:** o `.retention-hold` **já existe**
+    (criado em 2026-10-14, `600 root`) e lista **563** dos **569** snapshots. Os **6** fora dele são sintéticos, gerados em
+    2026-10-16 por uma execução de testes (nomes `temp_delete_*` e `temp_audit_*@nailflow.com`); só completam 30 dias em
+    2026-11-15 e **não** foram apagados. O snapshot mais antigo é de 2026-09-29 (hoje com 17 dias; completaria 30 em 2026-10-29,
+    mas está no hold). A limpeza por tempo (`pruneSnapshots`) roda **na exclusão de uma conta pela ADM** e respeita o hold; o
+    cron de limpeza (`ops/cron/support-retention.cron.example`) **não** está instalado e fica para depois, com autorização.
+    Antes de excluir a conta de teste (seção 7), conferir que o hold continua em pé: `wc -l < /var/backups/nailflow/deleted-professionals/.retention-hold` = 563;
   - rotina de chamados resolvidos (6 meses) agendada com autorização, **antes do primeiro vencimento**;
   - rotação de 14 dias dos logs do PM2 instalada (`ops/logrotate/nailflow-pm2`, com autorização);
   - auditoria: `audit_enabled=on` **só** depois da validação de privacidade (desligada por padrão).
 - [x] Frontend refinado, rascunhos por conta e correção da exclusão de profissional x WhatsApp **no `main` (`c404c8e`) e em produção** (`c86c9dc`, `cedf8e3`, `dfd91ce`); 22 cenários E2E repetidos em 2026-10-14 com este código (22 OK, ambiente descartável, não versionados). A correção da exclusão já saiu junto, em `c404c8e`.
-- [ ] Commit aprovado e testado: o do aviso (branch `feat/suporte-aviso-privacidade`, hoje `7e480ea`, ou o que for mergeado). **A política de
-  privacidade não pode estar nele** (itens B e C acima). Anote o hash: `COMMIT=<hash>`.
+- [ ] Commit aprovado e testado: o HEAD da branch `feat/suporte-aviso-privacidade` (hoje `951b65c`, ou o que for mergeado). Ele contém o aviso,
+  a guarda de `Origin`, a carga da FAQ e estes documentos. **A política de privacidade não pode estar nele** (itens B e C acima).
+  Confirmar `git -C /root/nf-guia rev-parse --short HEAD` e anotar o hash completo: `COMMIT=<hash>`.
+- [ ] **`COMMIT` e `STAMP` são variáveis de shell:** só podem ser reutilizados na **mesma sessão** em que foram definidos. Se a sessão cair
+  (ou for aberta outra), **não** invente um novo `STAMP`: redefina `COMMIT` e recupere o `STAMP` dos arquivos já criados
+  (`ls /var/backups/nailflow/nailflow_pre-suporte_*.dump /var/www/nailflow/frontend/dist-prev-* /root/server.js.pre-guard-*`).
 - [ ] Horário calmo: **dois** reinícios do backend, de ≈ 10 s cada (o do guarda de `Origin`, seção 4, e o da ativação, seção 7).
 - [ ] Pré-checagem de `FRONTEND_URL` em produção (seção 4): sem ela o servidor não sobe.
 
 ## 1. Backup do banco e verificação de integridade
 
 ```bash
-STAMP=$(date +%Y%m%d-%H%M%S)
+STAMP=$(date +%Y%m%d-%H%M%S)      # só vale nesta sessão de shell (ver seção 0); COMMIT também
 # o redirecionamento é feito pelo root (arquivo nasce 600 com umask 077); o dump é feito pelo postgres
 ( umask 077; sudo -u postgres pg_dump -Fc nailflow > /var/backups/nailflow/nailflow_pre-suporte_$STAMP.dump )
 ls -l /var/backups/nailflow/nailflow_pre-suporte_$STAMP.dump         # tamanho plausível (hoje ~330 KB)
@@ -146,14 +151,15 @@ oficial; o preflight mostra o valor em uso sem ler o `.env` (as contagens abaixo
 
 ```bash
 curl -s -i -X OPTIONS localhost:3333/support/tickets -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin'   # https://nailflow.duckdns.org
-grep -c '^FRONTEND_URL=' /var/www/nailflow/backend/.env                       # 1
+grep -cx 'FRONTEND_URL=https://nailflow.duckdns.org' /var/www/nailflow/backend/.env   # 1 (linha exata; imprime só a contagem)
 grep -c '^NODE_ENV=production$' /var/www/nailflow/backend/.env                # 1
 git -C /var/www/nailflow rev-parse --short HEAD; git -C /var/www/nailflow status --short | wc -l     # c404c8e; 0
 pm2 describe nailflow-backend | grep -E "status|uptime|restarts"
 grep -c '^SUPPORT_CENTER_ENABLED=' /var/www/nailflow/backend/.env             # 0 (ausente = desligada)
 ```
 
-Se o cabeçalho **não** mostrar `https://nailflow.duckdns.org`, **não publicar**: em produção o servidor não subiria e o site
+Se o cabeçalho **não** mostrar `https://nailflow.duckdns.org` **ou** a contagem exata da linha `FRONTEND_URL` não for **1** (aspas, espaço
+ou outro valor fazem o `dotenv` ler diferente do que roda hoje), **não publicar**: em produção o servidor não subiria e o site
 cairia no reinício.
 
 **Copiar só os dois arquivos e reiniciar** (antes da ativação da Central, para validar a guarda sozinha; não copiar o `src/` inteiro):
@@ -169,14 +175,16 @@ cp -p /tmp/nf-guard/backend/src/server.js /var/www/nailflow/backend/src/server.j
 pm2 restart 0       # ~10 s fora do ar; o n8n repete 5 × 3 s (DEPLOY.md)
 ```
 
-**Validação CSRF** (curl local; usa um e-mail inexistente, e a recusa por origem ocorre antes de qualquer consulta):
+**Validação CSRF** (curl local; usa um e-mail inexistente). **Como ler:** 403 vem da guarda, antes de qualquer consulta ao banco; 401 prova que a guarda
+deixou passar e que a autenticação recusou as credenciais; **qualquer 400/500 aqui indica corpo inválido ou erro, e não é um resultado aceitável** (parar e investigar):
 
 ```bash
-B=http://localhost:3333; J='Content-Type: application/json'; D='{"email":"csrf-check@teste.local","password":"x"}'
-curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://evil.example' -d "$D"        # 403 (origem externa)
+# senha com 6+ caracteres (o login valida min(6): com menos, o corpo é rejeitado antes da autenticação e a resposta é 500, não 401)
+B=http://localhost:3333; J='Content-Type: application/json'; D='{"email":"csrf-check@teste.local","password":"abcdefg"}'
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://evil.example' -d "$D"        # 403 = recusado PELA GUARDA (origem externa)
 curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: null' -d "$D"                         # 403
-curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://nailflow.duckdns.org' -d "$D"  # 401 (origem oficial segue)
-curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -d "$D"                                            # 401 (sem Origin: n8n, curl)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -H 'Origin: https://nailflow.duckdns.org' -d "$D"  # 401 = passou pela guarda e foi recusado pela AUTENTICAÇÃO (e-mail inexistente)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/auth/login -H "$J" -d "$D"                                            # 401 (sem Origin: passa pela guarda; n8n, curl)
 curl -s -i -X OPTIONS $B/support/tickets -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin'   # https://nailflow.duckdns.org (CORS inalterado)
 curl -s $B/health; pm2 describe nailflow-backend | grep -E "status|uptime|restarts"       # ok; online; uptime zerado; +1 reinício
 pm2 logs nailflow-backend --lines 40 --nostream | grep -c originGuard                      # 0 (nenhum erro da guarda)
@@ -205,16 +213,34 @@ install -m 600 /var/www/nailflow/frontend/.env /tmp/nf-fe/frontend/.env     # VI
 cd /tmp/nf-fe/frontend && npm ci && npm run build                            # tsc -b && vite build
 ```
 
-Antes de trocar o `dist` (lição do deploy de 2026-10-10): (1) `grep -c "localhost:3333"` no bundle = **0**;
-(2) a string de `VITE_API_URL` aparece no bundle o mesmo número de vezes que no bundle atual; (3) idealmente,
-provar equivalência com o build anterior trocando só a URL; (4) conferências do aviso no bundle (contato 1; nome civil, `/privacidade`
-e texto antigo 0), em `DEPLOY.md`. Trocar e apagar o `.env` temporário:
+**Preparar `dist-new` por inteiro e validá-lo ANTES de tocar no `dist` servido** (lição do deploy de 2026-10-10). A cópia fica no mesmo
+volume e na mesma pasta pai, para que os dois renomeios finais sejam instantâneos:
 
 ```bash
-mv /var/www/nailflow/frontend/dist /var/www/nailflow/frontend/dist-prev-$STAMP
-cp -a /tmp/nf-fe/frontend/dist /var/www/nailflow/frontend/dist
-shred -u /tmp/nf-fe/frontend/.env
+FE=/var/www/nailflow/frontend
+rm -rf $FE/dist-new && cp -a /tmp/nf-fe/frontend/dist $FE/dist-new
+shred -u /tmp/nf-fe/frontend/.env                     # o .env temporário não é mais necessário
+test -s $FE/dist-new/index.html && ls $FE/dist-new/assets | head
+stat -c '%U:%G %a %n' $FE/dist $FE/dist-new $FE/dist-new/index.html     # mesmo dono e modo que o dist atual (root:root 755/644)
 ```
+
+Validar o conteúdo **em `dist-new`** (nada disso toca o que está no ar): (1) `grep -c "localhost:3333"` nos `.js` = **0**; (2) a string de
+`VITE_API_URL` aparece o mesmo número de vezes que no bundle atual; (3) idealmente, provar equivalência com o build anterior trocando
+só a URL; (4) conferências do aviso (contato 1; nome civil, `/privacidade` e texto antigo 0), em `DEPLOY.md`, apontando o laço para
+`$FE/dist-new/assets/*.js`. **Parar se qualquer contagem fugir do esperado** (apagar `dist-new` e investigar; o site não foi tocado).
+
+**Troca.** São **dois renomeios em sequência, não uma operação atômica**: entre eles o `dist` não existe por uma fração de segundo
+(requisições nesse instante recebem erro do nginx; o navegador repete). Não há garantia maior que essa:
+
+```bash
+cd $FE && mv dist dist-prev-$STAMP && mv dist-new dist
+ls dist-prev-$STAMP | head -3; test -s dist/index.html && curl -s -o /dev/null -w "%{http_code}\n" https://nailflow.duckdns.org/    # 200
+```
+
+**Preservação e restauração do `dist` anterior:** ele fica inteiro em `dist-prev-$STAMP` (e há a cópia `dist.bak_$STAMP-pre-suporte` da
+seção 2). Restaurar: `cd $FE && mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Se a troca parar **entre** os dois `mv` (sem `dist`),
+basta `cd $FE && mv dist-prev-$STAMP dist`. Conferir depois: `test -s $FE/dist/index.html` e `curl` em `/` = 200. Só apagar `dist-prev-*`,
+`dist-failed-*` e `dist.bak_*` depois da janela de monitoramento e com autorização.
 
 ## 6. Validação com a Central desligada
 
@@ -283,8 +309,21 @@ stat -c %a .env; pm2 restart 0
 
 Roteiro com **uma conta de teste** (não uma cliente real): bootstrap `enabled:true` para a profissional e **403**
 para a ADM; criar solicitação (aparece na fila da ADM, não lida); ADM responde ("Aguardando você"); a profissional
-vê não lida, abre e marca como lida; resolver; reabrir dentro de 7 dias; criar, publicar e despublicar um artigo de
-FAQ; conferir na Auditoria `support_status`, `support_priority` e `faq_*`. Ao terminar, **excluir a conta de teste
+vê não lida, abre e marca como lida; resolver; reabrir dentro de 7 dias; criar, publicar e despublicar **um artigo de teste
+com título `[TESTE]`** (ver abaixo); conferir na Auditoria `support_status`, `support_priority` e `faq_*`. **Artigo `[TESTE]` (não há rota de exclusão de artigo):** use o título `[TESTE] Verificação da publicação` e **anote o ID** do artigo criado. Ele
+nasce como **rascunho**: publique, confira que aparece para a conta de teste, **despublique** e **deixe-o como rascunho** (a profissional não vê
+rascunho; só a ADM). **Não o apague nesta etapa.** A remoção posterior só ocorre com **autorização explícita** e pelo **ID exato**, como `postgres`,
+depois de conferir o alvo em leitura e dentro de uma transação (modelo, **não executar sem autorização**):
+
+```sql
+-- 1) conferir (leitura): deve voltar exatamente 1 linha, título [TESTE...] e status rascunho
+SELECT id, title, status FROM support_faq_articles WHERE id = '<ID-ANOTADO>';
+-- 2) com autorização: só se a linha acima for a esperada
+BEGIN; DELETE FROM support_faq_articles WHERE id = '<ID-ANOTADO>' AND title LIKE '[TESTE]%' AND status = 'rascunho'; -- 1 linha
+COMMIT;   -- ROLLBACK se o DELETE não afetar exatamente 1 linha
+```
+
+Os registros de Auditoria (`faq_*`) desse artigo permanecem (a tabela não tem FK). Ao terminar, **excluir a conta de teste
 pela ADM** (a API não tem exclusão de solicitação; a exclusão da conta leva as conversas junto e deixa o snapshot
 600 em `deleted-professionals/`).
 
@@ -302,7 +341,7 @@ pela ADM** (a API não tem exclusão de solicitação; a exclusão da conta leva
 |---|---|---|---|
 | 1. Desligar | Qualquer problema na Central | Remover a linha da flag do `.env` (procedimento da seção 7, que confere o hash do arquivo) + `pm2 restart 0`. As rotas viram 404 e a interface some. | **Não.** Conversas e FAQ ficam no banco. |
 | 1b. Retirar a FAQ inicial | Conteúdo errado na FAQ | `support_faq_initial_revert.sql` (seção 6-A): apaga só os 12 artigos da carga; não toca em artigos criados pela tela nem em chamados. | Só os 12 artigos. |
-| 2. Voltar o código | Problema no frontend ou no backend novo | Frontend: `mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Backend (guarda de `Origin`): `cp -p /root/server.js.pre-guard-$STAMP /var/www/nailflow/backend/src/server.js && rm /var/www/nailflow/backend/src/middleware/originGuard.js && pm2 restart 0` (restaura só esses 2 arquivos a partir da cópia feita na seção 4; não usa `git checkout`/`clean`, então nenhuma outra alteração é apagada; conferir `git -C /var/www/nailflow status --short` vazio e a validação da seção 4 devolvendo 401 (e não 403) para o login com `Origin: https://evil.example`, o que prova a guarda removida). O código antigo ignora as tabelas e a coluna novas. | **Não.** |
+| 2. Voltar o código | Problema no frontend ou no backend novo | Frontend: `mv dist dist-failed-$STAMP && mv dist-prev-$STAMP dist`. Backend (guarda de `Origin`): `cp -p /root/server.js.pre-guard-$STAMP /var/www/nailflow/backend/src/server.js && rm /var/www/nailflow/backend/src/middleware/originGuard.js && pm2 restart 0` (restaura só esses 2 arquivos a partir da cópia feita na seção 4; não usa `git checkout`/`clean`, então nenhuma outra alteração é apagada; conferir `git -C /var/www/nailflow status --short` vazio e a validação da seção 4 devolvendo 401 (e não 403) para o login com `Origin: https://evil.example` e a senha de 6+ caracteres da seção 4, o que prova a guarda removida). O código antigo ignora as tabelas e a coluna novas. | **Não.** |
 | 3. Reverter a 024 | Só se for indispensável | `_rollback/024_audit_actions_support.down.sql`. **Aborta** se já houver auditoria `faq_*`/`support_*` (proteção). Padrão recomendado: **deixar aplicada** (é aditiva). | Não apaga nada. |
 | 4. Reverter a 023 | Só se for indispensável | **Destrutivo e irreversível:** apaga solicitações, mensagens, eventos, artigos de FAQ e a preferência `support_fab_hidden` de todas as contas. Parar a API, backup novo, exportar antes se quiser guardar (`pg_dump -Fc -t 'support_*' nailflow`, com o arquivo aberto pelo `root`, `> arquivo`, como na seção 1), autorizar na mesma sessão (`SET support.confirm_destructive_rollback = 'DESTRUIR-DADOS-DE-SUPORTE'`). Detalhes e limites (`lock_timeout` de 3 s, locks em `professionals`) em `backend/db/migrations/_rollback/README.md`. | **Sim**, tudo da Central. A auditoria permanece (sem FK). |
 
