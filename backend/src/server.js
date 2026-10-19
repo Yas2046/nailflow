@@ -8,6 +8,7 @@ import appointmentsRoutes from './routes/appointments.routes.js';
 import availabilityRoutes from './routes/availability.routes.js';
 import clientsRoutes from './routes/clients.routes.js';
 import expensesRoutes from './routes/expenses.routes.js';
+import financeiroRoutes from './routes/financeiro.routes.js';
 import servicesRoutes from './routes/services.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import publicRoutes from './routes/public.routes.js';
@@ -46,6 +47,8 @@ app.use('/availability', availabilityRoutes);
 app.use('/clients', clientsRoutes);
 app.use('/services', servicesRoutes);
 app.use('/expenses', expensesRoutes);
+// Financeiro (pagamentos e recebimentos). Fail-closed: FINANCEIRO_PAGAMENTOS_ENABLED precisa ser exatamente "true".
+app.use('/financeiro', financeiroRoutes);
 
 app.use('/dashboard', dashboardRoutes);
 app.use('/public', publicRoutes);

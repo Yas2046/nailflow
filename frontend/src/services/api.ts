@@ -1,6 +1,6 @@
 import { clearSupportDrafts } from './supportDrafts';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
 
 /**
  * Erro de API que preserva, além da mensagem, o `reason` estruturado que o
@@ -50,10 +50,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, ...(headers ? { headers } : {}) }),
+  put: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined, ...(headers ? { headers } : {}) }),
   delete: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }),
 };

@@ -312,3 +312,44 @@ Número de teste da responsável (`553185108190`, cliente "Simone Teles") na pro
 | Conexão WhatsApp via painel (QR pelo sistema) | 🟠 Importante | Com instância de teste |
 | Envio real de e-mail de recuperação | 🟠 Importante | Depende do Brevo e da publicação |
 | Agendamentos recorrentes | 🟡 Melhoria | |
+
+## Financeiro — etapa 1 (2026-10-19, banco descartável)
+
+🧪 **Banco descartável** — migration 025, grants, rollback, restauração e ensaio de `pg_dump`/`pg_restore`, só em cluster criado para o teste (nada toca produção). Detalhes, comandos e
+limitações em [`FINANCEIRO_ETAPA1.md`](./FINANCEIRO_ETAPA1.md): **52 testes do Financeiro** (migration 27, API HTTP 4, exclusão de conta 8, restauração 9, dump/restore 4) passam em 3 execuções seguidas; a suíte
+completa dá o **mesmo resultado antes e depois da 025** (618 testes: 557 passam, 10 falham — 9 testes antigos desatualizados e 1 que aplica DDL e exige a role dona —, 51 ignorados, que são só os arquivos do
+Financeiro rodados à parte), com a role não-dona e os 189 testes do Suporte executados.
+
+## Financeiro — etapa 2: pagamentos e recebimentos (2026-10-19, banco descartável)
+
+🧪 **Banco descartável** — API HTTP real com a role não-dona, só em cluster criado para o teste (nada toca produção). Detalhes em [`FINANCEIRO_ETAPA2.md`](./FINANCEIRO_ETAPA2.md): **91 testes do Financeiro** (etapas 1 e 2, incluindo 32 de pagamentos
+e 7 de regras puras) passam em 3 execuções seguidas; quebrar de propósito o teto, a trava, a proteção da Agenda, a exigência de concluído e a idempotência faz os testes reprovarem; a suíte completa dá o **mesmo resultado antes e depois da 025 + 026**
+(657 testes: 564 passam, 10 falham — as 10 conhecidas, nenhuma nova —, 83 ignorados, que são só os arquivos do Financeiro rodados à parte).
+
+## Financeiro — etapa 3: Agenda, preço final e pagamentos (2026-10-19, banco descartável)
+
+🧪 **Banco descartável** — detalhes em [`FINANCEIRO_ETAPA3.md`](./FINANCEIRO_ETAPA3.md): `financeiro-preco-final` 10 de 10; Financeiro afetado 97 de 97; Agenda sem falhas sem e com a estrutura; suíte completa **uma vez** ao final, idêntica antes e depois
+da 025 + 026 + 027 (667 testes: 564 passam, 10 falham — as 10 conhecidas, nenhuma nova —, 93 ignorados, que são só os arquivos do Financeiro rodados à parte).
+
+
+## Financeiro — etapa 4: despesas e contas a receber (2026-10-19, banco descartável)
+
+🧪 **Banco descartável** — detalhes em [`FINANCEIRO_ETAPA4.md`](./FINANCEIRO_ETAPA4.md): `financeiro-despesas-receber` 12 de 12 (revisão manual, vencimento, pagamentos parciais, idempotência/concorrência, isolamento, Gastos, append-only, contas a receber, rollbacks). Regressão proporcional (Financeiro afetado, 8 arquivos): 111 testes; na primeira execução 4 falharam em `financeiro-http` (a guarda de exclusão de Gastos consultava `expense_payments` sem a 028 e devolvia 500) — corrigido (a guarda só atua com a 028) e `financeiro-http` + novo arquivo reexecutados: 16 de 16. Agenda e suíte completa **não** reexecutadas: a etapa não altera a Agenda nem rotas fora de `/financeiro` e `/expenses`.
+
+## Financeiro — etapa 5: fechamento de caixa (2026-10-19, banco descartável)
+
+🧪 **Banco descartável** — detalhes em [`FINANCEIRO_ETAPA5.md`](./FINANCEIRO_ETAPA5.md): `financeiro-caixa` 9 de 9 (esperado por método, fechamento/justificativa, períodos fechados e estorno de hoje, reabertura/versões, concorrência, isolamento, lançamentos/histórico, banco/rollbacks). Regressão proporcional (arquivos que usam o rollback da 025/028 e fin_day_is_closed): migrations, restore, delete, http e despesas-receber, 60 de 60. Suíte completa, Agenda e demais arquivos não reexecutados: a etapa não os altera.
+
+## Financeiro — etapa 6: interface (2026-10-19)
+
+🧪 `financeiro-caixa` 10 de 10 (inclui boleto/método não informado e `GET /financeiro/movimentacoes`); frontend `financeiro-money.test.mjs` 4 de 4 (valores, datas e fuso); `tsc` sem erros e `vite build` (em diretório temporário, sem publicar) ok. Detalhes em [`FINANCEIRO_ETAPA5.md`](./FINANCEIRO_ETAPA5.md) (seção "Interface"). Sem testes de componentes: o projeto não tem ambiente de DOM; a navegação manual no navegador fica para a revisão final.
+
+## Financeiro — etapa 7: pendências e auditoria (2026-10-19)
+
+🧪 `financeiro-despesas-receber` 13 de 13 (inclui cadastro atômico); `tsc` sem erros; navegação manual em banco descartável (login local de teste) nos fluxos financeiros principais. O teste sem resultado da etapa 6 era o 1 ignorado do frontend (`support-notice`: "módulo da política ainda não está neste commit"), alheio ao Financeiro. Pendências abertas: seção "Pendências abertas antes da publicação única" de [`FINANCEIRO_ETAPA5.md`](./FINANCEIRO_ETAPA5.md).
+
+## Financeiro — etapa 8: relatórios, alertas e indicadores reais (2026-10-19)
+
+🧪 `financeiro-relatorios` 6 de 6 (totais/período/fuso, Excel lido de volta, PDF, alertas, Dashboard/Gastos e datas, snapshot de exclusão); regressão: despesas-receber + caixa + http 27 de 27, delete 8 de 8 (com o novo, 14 de 14), Agenda+Dashboard 38 de 38 (1 ignorado) sem e com a estrutura; `tsc` sem erros; Despesas e demais telas revisadas no navegador em banco descartável (cadastro, revisão, vencida, vencimento com motivo, pagamento parcial, excesso recusado, quitação, histórico, dia fechado recusado, relatório/PDF/Excel gerados, Dashboard e Gastos). Plano de publicação: [`FINANCEIRO_PUBLICACAO.md`](./FINANCEIRO_PUBLICACAO.md).
+
+- Revisão final do plano (2026-10-19): o código antigo (`ea21c0a`, `git archive` em pasta temporária) foi executado contra um banco descartável com 025–029 — Agenda, remarcação, confirmação, Gastos e Dashboard, 50 de 51 (1 ignorado), 0 falhas. Nada foi executado em produção.

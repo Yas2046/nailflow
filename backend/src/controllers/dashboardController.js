@@ -1,5 +1,7 @@
 import { pool } from '../config/db.js';
 import { getAvailableSlots, customerNotBefore } from '../utils/availability.js';
+import { financeiroReady, periodSums, monthlySeries, receivableRows } from '../utils/financeiroRelatorios.js';
+import { todayInBusinessTz } from '../utils/financeiroPagamentos.js';
 import { getZonedParts, timeStringToUtcOnDate, zonedTimeToUtc, BUSINESS_TIMEZONE } from '../utils/timezone.js';
 
 export async function getDashboardSummary(req, res, next) {
@@ -180,8 +182,34 @@ export async function getDashboardSummary(req, res, next) {
     }
     const ms = (s) => monthMap[s] || { count: 0, totalCents: 0 };
 
-    const faturamentoRealizado  = ms('concluido').totalCents;
-    const prevMesFaturamento    = prevMonthResult.rows[0]?.total_cents ?? 0;
+    let faturamentoRealizado    = ms('concluido').totalCents;
+    let prevMesFaturamento      = prevMonthResult.rows[0]?.total_cents ?? 0;
+
+    // Com o Financeiro ligado, "faturamento" e "gastos" passam a ser RECEBIMENTOS e DESPESAS PAGAS reais (atendimento concluído não é dinheiro
+    // recebido). Sem o Financeiro, valem os indicadores antigos (base 'concluidos').
+    let base = 'concluidos';
+    let despesasPagasCents = null;
+    let aReceberCents = null;
+    let fat6Rows = sixMonthsResult.rows;
+    let gas6Rows = gastosResult.rows;
+    if (await financeiroReady(pool)) {
+      const today = todayInBusinessTz(now);
+      const [ty, tm] = today.split('-').map(Number);
+      const iso = (yy, mm, dd) => `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+      const lastDay = (yy, mm) => new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+      const cur = await periodSums(pool, professionalId, iso(ty, tm, 1), iso(ty, tm, lastDay(ty, tm)));
+      const pmm = tm === 1 ? 12 : tm - 1;
+      const pyy = tm === 1 ? ty - 1 : ty;
+      const prev = await periodSums(pool, professionalId, iso(pyy, pmm, 1), iso(pyy, pmm, lastDay(pyy, pmm)));
+      faturamentoRealizado = cur.totais.netReceivedCents;
+      prevMesFaturamento = prev.totais.netReceivedCents;
+      despesasPagasCents = cur.totais.expensesPaidCents;
+      const series = await monthlySeries(pool, professionalId, iso(sixY, sixM, 1));
+      fat6Rows = series.recebido.map((r) => ({ mes: r.mes, total_cents: r.totalCents }));
+      gas6Rows = series.despesasPagas.map((r) => ({ mes: r.mes, total_cents: r.totalCents }));
+      aReceberCents = (await receivableRows(pool, professionalId, today)).reduce((sum, r) => sum + r.balance, 0);
+      base = 'recebimentos';
+    }
     const agendamentosTotal     = monthStatsResult.rows.reduce((s, r) => s + r.count, 0);
 
     let variacao = null;
@@ -222,6 +250,9 @@ export async function getDashboardSummary(req, res, next) {
       totalClientes: clientCountResult.rows[0].total,
       faturamentoEstimadoHojeCents: faturamentoEstimado,
       mes: {
+        base,
+        despesasPagasCents,
+        aReceberCents,
         faturamentoRealizadoCents:   faturamentoRealizado,
         faturamentoPrevistoCents:    futurePrevistResult.rows[0]?.total_cents ?? 0,
         faturamentoPerdidoCents:     ms('nao_compareceu').totalCents,
@@ -238,11 +269,11 @@ export async function getDashboardSummary(req, res, next) {
         count: r.count,
         totalCents: r.total_cents,
       })),
-      faturamento6Meses: sixMonthsResult.rows.map((r) => ({
+      faturamento6Meses: fat6Rows.map((r) => ({
         mes: r.mes,
         totalCents: r.total_cents,
       })),
-      gastos6Meses: gastosResult.rows.map((r) => ({
+      gastos6Meses: gas6Rows.map((r) => ({
         mes: r.mes,
         totalCents: r.total_cents,
       })),

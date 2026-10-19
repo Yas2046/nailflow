@@ -10,6 +10,11 @@ pasta `_historico/`: subpasta com prefixo `_` + este README; arquivos `NNN_nome.
 
 | Arquivo | Desfaz | Destrutivo? |
 |---|---|---|
+| `027_financeiro_limites_banco.down.sql` | remove os dois gatilhos da 027 (teto de recebimento e piso do valor) e suas funções | Não toca em dados nem na 025/026; idempotente. O rollback da 025 também os remove (dependem das colunas dela) |
+| `028_financeiro_despesas.down.sql` | remove `expense_payments`, seus gatilhos/funções, a UNIQUE de `expenses` e devolve as listas de `financial_audit_log` às da 025 | **Aborta** se existir pagamento de despesa ou histórico de pagamento de despesa (append-only); sem uso, idempotente. Deve ser aplicado **antes** do rollback da 025, que aborta com a 028 aplicada |
+| `029_financeiro_fechamento_caixa.down.sql` | remove `cash_closing_entries`, o gatilho/função e a UNIQUE de `cash_closings`; restaura `fin_day_is_closed` ao corpo da 025 | **Aborta** se existir lançamento de fechamento por método (append-only). Deve ser aplicado **antes** dos rollbacks da 028 e da 025, que abortam com a 029 aplicada |
+| `026_financeiro_pagamentos_metodo.down.sql` | volta `financial_payments_method_check` à lista da 025 (sem `transferencia`) | Não apaga dados: **aborta** se já houver movimentação por `transferencia` (append-only); então deixe a 026 aplicada |
+| `025_financeiro_base.down.sql` | remove `financial_payments`, `financial_audit_log`, `cash_closings`, as funções `fin_*` e as colunas novas de `appointments` e `expenses` | **Só sem uso.** Com dados financeiros em uso **aborta**; com a autorização, **arquiva tudo num schema `financeiro_arquivo_*` antes de remover** |
 | `024_audit_actions_support.down.sql` | volta o CHECK de `admin_audit_log.action` às 4 ações originais | Não apaga dados, mas **aborta** se já houver auditoria com as ações novas |
 | `023_support_center.down.sql` | remove as 5 tabelas `support_*`, as 5 funções e `professionals.support_fab_hidden` | **Sim, irreversível** |
 
@@ -94,3 +99,69 @@ Enquanto não houver essa decisão, deixe a 024 aplicada.
 * O rollback 023 bloqueia `professionals` (e o `DROP COLUMN` exige lock exclusivo) até o `COMMIT`: durante a
   execução, que é curta, nenhuma requisição autenticada que leia `professionals` é atendida.
 * Reaplicar a 023 depois do rollback recria tudo vazio (as 6 categorias voltam pelo seed).
+
+## Rollback da 025 (Financeiro, etapa 1)
+
+A 025 só **adiciona** estrutura; nunca altera linhas existentes. O rollback remove o que ela criou, e **não apaga
+movimentação financeira em silêncio**. Visão completa (aplicação, grants, restauração e retenção):
+[`docs/FINANCEIRO_ETAPA1.md`](../../../../docs/FINANCEIRO_ETAPA1.md).
+
+| Situação | O que o script faz |
+|---|---|
+| Nada em uso (tabelas novas vazias, colunas novas NULL, despesas ainda `a_revisar` sem datas) | Remove a estrutura. Não exige autorização e não cria arquivo |
+| Há dados financeiros e **não** há autorização | **Aborta** mostrando as contagens (movimentações, histórico, fechamentos, atendimentos e despesas com dados novos). Nada é alterado |
+| Há dados financeiros e há autorização na mesma sessão | **Copia tudo** para o schema `financeiro_arquivo_AAAAMMDD_HH24MISS`, confere contagem **e hash** de cada tabela contra a origem, grava o manifesto (`<schema>._manifest`) e só então remove a estrutura |
+
+```bash
+# 1. Pare a API. 2. Backup (pg_dump) e confirmação do arquivo. 3. Confira o banco: SELECT current_database();
+# Sem uso financeiro:
+sudo -u postgres psql -d nailflow -X -v ON_ERROR_STOP=1 -f backend/db/migrations/_rollback/025_financeiro_base.down.sql
+
+# Com dados financeiros em uso (arquiva antes de remover):
+sudo -u postgres psql -d nailflow -X -v ON_ERROR_STOP=1 \
+  -c "SET financeiro.confirm_destructive_rollback = 'ARQUIVAR-E-REMOVER-DADOS-FINANCEIROS'" \
+  -f backend/db/migrations/_rollback/025_financeiro_base.down.sql
+```
+
+**O que o arquivo contém:** `financial_payments`, `financial_audit_log` e `cash_closings` inteiras; `appointments_financeiro`
+(id e as 5 colunas novas, só das linhas que tinham dados) e `expenses_financeiro` (id e as 4 colunas novas, só das linhas que
+saíram do estado padrão); e `_manifest` (contagem e md5 do JSON de cada linha, em UTC, por tabela). Os dados **anteriores** à
+025 (agendamentos, sinais Pix, despesas, valores e datas) nunca são tocados.
+
+**Recuperação:** reaplique a 025 e rode `_ops/025_restore_from_archive.sql`
+([`_ops/README.md`](../_ops/README.md)): ele valida o arquivo contra o manifesto, devolve **todas as colunas** e confere os hashes
+de novo antes de confirmar. Reaplicar a 025 sozinho **não** reimporta o arquivo. Depois, rode `_ops/025_grant_app_role.sql`
+(os grants somem com as tabelas removidas).
+
+**Exclusão de conta × schema de arquivo** (medido em teste, `financeiro-delete.test.js` e `financeiro-restore.test.js`):
+
+* A exclusão de uma profissional **não apaga** os dados dela no schema de arquivo (as cópias não têm chave estrangeira). Eles permanecem, em
+  todas as cinco tabelas, até o descarte manual do schema.
+* O snapshot administrativo da exclusão **não contém** dados financeiros se, naquele momento, a estrutura não existe (depois do rollback): só o
+  arquivo e os backups os guardam.
+* A restauração **padrão aborta** se há dados de conta excluída no arquivo (nada é gravado). Para restaurar as contas que existem e deixar o
+  resto no arquivo, use `-v skip_deleted_accounts=on`; o arquivo nunca é alterado e a conta excluída não volta.
+* Apagar só as linhas de uma conta dentro do arquivo **não é suportado** (invalidaria o manifesto): o descarte é do schema inteiro, depois de
+  restaurar ou exportar o que for preciso e conforme a política de retenção.
+
+**Limites e cuidados**
+
+* O schema de arquivo **não é apagado** pelo script: descartá-lo é decisão humana posterior. Ele **não** é podado por nenhuma
+  rotina, **não** depende do snapshot administrativo de 30 dias e **não** é apagado pela exclusão de uma conta (as cópias não têm
+  chave estrangeira). Os **backups diários guardam só 7 dias**: para guardar o arquivo por mais tempo, exporte-o (ver
+  [`docs/FINANCEIRO_ETAPA1.md`](../../../../docs/FINANCEIRO_ETAPA1.md), "Retenção").
+* No schema de arquivo as cópias são tabelas comuns (sem chaves, índices, triggers nem grants; só o dono lê): perdem a proteção
+  append-only.
+* Dois rollbacks no mesmo segundo **não** reutilizam o mesmo schema (o segundo ganha o segundo seguinte).
+* Trava as tabelas financeiras, `appointments` e `expenses` (`ACCESS EXCLUSIVE`) **antes** de contar e segura o bloqueio até o
+  `COMMIT`; `lock_timeout = 3s`. **Pare a API antes de executar.** Sem o bloqueio, uma gravação concorrente poderia confirmar
+  entre a contagem e a remoção.
+* Se o código do Financeiro já estiver publicado, reverta **antes** o código (a API passaria a falhar sem as tabelas). Depois que
+  houver uso real, o caminho seguro é **não** reverter a 025: corrigir para frente.
+* Depois que o Gastos for usado em produção, o histórico (`financial_audit_log`) já terá linhas: o rollback "sem uso" deixa de ser
+  possível e o caminho será sempre o do arquivamento, com a autorização.
+* O rollback derruba `appointments_id_professional_id_key` (criada pela 025); ela só existe por causa da 025.
+* Aplique e reverta como a **dona** das tabelas (em produção, `postgres`). Aplicada por outra role, as proteções por privilégio
+  deixam de valer (o dono tem tudo) e o script de grants aborta.
+
+**026 e o arquivo da 025:** o arquivo pode conter `transferencia`; para restaurar, reaplique a **025 e a 026** antes de rodar `_ops/025_restore_from_archive.sql` (sem a 026 a restauração aborta por inteiro). Ver [`docs/FINANCEIRO_ETAPA2.md`](../../../../docs/FINANCEIRO_ETAPA2.md).

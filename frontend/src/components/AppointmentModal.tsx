@@ -3,6 +3,9 @@ import { useToast } from '../context/ToastContext';
 import { api, ApiError } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
 import NovaClienteModal from './NovaClienteModal';
+import AtendimentoFinanceiro from '../pages/financeiro/AtendimentoFinanceiro';
+import { financeiro } from '../services/financeiro';
+import { parseBRLToCents } from '../utils/money';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
 interface Props {
@@ -96,6 +99,16 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const { toast } = useToast();
   const [saving, setSaving]         = useState(false);
 
+  // Financeiro (preço final e recebimentos): só quando o servidor o disponibiliza.
+  const [finOn, setFinOn]           = useState(false);
+  const [finalPrice, setFinalPrice] = useState('');
+  const [finalReason, setFinalReason] = useState('');
+  const [showFin, setShowFin]       = useState(false);
+  useEffect(() => {
+    if (!appointment) return;
+    financeiro.probe().then(() => setFinOn(true)).catch(() => setFinOn(false));
+  }, [appointment?.id]);
+
   // Recorrência (somente na criação)
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency]     = useState<RecurringFrequency>('weekly');
@@ -186,9 +199,16 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       }
 
       if (isEditing) {
+        // Preço final (opcional) ao CONCLUIR: a API valida valor, justificativa e histórico; vazio = vale o preço do serviço.
+        let finalFields: { finalPriceCents?: number; finalPriceReason?: string } = {};
+        if (finOn && status === 'concluido' && appointment!.status !== 'concluido' && finalPrice.trim()) {
+          const fp = parseBRLToCents(finalPrice, { allowZero: true });
+          if (fp == null) { setError('Valor final inválido.'); return; }
+          finalFields = { finalPriceCents: fp, ...(finalReason.trim() ? { finalPriceReason: finalReason.trim() } : {}) };
+        }
         await api.put(`/appointments/${appointment!.id}`, locked
-          ? { status, notes: notes || null }
-          : { clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null });
+          ? { status, notes: notes || null, ...finalFields }
+          : { clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null, ...finalFields });
         const moved = !locked && startsAt.getTime() !== new Date(appointment!.startsAt).getTime();
         toast(moved ? 'Agendamento remarcado. A cliente não é avisada automaticamente.' : 'Agendamento atualizado');
         onSaved();
@@ -665,6 +685,20 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
               </Field>
             )}
 
+            {isEditing && finOn && status === 'concluido' && appointment!.status !== 'concluido' && (
+              <div className="rounded-xl border border-wine-100 bg-wine-50/40 p-3 space-y-2">
+                <p className="text-sm font-medium text-ink/70">Valor final (opcional)</p>
+                <p className="text-xs text-ink/50">Deixe em branco para valer o preço do serviço. Concluir não registra pagamento: o recebimento é lançado à parte, no Financeiro.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="input" inputMode="decimal" placeholder="Valor final (R$)" value={finalPrice} onChange={(e) => setFinalPrice(e.target.value)} />
+                  <input className="input" maxLength={300} placeholder="Justificativa (se diferir)" value={finalReason} onChange={(e) => setFinalReason(e.target.value)} />
+                </div>
+              </div>
+            )}
+            {isEditing && finOn && appointment!.status === 'concluido' && (
+              <button type="button" className="btn-secondary w-full" onClick={() => setShowFin(true)}>Financeiro do atendimento (recebimentos e valor final)</button>
+            )}
+
             {/* observação */}
             <Field label="Observação">
               <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -813,6 +847,9 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
       </div>
     </div>
+    {showFin && appointment && (
+      <AtendimentoFinanceiro appointmentId={appointment.id} startsAt={appointment.startsAt} title={`${appointment.clientName} · ${appointment.serviceName}`} onClose={() => setShowFin(false)} onChanged={() => {}} />
+    )}
     {showNewClient && (
       <NovaClienteModal onClose={() => setShowNewClient(false)} onCreated={handleClientCreated} />
     )}

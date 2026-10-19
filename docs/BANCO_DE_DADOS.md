@@ -252,6 +252,38 @@ Histórico das ações administrativas **concluídas** (`block`, `unblock`, `upd
 
 **Limpeza de 2026-10-03:** os 104 registros existentes eram todos de testes antigos (admins `admin_block_test@`, `admin_delete_test@` e `admin_edit_test@nailflow.com`; nenhum de admin real) e foram apagados após backup (`/var/backups/nailflow/manual/admin_audit_log_pre-cleanup_20261003-233014.{csv,sql}`, fora do Git, modo 600). Desde então, todo registro é de ação administrativa real.
 
+### Financeiro — estrutura base (migration 025)
+
+**Etapa 1 do Financeiro: só estrutura e auditoria; nenhuma rota, tela ou indicador usa isto ainda.** A migration é aditiva e idempotente e **não altera nenhuma linha existente**: atendimentos, sinais Pix e despesas antigos **não** viram "realizados", "recebidos" ou "pagos". `expense_date` **não** é prova de pagamento.
+
+| Objeto | Resumo |
+|---|---|
+| `appointments` (+5 colunas, todas `NULL`) | `checked_in_at` (chegada, **não** é pagamento), `final_price_cents` + `final_price_set_at` (derivado pelo banco), `finance_review` (`realizado`, `nao_compareceu`, `cancelado`, `sem_movimentacao`) + `finance_reviewed_at`. `UNIQUE (id, professional_id)` como alvo da FK composta |
+| `expenses` (+4 colunas) | `payment_status` (`a_revisar` padrão, `pendente`, `paga`), `due_on`, `paid_on`, `paid_method`. `paga` exige `paid_on`; os outros estados exigem `paid_on` e `paid_method` nulos |
+| `financial_payments` | Recebimentos e **estornos** por atendimento (`kind`), valor, forma (`pix`, `dinheiro`, `cartao_debito`, `cartao_credito`, `outra`; **+ `transferencia` com a 026**), `occurred_on`, `source` (`manual` ou `sinal_pix_confirmado`), `reverses_payment_id`, `idempotency_key` + `request_hash`. **Append-only** |
+| `financial_audit_log` | Histórico: entidade, ação, autor opcional, motivo, `before_data`/`after_data`, `seq` estável. **Append-only** |
+| `cash_closings` | Um registro por profissional e dia (`fechado`/`aberto`), totais congelados, `reopen_count`, `reopen_reason` |
+
+Regras garantidas pelo banco (testadas em `backend/tests/financeiro-migrations.test.js`):
+
+* **Isolamento:** `professional_id NOT NULL` com `ON DELETE CASCADE` em todas as tabelas novas; pagamento → atendimento e estorno → recebimento são **FKs compostas** com `professional_id`. A FK para `appointments` é `DEFERRABLE INITIALLY DEFERRED` e **sem cascata**: apagar um atendimento com pagamento é recusado, e a exclusão da conta (que apaga os dois) funciona.
+* **Append-only:** `UPDATE` nunca; `DELETE` só na exclusão em cascata da conta. A role da aplicação também não recebe `UPDATE`/`DELETE`/`TRUNCATE` nessas duas tabelas (`_ops/025_grant_app_role.sql`).
+* **Estorno:** linha nova, mesmo atendimento, data não anterior, motivo obrigatório; a soma dos estornos nunca passa do recebimento (serializado por advisory lock). Só recebimento pode ser estornado.
+* **Pagamento parcial:** vários recebimentos por atendimento. O banco **não** compara com o valor final (regra da API).
+* **Sinal Pix antigo:** `deposit_cents` e `paid_at` não são lidos nem copiados. Confirmar um sinal é um recebimento explícito (`source = 'sinal_pix_confirmado'`), **no máximo um por atendimento**, limitado ao sinal registrado.
+* **Idempotência:** `(professional_id, idempotency_key)` único (índice parcial) com `request_hash` obrigatório junto; a API deve usar `ON CONFLICT (professional_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING` (alvo explícito).
+* **Dia fechado:** recusa recebimento/estorno com `occurred_on` no dia e despesa paga com `paid_on` no dia. Reabrir exige motivo novo, incrementa `reopen_count` e fica no histórico; fechado só reabre, aberto só fecha, e fechamentos não se apagam.
+* **Correções com motivo:** alterar valor final, check-in, revisão ou uma despesa paga exige `set_config('nailflow.audit_reason', '...', true)` na mesma transação (autor opcional em `nailflow.actor_id`).
+* **Histórico automático** (triggers): pagamentos, fechamentos, despesas (criar, alterar, mudar de estado, apagar) e as colunas novas de `appointments`. Não grava nada ao apagar a conta.
+
+Limites conhecidos (a API das próximas etapas deve cobrir): recebido ≤ valor final, datas no futuro, apagar despesa `paga`, e o cálculo dos totais do fechamento.
+
+**Segurança das funções:** os triggers de histórico, o guarda de pagamentos e a consulta do fechamento são `SECURITY DEFINER` (rodam como o dono, para o fluxo atual de Gastos e Agenda não quebrar se os grants ainda não foram aplicados), com `search_path = pg_catalog, pg_temp` e todos os objetos qualificados (`public.*`): uma role com `CREATE` em `public` (caso de `nailflow`) não consegue interceptar chamadas criando funções ali. `fin_audit()` e `fin_day_is_closed()` não têm `EXECUTE` para o público.
+
+**Exclusão da profissional:** `adminController.js` inclui as três tabelas no snapshot e no preview (`financialPayments`, `financialAuditEntries`, `cashClosings`) e confere, com a conta travada (`FOR UPDATE`), que nada financeiro foi gravado depois do snapshot (409 sem apagar nada). Sem a 025 o comportamento é o de sempre. O snapshot é uma rede de segurança de **30 dias** e **não** é o arquivo financeiro; os dados já arquivados por um rollback **não** são apagados pela exclusão da conta e não entram nesse snapshot (ver [`FINANCEIRO_ETAPA1.md`](./FINANCEIRO_ETAPA1.md), "Exclusão da conta × arquivo").
+
+Rollback, restauração e retenção: [`FINANCEIRO_ETAPA1.md`](./FINANCEIRO_ETAPA1.md) e [`_rollback/README.md`](../backend/db/migrations/_rollback/README.md) (**arquiva antes de remover**, com manifesto de hashes).
+
 ## Migrations
 
 Não há executor de migrations: a ordem abaixo é aplicada manualmente com `psql`, com o dono do banco (ou superusuário).
@@ -311,6 +343,11 @@ A lista acima reproduz a ordem usada para montar um banco novo (e os bancos desc
 | 022 | `022_confirmation_modes_and_holds.sql` — `professionals.confirmation_mode`, `deposit_required`, `deposit_type`, `deposit_value`, `pix_key` e CHECK `professionals_deposit_check`; `appointments.expires_at`, `deposit_cents`, `paid_at` e índice `idx_appointments_expires_at`; status ganha `aguardando_pagamento`. Aplicada em produção em 2026-10-02 (commit `cb07d38`) após backup `/var/backups/nailflow/nailflow_pre-migration-022_2026-10-02_222934.dump` |
 | 023 | `023_support_center.sql` — Central de Suporte: `support_faq_categories` (6 categorias fixas), `support_faq_articles`, `support_tickets`, `support_messages`, `support_ticket_events` (mensagens e eventos imutáveis, contador de atividade por solicitação, cursores de leitura), 5 funções de gatilho e `professionals.support_fab_hidden`. Rollback destrutivo em `db/migrations/_rollback/` |
 | 024 | `024_audit_actions_support.sql` — amplia o CHECK de `admin_audit_log.action` com `faq_create`, `faq_update`, `faq_publish`, `faq_unpublish`, `support_status` e `support_priority`. Rollback aborta se já houver auditoria com essas ações |
+| 025 | `025_financeiro_base.sql` — estrutura do Financeiro (etapa 1): `financial_payments`, `financial_audit_log`, `cash_closings`, colunas novas em `appointments` (check-in, valor final, revisão) e `expenses` (estado de pagamento), triggers de histórico e guardas. **Não altera linhas existentes.** Permissões: `_ops/025_grant_app_role.sql`. Rollback: `_rollback/025_financeiro_base.down.sql` (arquiva antes de remover, com manifesto de hashes). Restauração: `_ops/025_restore_from_archive.sql`. Detalhes: [`FINANCEIRO_ETAPA1.md`](./FINANCEIRO_ETAPA1.md). **Não aplicada em produção.** |
+| 026 | `026_financeiro_pagamentos_metodo.sql` — acrescenta `transferencia` a `financial_payments_method_check` (amplia a lista da 025; compatível). Rollback: `_rollback/026_financeiro_pagamentos_metodo.down.sql` (aborta se houver movimentação por transferência). Detalhes: [`FINANCEIRO_ETAPA2.md`](./FINANCEIRO_ETAPA2.md). **Não aplicada em produção.** |
+| 027 | `027_financeiro_limites_banco.sql` — dois gatilhos novos: teto de recebimento (`trg_financial_payments_cap`) e piso do valor do atendimento (`trg_appointments_fin_value_floor`), ambos `SECURITY DEFINER`, serializados pelo mesmo advisory lock da API. Rollback: `_rollback/027_financeiro_limites_banco.down.sql` (só remove os gatilhos). Detalhes: [`FINANCEIRO_ETAPA3.md`](./FINANCEIRO_ETAPA3.md). **Não aplicada em produção.** |
+| 028 | `028_financeiro_despesas.sql` — tabela `expense_payments` (pagamentos parciais de despesa, append-only por gatilho e privilégio), `UNIQUE (id, professional_id)` em `expenses`, quatro gatilhos (guarda, quitação, histórico, piso do valor) e duas listas de `financial_audit_log` ampliadas. Rollback: `_rollback/028_financeiro_despesas.down.sql` (aborta se houver pagamento de despesa). Grants: `_ops/028_grant_app_role.sql`. Detalhes: [`FINANCEIRO_ETAPA4.md`](./FINANCEIRO_ETAPA4.md). **Não aplicada em produção.** |
+| 029 | `029_financeiro_fechamento_caixa.sql` — tabela `cash_closing_entries` (esperado/contado/diferença/justificativa por método e por fechamento, append-only), `UNIQUE (id, professional_id)` em `cash_closings` e `fin_day_is_closed` com lock compartilhado do dia. Rollback: `_rollback/029_financeiro_fechamento_caixa.down.sql` (aborta se houver fechamento por método). Grants: `_ops/029_grant_app_role.sql`. Detalhes: [`FINANCEIRO_ETAPA5.md`](./FINANCEIRO_ETAPA5.md). **Não aplicada em produção.** |
 
 ### Migration obsoleta: `002_bot_tables.sql`
 

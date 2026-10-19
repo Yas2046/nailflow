@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { WhatsAppInstanceConfig, WhatsAppStatus } from '../types';
+import { financeiro } from '../services/financeiro';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from './LogoMark';
 import { SupportProvider, useSupport } from '../context/SupportContext';
@@ -75,6 +76,15 @@ function IconWallet() {
   );
 }
 
+function IconCoins() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 9.5c-.5-.9-1.4-1.3-2.5-1.3-1.4 0-2.4.7-2.4 1.8 0 2.6 5 1.2 5 3.9 0 1.1-1.1 1.9-2.6 1.9-1.2 0-2.2-.5-2.7-1.4M12 6.5v1.7m0 7.6v1.7" />
+    </svg>
+  );
+}
+
 // ─── dados da navegação (somente links de profissional) ───────────────────────
 
 const links = [
@@ -122,6 +132,15 @@ function HelpLink({ variant }: { variant: 'sidebar' | 'mobile' }) {
 export default function Layout() {
   const { professional, logout } = useAuth();
   const [waDisconnected, setWaDisconnected] = useState(false);
+  // O Financeiro só aparece quando o servidor o disponibiliza (404 = desligado, 503 = estrutura ausente: segue escondido).
+  const [financeiroOn, setFinanceiroOn] = useState(false);
+  useEffect(() => {
+    if (!professional || professional.isAdmin) return;
+    financeiro.probe().then(() => setFinanceiroOn(true)).catch(() => setFinanceiroOn(false));
+  }, [professional]);
+  const navLinks = financeiroOn
+    ? links.flatMap((l) => (l.to === '/gastos' ? [l, { to: '/financeiro', label: 'Financeiro', shortLabel: 'Finan.', end: false, icon: <IconCoins /> }] : [l]))
+    : links;
 
   useEffect(() => {
     if (!professional) return;
@@ -162,7 +181,7 @@ export default function Layout() {
 
         {/* links */}
         <nav className="flex-1 px-3 py-5 flex flex-col gap-1">
-          {links.map((link) => (
+          {navLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
@@ -247,7 +266,7 @@ export default function Layout() {
         className="md:hidden fixed bottom-0 inset-x-0 bg-wine-700 border-t border-wine-600/60 flex z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        {links.map((link) => (
+        {navLinks.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}

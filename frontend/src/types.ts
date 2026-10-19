@@ -91,6 +91,10 @@ export interface DashboardSummary {
   faturamentoEstimadoHojeCents: number;
 
   mes: {
+    /** 'recebimentos' = recebimentos e despesas pagas reais (Financeiro ligado); 'concluidos' = regra antiga. */
+    base?: 'recebimentos' | 'concluidos';
+    despesasPagasCents?: number | null;
+    aReceberCents?: number | null;
     faturamentoRealizadoCents: number;
     faturamentoPrevistoCents: number;
     faturamentoPerdidoCents: number;
@@ -154,6 +158,7 @@ export interface Expense {
 }
 
 export interface ExpenseSummary {
+  base?: 'recebimentos';
   gastosCents: number;
   faturadoCents: number;
   resultadoCents: number;

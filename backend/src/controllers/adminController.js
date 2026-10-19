@@ -160,6 +160,38 @@ async function supportTablesPresent(db) {
   return rows[0].present === true;
 }
 
+// Financeiro (migration 025): movimentações, histórico e fechamentos de caixa também caem em cascade (ON DELETE CASCADE
+// da conta) e têm professional_id. Mesmo tratamento do Suporte: só entram no snapshot, no preview e na conferência de
+// concorrência quando as três tabelas existem; sem a 025 a exclusão continua exatamente como antes.
+// As colunas novas de appointments e expenses já vão no snapshot (SELECT * das tabelas acima).
+const FINANCE_TABLES = ['financial_payments', 'financial_audit_log', 'cash_closings'];
+
+async function financeTablesPresent(db) {
+  const { rows } = await db.query(
+    `SELECT to_regclass('public.financial_payments') IS NOT NULL
+        AND to_regclass('public.financial_audit_log') IS NOT NULL
+        AND to_regclass('public.cash_closings') IS NOT NULL AS present`
+  );
+  return rows[0].present === true;
+}
+
+// Tabelas das migrations 028 (pagamentos de despesa) e 029 (fechamento por método) também caem em cascade: entram no snapshot e na
+// conferência quando existem, para nenhum dado financeiro ser apagado sem estar no snapshot.
+async function financeTableList(db) {
+  const { rows } = await db.query(
+    `SELECT to_regclass('public.expense_payments') IS NOT NULL AS ep, to_regclass('public.cash_closing_entries') IS NOT NULL AS cce`);
+  return [...FINANCE_TABLES, ...(rows[0].ep ? ['expense_payments'] : []), ...(rows[0].cce ? ['cash_closing_entries'] : [])];
+}
+
+async function financeCounts(db, professionalId) {
+  const counts = {};
+  for (const table of await financeTableList(db)) {
+    const { rows } = await db.query(`SELECT count(*)::int AS n FROM ${table} WHERE professional_id = $1`, [professionalId]);
+    counts[table] = rows[0].n;
+  }
+  return counts;
+}
+
 async function supportCounts(db, professionalId) {
   const counts = {};
   for (const table of SUPPORT_TABLES) {
@@ -189,7 +221,9 @@ async function writeProfessionalSnapshot(professionalId) {
 
   const data = { snapshotTakenAt: new Date().toISOString(), professional: professionalRow };
   const withSupport = await supportTablesPresent(pool);
-  for (const table of withSupport ? [...CASCADED_TABLES, ...SUPPORT_TABLES] : CASCADED_TABLES) {
+  const withFinance = await financeTablesPresent(pool);
+  const financeList = withFinance ? await financeTableList(pool) : [];
+  for (const table of [...CASCADED_TABLES, ...(withSupport ? SUPPORT_TABLES : []), ...financeList]) {
     const { rows } = await pool.query(`SELECT * FROM ${table} WHERE professional_id = $1`, [professionalId]);
     data[table] = rows;
   }
@@ -209,7 +243,12 @@ async function writeProfessionalSnapshot(professionalId) {
   const snapshotSupportCounts = withSupport
     ? Object.fromEntries(SUPPORT_TABLES.map((t) => [t, data[t].length]))
     : null;
-  return { filePath, supportCounts: snapshotSupportCounts };
+  // Idem para o Financeiro (migration 025): movimentação, histórico ou fechamento gravados depois do snapshot não
+  // podem ser apagados sem estar nele.
+  const snapshotFinanceCounts = withFinance
+    ? Object.fromEntries(financeList.map((t) => [t, data[t].length]))
+    : null;
+  return { filePath, supportCounts: snapshotSupportCounts, financeCounts: snapshotFinanceCounts };
 }
 
 // GET /admin/professionals/:id/delete-preview
@@ -231,7 +270,15 @@ export async function getDeleteProfessionalPreview(req, res, next) {
     const supportTickets = (await supportTablesPresent(pool))
       ? (await supportCounts(pool, id)).support_tickets
       : 0;
-    res.json({ ...rows[0], supportTickets });
+    // Dados financeiros que seriam apagados junto (0 quando a migration 025 não está aplicada).
+    const finance = (await financeTablesPresent(pool)) ? await financeCounts(pool, id) : null;
+    res.json({
+      ...rows[0],
+      supportTickets,
+      financialPayments: finance?.financial_payments ?? 0,
+      financialAuditEntries: finance?.financial_audit_log ?? 0,
+      cashClosings: finance?.cash_closings ?? 0,
+    });
   } catch (err) {
     next(err);
   }
@@ -283,7 +330,7 @@ export async function deleteProfessional(req, res, next) {
     }
 
     // 1) Rede de segurança operacional -- antes de qualquer exclusão.
-    const { supportCounts: snapshotSupport } = await writeProfessionalSnapshot(id);
+    const { supportCounts: snapshotSupport, financeCounts: snapshotFinance } = await writeProfessionalSnapshot(id);
 
     // 2) Exclusão física em transação. Os CASCADEs (migration 017) apagam
     //    clients/appointments/services/... na mesma operação.
@@ -291,15 +338,26 @@ export async function deleteProfessional(req, res, next) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      if (snapshotSupport) {
+      if (snapshotSupport || snapshotFinance) {
         // Trava as solicitações e depois a conta (mesma ordem de quem grava mensagem: solicitação -> conta),
         // o que impede novas atividades de suporte até o COMMIT, e confere que nada novo foi gravado depois do
         // snapshot. Se foi, aborta sem excluir: nenhuma conversa é apagada fora do snapshot.
-        await client.query('SELECT id FROM support_tickets WHERE professional_id = $1 FOR UPDATE', [id]);
+        // O FOR UPDATE da conta também é a trava do Financeiro: toda gravação financeira (movimentação, histórico,
+        // fechamento) tem FK para a conta e pede FOR KEY SHARE nela; quem já gravou e não confirmou faz esta
+        // transação esperar (e depois ser contado abaixo), quem chega depois espera e falha ao confirmar a exclusão.
+        if (snapshotSupport) await client.query('SELECT id FROM support_tickets WHERE professional_id = $1 FOR UPDATE', [id]);
         await client.query('SELECT id FROM professionals WHERE id = $1 FOR UPDATE', [id]);
-        const now = await supportCounts(client, id);
-        if (SUPPORT_TABLES.some((t) => now[t] > snapshotSupport[t])) {
-          throw new HttpError(409, 'Houve atividade de suporte nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
+        if (snapshotSupport) {
+          const now = await supportCounts(client, id);
+          if (SUPPORT_TABLES.some((t) => now[t] > snapshotSupport[t])) {
+            throw new HttpError(409, 'Houve atividade de suporte nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
+          }
+        }
+        if (snapshotFinance) {
+          const nowFinance = await financeCounts(client, id);
+          if (Object.keys(snapshotFinance).some((t) => (nowFinance[t] ?? 0) > snapshotFinance[t])) {
+            throw new HttpError(409, 'Houve movimentação financeira nesta conta durante a exclusão. Nada foi excluído; tente novamente.');
+          }
         }
       }
       // O nome da instância vem da própria linha apagada (travada por esta transação), não de uma leitura anterior.

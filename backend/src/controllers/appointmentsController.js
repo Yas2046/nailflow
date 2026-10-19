@@ -8,6 +8,8 @@ import {
   PANEL_INITIAL_STATUSES, RETROACTIVE_INITIAL_STATUSES, checkStatusChange, notBeforeStart,
 } from '../utils/appointmentStatus.js';
 import { expireDueHolds, formatWhen } from '../utils/bookingRules.js';
+import { FinanceError, financeiroPagamentosEnabled } from '../utils/financeiroPagamentos.js';
+import { agendaFinalPriceFields, finalPriceAvailable, advisoryLock, checkFinalPrice, setFinalPrice } from '../utils/financeiroPrecoFinal.js';
 
 const createSchema = z.object({
   clientId: z.string().uuid(),
@@ -17,7 +19,8 @@ const createSchema = z.object({
   status: z.enum(['pendente', 'aguardando_pagamento', 'confirmado', 'cancelado', 'concluido', 'nao_compareceu']).optional(),
 });
 
-const updateSchema = createSchema.partial();
+// finalPriceCents/finalPriceReason: finalização com preço final (etapa 3 do Financeiro); só valem com o status final 'concluido'.
+const updateSchema = createSchema.partial().extend(agendaFinalPriceFields);
 
 const createRecurringSchema = z.object({
   clientId: z.string().uuid(),
@@ -45,6 +48,7 @@ function toDto(row) {
     expiresAt: row.expires_at ?? null,
     depositCents: row.deposit_cents ?? null,
     paidAt: row.paid_at ?? null,
+    finalPriceCents: row.final_price_cents ?? null,
   };
 }
 
@@ -179,6 +183,19 @@ export async function withTransaction(fn) {
   }
 }
 
+// Recebimento líquido registrado no Financeiro (migration 025): recebimentos - estornos. Sem a estrutura (ou sem privilégio de
+// leitura, enquanto os grants não foram aplicados) nada pode ter sido registrado: 0. Não gera erro dentro da transação.
+async function netReceivedCents(db, appointmentId, professionalId) {
+  const { rows: ok } = await db.query(
+    `SELECT to_regclass('public.financial_payments') IS NOT NULL
+        AND has_table_privilege(current_user, 'public.financial_payments', 'SELECT') AS ok`);
+  if (!ok[0].ok) return 0;
+  const { rows } = await db.query(
+    `SELECT COALESCE(SUM(CASE WHEN kind = 'recebimento' THEN amount_cents ELSE -amount_cents END), 0)::int AS net
+       FROM financial_payments WHERE appointment_id = $1 AND professional_id = $2`, [appointmentId, professionalId]);
+  return rows[0].net;
+}
+
 // ── PUT /appointments/:id ───────────────────────────────────────────────────
 // Regras (Fase 1): o status só muda conforme `checkStatusChange` (matriz de transições); em
 // concluído/falta cliente, serviço e horário ficam travados (observação continua livre); repetir
@@ -298,8 +315,37 @@ export async function updateAppointment(req, res, next) {
         const again = evaluateUpdate(cur, data);
         if (again.reject) return { kind: 'reject', reject: again.reject };
 
+        // Atendimento com recebimento registrado não deixa de estar concluído (esconderia dinheiro recebido): estorne antes.
+        // O recebimento trava o atendimento com FOR SHARE, que conflita com o FOR UPDATE de readCurrent acima.
+        if (cur.status === 'concluido' && data.status !== undefined && data.status !== 'concluido'
+            && await netReceivedCents(client, id, pid) > 0) {
+          return { kind: 'reject', reject: { status: 409, body: {
+            error: 'Este atendimento tem recebimento registrado e não pode deixar de estar concluído. Estorne o recebimento antes.',
+            reason: 'has_payments',
+          } } };
+        }
+
+        // Finalização com preço final: tudo é validado ANTES de escrever (recusa sem efeito colateral); concluir não registra pagamento.
+        if (data.finalPriceCents !== undefined) {
+          const refuse = (status, reason, error, extra = {}) => ({ kind: 'reject', reject: { status, body: { error, reason, ...extra } } });
+          if (!financeiroPagamentosEnabled() || !(await finalPriceAvailable(client))) {
+            return refuse(409, 'financeiro_indisponivel', 'O Financeiro não está disponível para definir o preço final.');
+          }
+          if ((data.status ?? cur.status) !== 'concluido') {
+            return refuse(409, 'not_completed', 'O preço final só pode ser definido ao concluir o atendimento (ou em um atendimento já concluído).');
+          }
+          const { rows: pr } = await client.query('SELECT price_cents_snapshot, final_price_cents FROM appointments WHERE id = $1 AND professional_id = $2', [id, pid]);
+          await advisoryLock(client, id);
+          try {
+            await checkFinalPrice(client, id, pid, { status: 'concluido', ...pr[0] }, data.finalPriceCents, data.finalPriceReason);
+          } catch (e) {
+            if (e instanceof FinanceError) return refuse(e.status, e.reason, e.message, e.extra);
+            throw e;
+          }
+        }
+
         // Nada a gravar (por exemplo, outra operação já aplicou o estado pedido): responde sem tocar na linha.
-        const nothingToDo = (data.status === undefined || data.status === cur.status)
+        const nothingToDo = data.finalPriceCents === undefined && (data.status === undefined || data.status === cur.status)
           && !again.startChanged && !again.serviceChanged && !again.clientChanged
           && (typeof data.notes !== 'string' || data.notes === cur.notes)
           && !(cur.cancel_reason && cur.status !== 'cancelado');
@@ -321,6 +367,10 @@ export async function updateAppointment(req, res, next) {
           [data.clientId ?? null, data.serviceId ?? null, slot.newStartsAt ?? null, slot.newEndsAt ?? null, data.status ?? null,
            data.notes ?? null, id, pid, slot.newSnapshot ?? null]
         );
+        // Preço final na MESMA transação do status (se falhar aqui, FinanceError desfaz tudo, inclusive a conclusão).
+        if (data.finalPriceCents !== undefined) {
+          await setFinalPrice(client, { appointmentId: id, professionalId: pid, row: rows[0], newCents: data.finalPriceCents, reason: data.finalPriceReason });
+        }
         return { kind: 'ok', row: rows[0], prevStatus: cur.status };
       });
 
@@ -353,6 +403,11 @@ export async function updateAppointment(req, res, next) {
       return res.json(notificationSkipped ? { ...dto, notificationSkipped } : dto);
     }
   } catch (err) {
+    if (err instanceof FinanceError) return res.status(err.status).json({ error: err.message, reason: err.reason, ...err.extra });
+    // Piso do valor no banco (migration 027): só aparece se a leitura de saldo desta requisição ficou desatualizada (outro escritor).
+    if (err?.code === '23514' && /abaixo do líquido/.test(err.message)) {
+      return res.status(409).json({ error: 'O valor do serviço não pode ficar abaixo do já recebido.', reason: 'below_received' });
+    }
     if (err instanceof z.ZodError) return next(new HttpError(400, 'Dados de agendamento inválidos.'));
     next(err);
   }

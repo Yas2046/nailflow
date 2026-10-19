@@ -12,6 +12,7 @@ import Agenda from './pages/Agenda';
 import Clientes from './pages/Clientes';
 import Servicos from './pages/Servicos';
 import Gastos from './pages/Gastos';
+import Financeiro from './pages/financeiro/Financeiro';
 import Disponibilidade from './pages/Disponibilidade';
 import Perfil from './pages/Perfil';
 import PaginaPublica from './pages/PaginaPublica';
@@ -74,6 +75,8 @@ export default function App() {
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/servicos" element={<Servicos />} />
             <Route path="/gastos" element={<Gastos />} />
+            <Route path="/financeiro" element={<Financeiro />} />
+            <Route path="/financeiro/:aba" element={<Financeiro />} />
             <Route path="/disponibilidade" element={<Disponibilidade />} />
             <Route path="/perfil" element={<Perfil />} />
             <Route path="/configuracoes" element={<Configuracoes />} />

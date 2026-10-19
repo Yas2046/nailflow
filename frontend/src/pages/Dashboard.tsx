@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { api } from '../services/api';
@@ -70,7 +71,8 @@ function VariacaoBadge({ variacao }: { variacao: number | null }) {
 
 // ── ComboChart — barras faturamento + linha gastos ───────────────────────────
 
-function ComboChart({ data }: {
+function ComboChart({ data, recebido = false }: {
+  recebido?: boolean;
   data: Array<{ label: string; faturadoCents: number; gastosCents: number; isCurrent?: boolean }>;
 }) {
   const H = 130; const barW = 30; const gap = 18;
@@ -151,10 +153,10 @@ function ComboChart({ data }: {
       {/* legenda */}
       <g transform={`translate(10, ${H + 30})`}>
         <rect width="8" height="8" rx="2" className="fill-wine-400" />
-        <text x="12" y="8" fontSize="9" className="fill-ink/50">Faturamento</text>
+        <text x="12" y="8" fontSize="9" className="fill-ink/50">{recebido ? 'Recebido' : 'Faturamento'}</text>
         <line x1="80" y1="4" x2="92" y2="4" stroke="#e11d48" strokeWidth="1.5" strokeDasharray="4 2" strokeOpacity="0.7" />
         <circle cx="86" cy="4" r="2.5" fill="#e11d48" fillOpacity="0.8" />
-        <text x="96" y="8" fontSize="9" className="fill-ink/50">Gastos</text>
+        <text x="96" y="8" fontSize="9" className="fill-ink/50">{recebido ? 'Despesas pagas' : 'Gastos'}</text>
       </g>
     </svg>
   );
@@ -208,7 +210,7 @@ export default function Dashboard() {
   const [summary, setSummary]       = useState<DashboardSummary | null>(null);
   const [clients, setClients]       = useState<Client[]>([]);
   const [monthAppts, setMonthAppts] = useState<Appointment[]>([]);
-  const [gastosCents, setGastosCents] = useState<number>(0);
+  const [gastosLegado, setGastosLegado] = useState<number>(0);
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
@@ -225,7 +227,7 @@ export default function Dashboard() {
         setSummary(s);
         setClients(c);
         setMonthAppts(a);
-        setGastosCents(expenses.reduce((acc: number, e: Expense) => acc + e.amount_cents, 0));
+        setGastosLegado(expenses.reduce((acc: number, e: Expense) => acc + e.amount_cents, 0));
       })
       .catch((e: Error) => setError(e.message));
   }, []);
@@ -239,6 +241,9 @@ export default function Dashboard() {
   if (!summary) return <LoadingSkeleton />;
 
   const { mes, variacao, topServicos, faturamento6Meses, gastos6Meses } = summary;
+  // Com o Financeiro ligado, os valores são recebimentos e despesas pagas reais; sem ele, a regra antiga (atendimentos concluídos).
+  const recebidoBase = mes.base === 'recebimentos';
+  const gastosCents = recebidoBase ? (mes.despesasPagasCents ?? 0) : gastosLegado;
 
   // Financeiro
   const faturado    = mes.faturamentoRealizadoCents;
@@ -277,7 +282,7 @@ export default function Dashboard() {
         {/* Faturamento — protagonista */}
         <div className="px-6 pt-6 pb-5">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-wine-300 text-xs uppercase tracking-widest font-semibold">Faturamento realizado</p>
+            <p className="text-wine-300 text-xs uppercase tracking-widest font-semibold">{recebidoBase ? 'Recebido no mês' : 'Faturamento realizado'}</p>
             <VariacaoBadge variacao={variacao} />
           </div>
           <p className="font-display text-5xl sm:text-6xl leading-none tabular-nums mt-2">
@@ -296,7 +301,7 @@ export default function Dashboard() {
         {/* Linha divisória + Gastos / Resultado */}
         <div className="border-t border-wine-700/60 grid grid-cols-2 divide-x divide-wine-700/60">
           <div className="px-6 py-4">
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">Gastos</p>
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">{recebidoBase ? 'Despesas pagas' : 'Gastos'}</p>
             <p className="font-display text-2xl tabular-nums leading-none text-wine-200">
               {gastosCents > 0 ? formatMoney(gastosCents) : '—'}
             </p>
@@ -309,7 +314,7 @@ export default function Dashboard() {
               </p>
             ) : (
               <p className="font-display text-2xl tabular-nums leading-none text-wine-400 text-sm font-sans font-normal">
-                sem gastos lançados
+                {recebidoBase ? 'sem despesas pagas' : 'sem gastos lançados'}
               </p>
             )}
           </div>
@@ -318,8 +323,8 @@ export default function Dashboard() {
         {/* Rodapé: Ticket médio · Previsto · Perdido */}
         <div className="border-t border-wine-700/60 px-6 py-4 flex flex-wrap gap-x-6 gap-y-2">
           <div>
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Ticket médio</p>
-            <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(ticketMedio)}</p>
+            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">{recebidoBase ? 'A receber' : 'Ticket médio'}</p>
+            <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(recebidoBase ? (mes.aReceberCents ?? 0) : ticketMedio)}</p>
           </div>
           <div>
             <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Previsto</p>
@@ -330,6 +335,11 @@ export default function Dashboard() {
             <p className="font-display text-xl tabular-nums text-rose-300 mt-0.5">{formatMoney(mes.faturamentoPerdidoCents)}</p>
           </div>
         </div>
+        {recebidoBase && (
+          <div className="border-t border-wine-700/60 px-6 py-3 text-xs text-wine-300">
+            Valores recebidos e despesas efetivamente pagas, conforme o <Link to="/financeiro/visao-geral" className="underline">Financeiro</Link>. Atendimento concluído sem recebimento aparece em "A receber".
+          </div>
+        )}
       </section>
 
       {/* ── 2. EVOLUÇÃO — herói secundário ── */}
@@ -339,7 +349,7 @@ export default function Dashboard() {
           <h2 className="font-display text-lg sm:text-xl text-wine-700">Evolução — 6 meses</h2>
         </div>
         <div className="bg-white rounded-2xl border border-wine-100/80 px-5 pt-5 pb-4 shadow-sm">
-          <ComboChart data={chartData} />
+          <ComboChart data={chartData} recebido={recebidoBase} />
         </div>
       </section>
 

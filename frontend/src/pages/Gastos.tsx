@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
@@ -263,22 +264,29 @@ export default function Gastos() {
         )}
       </div>
 
+      {summary?.base === 'recebimentos' && (
+        <p className="text-xs text-ink/50 bg-wine-50 rounded-lg px-3 py-2">
+          O resumo mostra o que foi realmente recebido e pago no período. A lista abaixo traz os gastos lançados (pagos ou não). Para pagamentos, vencimentos e relatórios, use o{' '}
+          <Link to="/financeiro/despesas" className="underline text-wine-700">Financeiro</Link>.
+        </p>
+      )}
+
       {/* ── Resumo financeiro do período ── */}
       {!(period === 'custom' && (!customFrom || !customTo)) && (
         <div className="grid grid-cols-3 gap-px bg-wine-100 rounded-2xl overflow-hidden shadow-sm">
           {[
             {
-              label: 'Faturado',
+              label: summary?.base === 'recebimentos' ? 'Recebido' : 'Faturado',
               value: summary ? formatCurrency(summary.faturadoCents) : '—',
               cls: 'text-ink',
             },
             {
-              label: 'Gastos',
+              label: summary?.base === 'recebimentos' ? 'Despesas pagas' : 'Gastos',
               value: summary ? formatCurrency(summary.gastosCents) : '—',
               cls: 'text-rose-600',
             },
             {
-              label: 'Resultado',
+              label: summary?.base === 'recebimentos' ? 'Saldo' : 'Resultado',
               value: summary ? formatCurrency(summary.resultadoCents) : '—',
               cls: summary
                 ? summary.resultadoCents >= 0 ? 'text-emerald-600' : 'text-rose-600'
@@ -298,7 +306,7 @@ export default function Gastos() {
       {/* ── Resumo por categoria ── */}
       {!(period === 'custom' && (!customFrom || !customTo)) && summary && summary.categorias.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-2.5">Por categoria</p>
+          <p className="text-xs font-medium text-ink/40 uppercase tracking-wide mb-2.5">{summary.base === 'recebimentos' ? 'Por categoria (despesas pagas)' : 'Por categoria'}</p>
           <div className="flex flex-wrap gap-2">
             {summary.categorias.map((cat) => {
               const colorCls = CATEGORY_COLORS[cat.category] ?? 'bg-gray-100 text-gray-600';
@@ -336,7 +344,7 @@ export default function Gastos() {
         <div className="bg-wine-600 rounded-2xl p-5 text-white flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-widest text-white/60 font-semibold">
-              {hasCustomFilter ? `Total — ${filterCat}` : 'Total no período'}
+              {hasCustomFilter ? `Total lançado — ${filterCat}` : summary?.base === 'recebimentos' ? 'Total lançado no período' : 'Total no período'}
             </p>
             <p className="font-display text-3xl tabular-nums mt-1">{formatCurrency(filteredTotal)}</p>
           </div>
