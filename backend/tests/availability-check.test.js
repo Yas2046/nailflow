@@ -188,7 +188,10 @@ test('7. serviço inativo é recusado (inactive_service)', async (t) => {
 test('endpoint GET /availability/check retorna o mesmo resultado da função', async (t) => {
   if (!dbAvailable) return t.skip('DATABASE_URL não está acessível.');
 
-  const token = jwt.sign({ sub: TEST_PROFESSIONAL_ID }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const { pool } = await import('../src/config/db.js');
+  const { rows: [pro] } = await pool.query('SELECT token_version FROM professionals WHERE id = $1', [TEST_PROFESSIONAL_ID]);
+  // o JWT de sessão carrega "ver" (token_version), usado para revogar sessões
+  const token = jwt.sign({ sub: TEST_PROFESSIONAL_ID, ver: pro.token_version }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
   const res = await fetch(
     `${baseUrl}/availability/check?serviceId=${SERVICE_30MIN_ID}&startsAt=2026-03-10T14:15:00`,

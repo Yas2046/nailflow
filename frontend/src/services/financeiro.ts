@@ -154,6 +154,7 @@ export interface AlertasResponse { hoje: string; total: number; alertas: Alerta[
 
 /** Baixa o arquivo do relatório (cookie de sessão) e o entrega ao navegador; erros da API viram mensagem. */
 export async function downloadRelatorio(kind: 'xlsx' | 'pdf', range: { from: string; to: string }): Promise<void> {
+  if (API_URL.startsWith('mock://')) throw new Error('Exportação indisponível nos dados simulados.');
   const res = await fetch(`${API_URL}/financeiro/relatorio.${kind}?from=${range.from}&to=${range.to}`, { credentials: 'include' });
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));

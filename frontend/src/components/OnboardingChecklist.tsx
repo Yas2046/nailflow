@@ -25,7 +25,7 @@ export const REQUIRED_STEPS: Step[] = [
   { key: 'servicos', label: 'Serviços', hint: 'Cadastre os serviços que você oferece',     to: '/servicos' },
   { key: 'horarios', label: 'Horários', hint: 'Defina seus dias e horários de atendimento', to: '/configuracoes?tab=disponibilidade' },
   { key: 'whatsapp', label: 'WhatsApp', hint: 'Conecte seu WhatsApp ao NailFlow',          to: '/configuracoes?tab=whatsapp' },
-  { key: 'link',     label: 'Seu link', hint: 'Compartilhe com suas clientes',             to: '/perfil' },
+  { key: 'link',     label: 'Seu link', hint: 'Compartilhe com suas clientes',             to: '/configuracoes?tab=perfil' },
 ];
 
 const OPTIONAL_STEP: Step = { key: 'clientes', label: 'Clientes', hint: 'Cadastre suas clientes', to: '/clientes' };
@@ -106,7 +106,7 @@ export default function OnboardingChecklist({ status }: { status: OnboardingStat
   const nextKey = getNextStep(status)?.key;
 
   return (
-    <section className="bg-white rounded-2xl border border-wine-100/80 shadow-sm overflow-hidden">
+    <section className="card overflow-hidden">
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div>

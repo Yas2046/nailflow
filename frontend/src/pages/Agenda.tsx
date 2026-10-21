@@ -6,6 +6,7 @@ import { dayAppointments, dayGridRange, slotAppointment } from '../utils/agendaD
 import type { Appointment, Service, WeeklyAvailabilityDay } from '../types';
 import AppointmentModal from '../components/AppointmentModal';
 import BlockTimeModal from '../components/BlockTimeModal';
+import LoadError from '../components/LoadError';
 
 type ViewMode = 'dia' | 'semana' | 'mes';
 
@@ -64,10 +65,15 @@ const STATUS_CFG: Record<string, { label: string; dot: string; badge: string; bo
   confirmado:     { label: 'Confirmado',      dot: 'bg-wine-500',    badge: 'bg-wine-50 text-wine-700 border border-wine-200',       border: 'border-wine-500',  bg: 'bg-wine-500/5' },
   pendente:       { label: 'Aguardando confirmação',      dot: 'bg-gold-500',    badge: 'bg-amber-50 text-amber-700 border border-amber-200',    border: 'border-gold-500',  bg: 'bg-gold-500/5' },
   aguardando_pagamento: { label: 'Aguardando pagamento', dot: 'bg-sky-400', badge: 'bg-sky-50 text-sky-700 border border-sky-200', border: 'border-sky-400', bg: 'bg-sky-400/5' },
+  em_atendimento: { label: 'Em atendimento',  dot: 'bg-gold-500',    badge: 'bg-gold-500/15 text-wine-800 border border-gold-500/40', border: 'border-gold-500',  bg: 'bg-gold-500/10' },
   concluido:      { label: 'Concluído',       dot: 'bg-sage-500',    badge: 'bg-green-50 text-green-700 border border-green-200',    border: 'border-sage-500',  bg: 'bg-sage-500/5' },
   cancelado:      { label: 'Cancelado',       dot: 'bg-rose-400',    badge: 'bg-rose-50 text-rose-600 border border-rose-200',       border: 'border-rose-300',  bg: 'bg-rose-50/40' },
   nao_compareceu: { label: 'Não compareceu',  dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500 border border-gray-200',     border: 'border-gray-300',  bg: 'bg-gray-50/40' },
 };
+/** "Em atendimento" não é um status do agendamento: é confirmado com a chegada registrada (check-in). */
+function viewStatus(a: Appointment): string {
+  return a.status === 'confirmado' && a.checkedInAt ? 'em_atendimento' : a.status;
+}
 function getCfg(status: string) {
   return STATUS_CFG[status] ?? STATUS_CFG.pendente;
 }
@@ -104,6 +110,7 @@ export default function Agenda() {
   const [view, setView]             = useState<ViewMode>('dia');
   const [currentDate, setCurrentDate] = useState(deepLink.date ?? startOfDay(new Date()));
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loadError, setLoadError] = useState(false);
   const [blocked, setBlocked]       = useState<BlockedTime[]>([]);
   const [weeklyAvailability, setWeeklyAvailability] = useState<WeeklyAvailabilityDay[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
@@ -145,8 +152,9 @@ export default function Agenda() {
   }, [view, currentDate, rangeStart]);
 
   function reload() {
+    setLoadError(false);
     api.get<Appointment[]>(`/appointments?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`)
-      .then(setAppointments).catch(() => {});
+      .then(setAppointments).catch(() => setLoadError(true));
     api.get<BlockedTime[]>(`/availability/blocked?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`).then(setBlocked).catch(() => {});
     setModalState(null);
   }
@@ -190,7 +198,7 @@ export default function Agenda() {
                 view === v ? 'bg-wine-600 text-white shadow-sm' : 'text-ink/55 hover:bg-wine-50 hover:text-ink/80'
               }`}
             >
-              {v}
+              {{ dia: 'Dia', semana: 'Semana', mes: 'Mês' }[v]}
             </button>
           ))}
         </div>
@@ -207,7 +215,7 @@ export default function Agenda() {
             <IconChevronLeft />
           </button>
 
-          <span className="flex-1 min-w-0 font-medium text-ink/75 text-sm sm:text-base px-1 capitalize text-center truncate">
+          <span className="flex-1 min-w-0 font-medium text-ink/75 text-sm sm:text-base px-1 sentence-case text-center truncate">
             {dateLabel}
           </span>
 
@@ -229,6 +237,8 @@ export default function Agenda() {
       </div>
 
       {/* ── Views ── */}
+      {loadError && <LoadError message="Não foi possível carregar os agendamentos. A grade abaixo pode estar incompleta; seus agendamentos não foram apagados." onRetry={reload} />}
+
       {view === 'dia' && (
         <DayView
           date={currentDate}
@@ -342,10 +352,10 @@ function DayView({
     : undefined;
 
   return (
-    <div className="bg-white border border-wine-100/80 rounded-2xl overflow-hidden shadow-sm">
+    <div className="card overflow-hidden">
       {/* Cabeçalho interno */}
       <div className="px-5 py-3 border-b border-wine-50 bg-gradient-to-r from-wine-50/60 to-transparent flex items-center justify-between">
-        <span className="text-sm font-medium text-ink/60 capitalize">
+        <span className="text-sm font-medium text-ink/60 sentence-case">
           {date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
         </span>
         {isToday(date) && (
@@ -370,20 +380,20 @@ function DayView({
           const { appt: apptHere, startsHere } = slotAppointment(appointments, slotDate.getTime());
 
           // ── Intervalo ──
-          if (isBreak) {
+          if (isBreak && !apptHere) {   // agendamento dentro do intervalo/bloqueio continua visível (a Agenda interna permite criá-lo)
             return (
               <div key={time} className="flex items-center gap-4 px-5 py-2.5 bg-ink/[0.02] border-b border-wine-50/60">
-                <span className="text-xs font-medium text-ink/25 tabular-nums w-12 shrink-0">{time}</span>
-                <span className="text-xs text-ink/30 italic">Intervalo</span>
+                <span className="text-xs font-medium text-ink/45 tabular-nums w-12 shrink-0">{time}</span>
+                <span className="text-xs text-ink/45 italic">Intervalo</span>
               </div>
             );
           }
 
           // ── Bloqueado ──
-          if (blockedHere) {
+          if (blockedHere && !apptHere) {
             return (
               <div key={time} className="flex items-center gap-4 px-5 py-3 border-l-2 border-ink/20 bg-ink/[0.02] border-b border-wine-50/60">
-                <span className="text-xs font-semibold text-ink/30 tabular-nums w-12 shrink-0">{time}</span>
+                <span className="text-xs font-semibold text-ink/45 tabular-nums w-12 shrink-0">{time}</span>
                 <span className="flex items-center gap-1.5 text-xs text-ink/40">
                   <IconLock />
                   Bloqueado{blockedHere.reason ? ` — ${blockedHere.reason}` : ''}
@@ -397,7 +407,7 @@ function DayView({
             const isStartSlot = startsHere;
             const startLabel  = new Date(apptHere.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             const isNext      = nextAppt?.id === apptHere.id;
-            const cfg         = getCfg(apptHere.status);
+            const cfg         = getCfg(viewStatus(apptHere));
             const svc         = services.find(s => s.id === apptHere.serviceId);
             const dur         = durationMin(apptHere);
 
@@ -405,7 +415,8 @@ function DayView({
               return (
                 <div
                   key={time}
-                  className={`group flex gap-3 px-4 py-3 border-l-[3px] border-b border-wine-50/60 ${cfg.border} ${cfg.bg} ${isNext ? 'ring-inset ring-1 ring-gold-400/30' : ''}`}
+                  onClick={() => onSlotClick(time, apptHere)}
+                  className={`group flex gap-3 px-4 py-3 cursor-pointer hover:brightness-[0.98] transition border-l-[3px] border-b border-wine-50/60 ${cfg.border} ${cfg.bg} ${isNext ? 'ring-inset ring-1 ring-gold-400/30' : ''}`}
                 >
                   {/* Time */}
                   <div className="shrink-0 pt-0.5">
@@ -422,7 +433,7 @@ function DayView({
                         <p className="font-bold text-ink leading-tight truncate">{apptHere.clientName}</p>
                         {apptHere.recurringGroupId && <IconRecurring />}
                         {isNext && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-400/20 text-gold-600 border border-gold-300/50 rounded-full px-2 py-0.5 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-gold-400/20 text-gold-700 border border-gold-300/50 rounded-full px-2 py-0.5 whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-pulse" />
                             Próximo
                           </span>
@@ -430,11 +441,12 @@ function DayView({
                       </div>
                       {/* Status + editar */}
                       <div className="flex items-center gap-2 shrink-0">
-                        <StatusBadge status={apptHere.status} />
+                        <StatusBadge status={viewStatus(apptHere)} />
                         <button
-                          onClick={() => onSlotClick(time, apptHere)}
-                          className="p-1.5 rounded-lg hover:bg-white/80 text-ink/40 hover:text-wine-700 transition-colors md:opacity-0 md:group-hover:opacity-100"
-                          title="Editar"
+                          onClick={(e) => { e.stopPropagation(); onSlotClick(time, apptHere); }}
+                          className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg hover:bg-white/80 text-ink/45 hover:text-wine-700 transition-colors"
+                          title="Abrir atendimento"
+                          aria-label={`Abrir atendimento de ${apptHere.clientName}`}
                         >
                           <IconPencil />
                         </button>
@@ -443,11 +455,11 @@ function DayView({
                     {/* Serviço + detalhes */}
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                       <p className="text-xs text-ink/50 truncate">{apptHere.serviceName}</p>
-                      <span className="text-ink/20 text-xs">·</span>
+                      <span className="text-ink/45 text-xs">·</span>
                       <span className="text-xs text-ink/40">{dur} min</span>
                       {svc && (
                         <>
-                          <span className="text-ink/20 text-xs">·</span>
+                          <span className="text-ink/45 text-xs">·</span>
                           <span className="text-xs font-semibold text-wine-700">{formatMoney(svc.priceCents)}</span>
                         </>
                       )}
@@ -463,8 +475,8 @@ function DayView({
                 key={time}
                 className={`flex items-center gap-3 px-4 py-2 border-l-[3px] border-b border-wine-50/60 ${cfg.border} ${cfg.bg}`}
               >
-                <span className="text-xs text-ink/20 tabular-nums w-12 shrink-0">{time}</span>
-                <span className="text-ink/20 text-xs tracking-widest select-none">· · ·</span>
+                <span className="text-xs text-ink/45 tabular-nums w-12 shrink-0">{time}</span>
+                <span className="text-ink/45 text-xs tracking-widest select-none">· · ·</span>
               </div>
             );
           }
@@ -474,13 +486,13 @@ function DayView({
             <div
               key={time}
               className={`group flex items-center justify-between gap-2 px-4 py-2.5 min-h-[44px] border-b border-wine-50/40 transition-colors ${
-                isPast ? 'opacity-50' : 'hover:bg-wine-50/40'
+                isPast ? 'opacity-85' : 'hover:bg-wine-50/40'
               }`}
             >
-              <span className={`text-xs tabular-nums w-12 shrink-0 ${isPast ? 'text-ink/20 font-normal' : 'text-ink/30 font-medium'}`}>
+              <span className={`text-xs tabular-nums w-12 shrink-0 ${isPast ? 'text-ink/45 font-normal' : 'text-ink/45 font-medium'}`}>
                 {time}
               </span>
-              <div className="flex gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+              <div className="flex gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                 <button
                   onClick={() => onSlotClick(time, null)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-wine-600 text-white hover:bg-wine-700 transition-colors font-medium"
@@ -489,7 +501,7 @@ function DayView({
                 </button>
                 <button
                   onClick={() => onBlockClick(time)}
-                  className="hidden sm:block text-xs px-3 py-1.5 rounded-lg border border-wine-100 text-ink/50 hover:bg-white hover:border-wine-200 transition-colors"
+                  className="text-xs px-3 py-1.5 rounded-lg border border-wine-100 text-ink/50 hover:bg-white hover:border-wine-200 transition-colors"
                 >
                   Bloquear
                 </button>
@@ -537,7 +549,7 @@ function WeekView({
               today
                 ? 'border-wine-400 bg-wine-50 shadow-sm hover:shadow-md'
                 : 'border-wine-100/80 bg-white hover:border-wine-200 hover:shadow-md'
-            } ${!isWorking ? 'opacity-45' : ''}`}
+            } ${!isWorking ? 'opacity-85' : ''}`}
           >
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -552,12 +564,12 @@ function WeekView({
             </div>
 
             {dayAppts.length === 0 ? (
-              <p className="text-xs text-ink/30 italic">{isWorking ? 'Livre' : 'Folga'}</p>
+              <p className="text-xs text-ink/45 italic">{isWorking ? 'Livre' : 'Folga'}</p>
             ) : (
               <ul className="space-y-1.5">
                 {dayAppts.slice(0, 3).map((a) => (
                   <li key={a.id} className="flex items-center gap-1.5">
-                    <StatusDot status={a.status} size="xs" />
+                    <StatusDot status={viewStatus(a)} size="xs" />
                     <span className="text-xs text-ink/65 truncate leading-tight">
                       <span className="font-semibold text-wine-700 tabular-nums">
                         {new Date(a.startsAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -599,7 +611,7 @@ function MonthView({
   ];
 
   return (
-    <div className="bg-white border border-wine-100/80 rounded-2xl overflow-hidden shadow-sm">
+    <div className="card overflow-hidden">
       <div className="grid grid-cols-7 border-b border-wine-50">
         {MONTH_HEADERS.map((d) => (
           <div key={d} className="text-center text-[11px] font-semibold text-ink/35 uppercase tracking-wide py-3">{d}</div>

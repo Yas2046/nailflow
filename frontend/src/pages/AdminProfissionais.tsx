@@ -11,7 +11,7 @@ import { IconSearch } from '../components/admin-professionals/icons';
 import { EmptyState, ErrorState, LoadingState } from '../components/admin-professionals/ListStates';
 import { FILTERS, normalize, type FilterId } from '../components/admin-professionals/filters';
 import ProfessionalCard, { ProfessionalsTableHead } from '../components/admin-professionals/ProfessionalCard';
-import { ConfirmActionDialog, DeleteProfessionalDialog, EditProfessionalDialog } from '../components/admin-professionals/ProfessionalDialogs';
+import { ConfirmActionDialog, DeleteProfessionalDialog, EditProfessionalDialog, ResetLinkDialog } from '../components/admin-professionals/ProfessionalDialogs';
 import type { MenuItem } from '../components/admin-professionals/RowMenu';
 import { SummaryStrip } from '../components/admin-professionals/SummaryStrip';
 import type { ConfirmAction, DeletePreview, EditForm } from '../components/admin-professionals/types';
@@ -33,6 +33,11 @@ export default function AdminProfissionais() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  // link de nova senha (uso único): o link só existe aqui, na memória, até fechar o diálogo
+  const [resetTarget, setResetTarget] = useState<{ id: string; name: string } | null>(null);
+  const [resetLink, setResetLink] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [resetWorking, setResetWorking] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -194,6 +199,7 @@ export default function AdminProfissionais() {
       isBlocked
         ? { label: 'Desbloquear', tone: 'success' as const, onSelect: () => setConfirmAction({ id: p.id, name: p.name, action: 'unblock' }) }
         : { label: 'Bloquear', onSelect: () => setConfirmAction({ id: p.id, name: p.name, action: 'block' }) },
+      ...(p.is_admin ? [] : [{ label: 'Gerar link de nova senha', onSelect: () => { setResetLink(null); setResetError(null); setResetTarget({ id: p.id, name: p.name }); } }]),
       { label: 'Excluir…', tone: 'danger' as const, onSelect: () => openDelete(p) },
     ];
   }
@@ -296,6 +302,29 @@ export default function AdminProfissionais() {
             )}
           </section>
         </>
+      )}
+
+      {resetTarget && (
+        <ResetLinkDialog
+          target={resetTarget}
+          link={resetLink?.url ?? null}
+          expiresAt={resetLink?.expiresAt ?? null}
+          working={resetWorking}
+          error={resetError}
+          returnFocusRef={triggerRef}
+          onCancel={() => { setResetTarget(null); setResetLink(null); setResetError(null); }}
+          onGenerate={async () => {
+            setResetWorking(true); setResetError(null);
+            try {
+              const r = await api.post<{ resetPath: string; expiresAt: string }>(`/admin/professionals/${resetTarget.id}/password-reset`);
+              setResetLink({ url: `${window.location.origin}${r.resetPath}`, expiresAt: r.expiresAt });
+            } catch (err) {
+              setResetError(err instanceof Error ? err.message : 'Não foi possível gerar o link.');
+            } finally {
+              setResetWorking(false);
+            }
+          }}
+        />
       )}
 
       {confirmAction && (

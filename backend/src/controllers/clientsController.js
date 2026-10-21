@@ -40,6 +40,8 @@ export async function listClients(req, res, next) {
         phone: r.phone,
         notes: r.notes,
         tags: r.tags ?? [],
+        contactOptOut: r.contact_opt_out === true,
+        returnSnoozedUntil: r.return_snoozed_until ?? null,
         totalAtendimentos: Number(r.total_atendimentos),
         ultimoAtendimento: r.ultimo_atendimento,
       }))

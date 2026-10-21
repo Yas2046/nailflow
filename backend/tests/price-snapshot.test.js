@@ -56,8 +56,8 @@ before(async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: PROFESSIONAL_EMAIL, password: PROFESSIONAL_PASSWORD }),
   });
-  const loginBody = await loginRes.json();
-  authToken = loginBody.token;
+  // a sessão vai no cookie httpOnly; o corpo não traz o token
+  authToken = loginRes.headers.getSetCookie().find((c) => c.startsWith('nailflow_token='))?.split(';')[0].split('=')[1];
 });
 
 after(async () => {

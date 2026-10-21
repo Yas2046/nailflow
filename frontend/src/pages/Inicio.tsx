@@ -7,6 +7,68 @@ import AppointmentModal from '../components/AppointmentModal';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import OnboardingChecklist, { getNextStep, type OnboardingStatus } from '../components/OnboardingChecklist';
+import { useFinanceiroAtivo } from '../hooks/useFinanceiroAtivo';
+import LoadError from '../components/LoadError';
+import { financeiro, type Alerta, type CaixaDay, type ReceivablesResponse } from '../services/financeiro';
+import { useToast } from '../context/ToastContext';
+import type { ReturnResponse } from './Retorno';
+import { todayBR } from '../utils/money';
+
+// ── Pendências financeiras e indicadores do mês (mesmas fontes do Financeiro; nada é recalculado aqui) ──
+
+/** Avisos discretos para conferência (ex.: atendimentos concluídos sem recebimento há mais de 7 dias). Não são dívida automática. */
+function PendenciasFinanceiras() {
+  const ativo = useFinanceiroAtivo();
+  const [alertas, setAlertas] = useState<Alerta[] | null>(null);
+  useEffect(() => {
+    if (!ativo) return;
+    financeiro.alertas().then((r) => setAlertas(r.alertas.slice(0, 3))).catch(() => setAlertas([]));
+  }, [ativo]);
+  if (!ativo || !alertas?.length) return null;
+  return (
+    <section aria-label="Para conferir" className="card overflow-hidden">
+      <h2 className="px-5 pt-4 pb-1 text-[11px] uppercase tracking-widest font-semibold text-ink/40">Para conferir</h2>
+      <ul className="divide-y divide-wine-50">
+        {alertas.map((a) => (
+          <li key={a.type}>
+            <Link to={a.path} className="flex items-center justify-between gap-3 px-5 py-3 min-h-[52px] hover:bg-wine-50/50 transition-colors">
+              <span className="text-sm text-ink/80">{a.title}</span>
+              <span className="text-xs font-semibold text-wine-700 tabular-nums shrink-0">{a.count}{a.amountCents > 0 ? ` · ${formatMoney(a.amountCents)}` : ''}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function IndicadoresMes({ mes }: { mes: DashboardSummary['mes'] }) {
+  const ativo = useFinanceiroAtivo();
+  const itens: Array<{ label: string; value: string }> = [
+    { label: mes.base === 'recebimentos' ? 'Recebido no mês' : 'Concluído no mês (valor dos serviços)', value: formatMoney(mes.faturamentoRealizadoCents) },
+    ...(mes.aReceberCents != null ? [{ label: 'A receber', value: formatMoney(mes.aReceberCents) }] : []),
+    ...(mes.despesasPagasCents != null ? [{ label: 'Despesas pagas', value: formatMoney(mes.despesasPagasCents) }] : []),
+  ];
+  return (
+    <section aria-label="Indicadores do mês">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3">
+          <span className="w-0.5 h-4 rounded-full bg-gold-500 shrink-0" aria-hidden="true" />
+          <h2 className="font-display text-lg sm:text-xl text-wine-700">Este mês</h2>
+        </div>
+        <Link to={ativo ? '/financeiro/visao-geral' : '/financeiro/desempenho'} className="text-xs font-semibold text-wine-600 hover:underline">Ver financeiro →</Link>
+      </div>
+      <div className={`grid gap-3 ${itens.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
+        {itens.map((i) => (
+          <div key={i.label} className="bg-white rounded-2xl border border-wine-100/80 px-5 py-4 shadow-sm">
+            <p className="text-[10px] text-ink/40 uppercase tracking-widest font-medium">{i.label}</p>
+            <p className="font-display text-2xl text-wine-700 tabular-nums leading-none mt-1.5">{i.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 // ── Utils ────────────────────────────────────────────────────────────────────
 
@@ -184,6 +246,134 @@ function LoadingSkeleton() {
   );
 }
 
+// ── Primeira dobra: cliente da vez com a ação certa, decisões pendentes e o dia no caixa ─────────────────────
+
+/** "Em atendimento" não é um status: é confirmado com a chegada registrada (check-in). */
+const isInService = (a: Appointment) => a.status === 'confirmado' && !!a.checkedInAt;
+
+function HeroAtendimento({ appt, price, status, busy, error, onStart, onConclude, onDetails }: {
+  appt: Appointment; price: number | null; status: string; busy: boolean; error: string | null;
+  onStart: () => void; onConclude: () => void; onDetails: () => void;
+}) {
+  const inService = isInService(appt);
+  const canStart = appt.status === 'confirmado' && !appt.checkedInAt;
+  const dur = durationMinutes(appt.startsAt, appt.endsAt);
+  // A API só aceita concluir a partir do horário de início (chegada antecipada já pode ser registrada).
+  const started = new Date(appt.startsAt).getTime() <= Date.now();
+  return (
+    <section aria-label={inService ? 'Atendimento em andamento' : started ? 'Cliente no horário' : 'Próxima cliente'} className="bg-wine-800 rounded-2xl overflow-hidden shadow-lg shadow-wine-800/20 text-cream">
+      <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between gap-3">
+        <p className="text-wine-300 text-[11px] uppercase tracking-widest font-semibold">{inService ? 'Em atendimento agora' : started ? 'Na hora do atendimento' : 'Próxima cliente'}</p>
+        <StatusBadgeHero status={inService ? 'confirmado' : status} />
+      </div>
+      <div className="px-5 sm:px-6 pb-4 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-display text-5xl sm:text-6xl tabular-nums leading-none text-cream">{formatTime(appt.startsAt)}</p>
+          <p className="font-display text-xl sm:text-2xl text-cream leading-snug mt-2 truncate">{appt.clientName}</p>
+          <p className="text-wine-300 text-sm mt-0.5 truncate">
+            {appt.serviceName} · {dur} min{price != null ? ` · ${formatMoney(price)}` : ''}
+          </p>
+        </div>
+      </div>
+      {error && <p role="alert" className="mx-5 sm:mx-6 mb-3 rounded-lg bg-rose-500/20 border border-rose-300/30 px-3 py-2 text-sm text-rose-100">{error}</p>}
+      <div className="border-t border-wine-700/60 px-5 sm:px-6 py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
+        <button onClick={onDetails} className="min-h-[44px] text-sm font-semibold text-white bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-4 py-2 border border-white/15">
+          Ver detalhes
+        </button>
+        {canStart && (
+          <button onClick={onStart} disabled={busy} className="min-h-[48px] sm:min-h-[44px] text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2 disabled:opacity-60">
+            {busy ? 'Iniciando…' : 'Iniciar atendimento'}
+          </button>
+        )}
+        {inService && (
+          <button onClick={onConclude} disabled={!started} className="min-h-[48px] sm:min-h-[44px] text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2 disabled:opacity-60 disabled:cursor-not-allowed">
+            Concluir e receber
+          </button>
+        )}
+        {inService && !started && <p className="text-xs text-wine-300 sm:mr-auto sm:self-center">Concluir fica disponível às {formatTime(appt.startsAt)}.</p>}
+      </div>
+    </section>
+  );
+}
+
+/** O dia no caixa, com as mesmas fontes da Visão geral do Financeiro (caixa do dia e a receber). Sem o módulo, só o previsto. */
+function FinanceiroHoje({ previstoCents, refreshKey }: { previstoCents: number; refreshKey: number }) {
+  const ativo = useFinanceiroAtivo();
+  const [cx, setCx] = useState<CaixaDay | null>(null);
+  const [rec, setRec] = useState<ReceivablesResponse | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!ativo) return;
+    setFailed(false);
+    financeiro.caixaDay(todayBR()).then(setCx).catch(() => setFailed(true));
+    financeiro.receivables({}).then(setRec).catch(() => setFailed(true));
+  }, [ativo, refreshKey]);
+
+  const t = cx?.esperado.totais;
+  return (
+    <section aria-label="Resumo financeiro do dia" className="card p-5">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="font-display text-lg text-wine-700">Hoje no caixa</h2>
+        {ativo && <Link to="/financeiro/visao-geral" className="text-xs font-semibold text-wine-600 hover:underline">Financeiro →</Link>}
+      </div>
+      {ativo === false ? (
+        <div>
+          <p className="stat-label">Previsto hoje</p>
+          <p className="stat-value mt-1.5">{formatMoney(previstoCents)}</p>
+          <p className="text-xs text-ink/55 mt-2">Valor dos serviços do dia. O controle de recebimentos não está ativo neste ambiente.</p>
+        </div>
+      ) : failed ? (
+        <p role="alert" className="text-sm text-rose-700">Não foi possível carregar os valores do dia. Abra o Financeiro para conferir.</p>
+      ) : !t ? (
+        <div className="h-16 rounded-lg bg-wine-50 animate-pulse" role="status" aria-label="Carregando" />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="stat-label">Recebido hoje</p>
+              <p className="stat-value mt-1.5">{formatMoney(t.receivedCents - t.refundedCents)}</p>
+              {t.refundedCents > 0 && <p className="text-[11px] text-ink/55 mt-1">já descontado estorno de {formatMoney(t.refundedCents)}</p>}
+            </div>
+            <div>
+              <p className="stat-label">A receber (total)</p>
+              <p className="stat-value mt-1.5">{formatMoney(rec?.totais.saldoPendenteCents ?? 0)}</p>
+              {!!rec?.totais.vencidos && <p className="text-[11px] text-ink/55 mt-1">{rec.totais.vencidos} para conferir</p>}
+            </div>
+          </div>
+          <p className="text-xs text-ink/55 mt-3">
+            Previsto pelos serviços do dia: <strong className="tabular-nums">{formatMoney(previstoCents)}</strong>. Caixa {cx?.fechamento?.status === 'fechado' ? 'fechado' : 'ainda aberto'}.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Clientes que a profissional pode chamar (sugestões do servidor; nada é enviado). Some quando não há ninguém ou o recurso não está disponível. */
+function RetornoCard() {
+  const [d, setD] = useState<ReturnResponse | null>(null);
+  useEffect(() => { api.get<ReturnResponse>('/clients/return-suggestions').then(setD).catch(() => setD(null)); }, []);
+  if (!d || d.items.length === 0) return null;
+  return (
+    <section aria-label="Clientes para chamar" className="card overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 className="font-display text-lg text-wine-700">Clientes para chamar <span className="text-sm font-sans text-ink/55">({d.items.length})</span></h2>
+        <Link to="/retorno" className="text-xs font-semibold text-wine-600 hover:underline">Ver todas →</Link>
+      </div>
+      <ul className="divide-y divide-wine-50">
+        {d.items.slice(0, 3).map((i) => (
+          <li key={i.clientId}>
+            <Link to="/retorno" className="flex items-center justify-between gap-3 px-5 py-3 min-h-[52px] hover:bg-wine-50/50 transition-colors">
+              <span className="text-sm font-medium text-ink/80 truncate">{i.name}</span>
+              <span className="text-xs text-ink/60 shrink-0">{i.reason === 'manutencao' ? `manutenção · ${i.lastServiceName}` : `${i.daysSince} dias sem agendar`}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function Inicio() {
@@ -197,24 +387,40 @@ export default function Inicio() {
   const [services, setServices]               = useState<Service[]>([]);
   const [selectedAppt, setSelectedAppt]       = useState<Appointment | null>(null);
   const [onboarding, setOnboarding]           = useState<OnboardingStatus | null>(null);
+  const [conclude, setConclude]               = useState(false);
+  const [refreshKey, setRefreshKey]           = useState(0);   // recarrega o resumo financeiro depois de iniciar/concluir/receber
+  const [starting, setStarting]               = useState(false);
+  const [startError, setStartError]           = useState<string | null>(null);
+  const { toast } = useToast();
 
   function fetchAll() {
+    setRefreshKey((k) => k + 1);
     api.get<DashboardSummary>('/dashboard').then(setData).catch((e: Error) => setError(e.message));
     const { from, to } = todayRange();
     api.get<Appointment[]>(`/appointments?from=${from}&to=${to}`).then(setTodayAppts).catch(() => {});
     api.get<Service[]>('/services').then(setServices).catch(() => {});
   }
   useEffect(() => { fetchAll(); }, []);
+
+  // Iniciar o atendimento a partir do Início usa a MESMA operação da Agenda (POST /appointments/:id/check-in).
+  async function iniciar(a: Appointment) {
+    setStarting(true); setStartError(null);
+    try {
+      await api.post(`/appointments/${a.id}/check-in`);
+      toast('Atendimento iniciado');
+      fetchAll();
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : 'Não foi possível iniciar o atendimento.');
+    } finally {
+      setStarting(false);
+    }
+  }
   useEffect(() => {
     if (!professional || professional.isAdmin) return;
     api.get<OnboardingStatus>('/onboarding/status').then(setOnboarding).catch(() => {});
   }, [professional]);
 
-  if (error) return (
-    <div className="rounded-xl bg-rose-50 border border-rose-200 p-5 text-rose-600 text-sm">
-      Erro ao carregar: {error}
-    </div>
-  );
+  if (error) return <LoadError message={`Não foi possível carregar o resumo do dia (${error}).`} onRetry={() => { setError(null); fetchAll(); }} />;
   if (!data) return <LoadingSkeleton />;
 
   // Próximo atendimento
@@ -223,6 +429,16 @@ export default function Inicio() {
   const proximoSvc   = proximoFull ? services.find(s => s.id === proximoFull.serviceId) ?? null : null;
   const proximoDur   = proximoFull ? durationMinutes(proximoFull.startsAt, proximoFull.endsAt) : null;
   const proximoStatus = data.agendamentosHoje.find(a => a.id === proximo?.id)?.status ?? 'pendente';
+  // Quem está sendo atendida agora tem prioridade sobre a próxima da fila.
+  const emAtendimento = todayAppts.find(isInService) ?? null;
+  // A API só chama de "próximo" o que ainda vai começar. Quem já está no horário (ou atrasada) e ainda não foi iniciada
+  // precisa do botão "Iniciar atendimento" agora: tem prioridade sobre a próxima da fila.
+  const agoraMs = Date.now();
+  const noHorario = todayAppts.find((a) => a.status === 'confirmado' && !a.checkedInAt
+    && new Date(a.startsAt).getTime() <= agoraMs && new Date(a.endsAt).getTime() > agoraMs) ?? null;
+  const heroAppt = emAtendimento ?? noHorario ?? proximoFull;
+  const heroSvc = heroAppt ? services.find((s) => s.id === heroAppt.serviceId) ?? null : null;
+
 
   // Agenda do dia — enriquecer com serviço completo
   const agendaHoje = data.agendamentosHoje.map(a => {
@@ -241,13 +457,13 @@ export default function Inicio() {
         {/* ── Greeting ── */}
         <div>
           <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">{getGreeting()}</h1>
-          <p className="text-sm text-ink/40 mt-1.5 capitalize">{getTodayLabel()}</p>
+          <p className="text-sm text-ink/40 mt-1.5 sentence-case">{getTodayLabel()}</p>
         </div>
 
-        {!proximo && nextOnboardingStep && (
+        {!heroAppt && nextOnboardingStep && (
           /* Boas-vindas: onboarding incompleto e sem próximo atendimento */
           <div className="bg-wine-800 rounded-2xl overflow-hidden shadow-lg shadow-wine-800/20 text-cream px-6 py-7">
-            <p className="text-wine-400 text-[11px] uppercase tracking-widest font-semibold">
+            <p className="text-wine-300 text-[11px] uppercase tracking-widest font-semibold">
               {onboarding!.concluidos} de {onboarding!.total} passos concluídos
             </p>
             <h2 className="font-display text-2xl sm:text-3xl text-cream leading-snug mt-2">Vamos configurar sua agenda</h2>
@@ -256,7 +472,7 @@ export default function Inicio() {
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
               <Link
-                to={nextOnboardingStep.to}
+                to="/comecar"
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-wine-800 bg-cream hover:bg-white transition-colors rounded-xl px-5 py-2.5"
               >
                 Continuar: {nextOnboardingStep.label}
@@ -269,78 +485,39 @@ export default function Inicio() {
           </div>
         )}
 
-        {data.aguardando && <AwaitingCard data={data.aguardando} />}
-
-        <OnboardingChecklist status={onboarding} />
-
-        {/* ── 1. PRÓXIMO ATENDIMENTO — HERO ── */}
-        {proximo ? (
-          <div className="bg-wine-800 rounded-2xl overflow-hidden shadow-lg shadow-wine-800/20 text-cream">
-            {/* Topo: label + status */}
-            <div className="px-6 pt-5 pb-4 flex items-center justify-between gap-3">
-              <p className="text-wine-400 text-[11px] uppercase tracking-widest font-semibold">Próximo atendimento</p>
-              <StatusBadgeHero status={proximoStatus} />
-            </div>
-
-            {/* Hora em destaque */}
-            <div className="px-6 pb-2">
-              <p className="font-display text-6xl sm:text-7xl tabular-nums leading-none text-cream">
-                {formatTime(proximo.startsAt)}
-              </p>
-            </div>
-
-            {/* Nome + Serviço */}
-            <div className="px-6 pb-5">
-              <p className="font-display text-xl sm:text-2xl text-cream leading-snug mt-2">
-                {proximo.clientName}
-              </p>
-              <p className="text-wine-300 text-sm mt-0.5">{proximo.serviceName}</p>
-            </div>
-
-            {/* Rodapé: duração, valor, CTA */}
-            <div className="border-t border-wine-700/60 px-6 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4 text-wine-300 text-sm">
-                {proximoDur !== null && (
-                  <span className="flex items-center gap-1.5">
-                    <IconClock />
-                    {proximoDur} min
-                  </span>
-                )}
-                {proximoSvc && (
-                  <span className="font-semibold text-cream">
-                    {formatMoney(proximoSvc.priceCents)}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => proximoFull && setSelectedAppt(proximoFull)}
-                disabled={!proximoFull}
-                className="flex items-center gap-1.5 text-sm font-semibold text-white bg-white/12 hover:bg-white/20 transition-colors rounded-xl px-4 py-2 border border-white/15 disabled:opacity-40 disabled:cursor-default"
-              >
-                Ver detalhes
-                <IconArrowRight />
-              </button>
-            </div>
-          </div>
+        {/* ── 1. PRIMEIRA DOBRA: cliente da vez, decisões e o dia no caixa ── */}
+        {heroAppt ? (
+          <HeroAtendimento
+            appt={heroAppt}
+            price={heroSvc?.priceCents ?? null}
+            status={emAtendimento || noHorario ? 'confirmado' : proximoStatus}
+            busy={starting}
+            error={startError}
+            onStart={() => iniciar(heroAppt)}
+            onConclude={() => { setConclude(true); setSelectedAppt(heroAppt); }}
+            onDetails={() => { setConclude(false); setSelectedAppt(heroAppt); }}
+          />
         ) : nextOnboardingStep ? null : (
-          /* Estado vazio elegante */
-          <div className="bg-wine-50 border border-wine-100/80 rounded-2xl p-8 flex flex-col items-center text-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-wine-100 flex items-center justify-center text-wine-400">
-              <IconCalendar />
-            </div>
+          <section className="bg-wine-50 border border-wine-100/80 rounded-2xl p-8 flex flex-col items-center text-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-wine-100 flex items-center justify-center text-wine-400"><IconCalendar /></div>
             <div>
-              <p className="font-display text-lg text-wine-700">Nenhum próximo atendimento</p>
-              <p className="text-sm text-ink/40 mt-1">Sem agendamentos pendentes para hoje.</p>
+              <p className="font-display text-lg text-wine-700">Nenhuma cliente na fila agora</p>
+              <p className="text-sm text-ink/60 mt-1">Sem atendimentos pendentes para hoje.</p>
             </div>
-            <button
-              onClick={() => navigate('/agenda')}
-              className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-wine-700 bg-white border border-wine-200 hover:bg-wine-50 hover:border-wine-300 rounded-xl px-4 py-2 transition-colors"
-            >
+            <button onClick={() => navigate('/agenda')} className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-wine-700 bg-white border border-wine-200 hover:bg-wine-50 rounded-xl px-4 py-2 min-h-[44px] transition-colors">
               Ver agenda
               <IconArrowRight />
             </button>
-          </div>
+          </section>
         )}
+
+        <div className="grid gap-5 items-start lg:grid-cols-2">
+          <div className="space-y-5 min-w-0">
+            {data.aguardando && <AwaitingCard data={data.aguardando} />}
+            <PendenciasFinanceiras />
+          </div>
+          <FinanceiroHoje previstoCents={data.faturamentoEstimadoHojeCents} refreshKey={refreshKey} />
+        </div>
 
         {/* ── 2. RESUMO DO DIA ── */}
         <div className="bg-white rounded-2xl border border-wine-100/80 px-5 py-4 shadow-sm">
@@ -362,13 +539,25 @@ export default function Inicio() {
             </div>
             <div className="w-px bg-wine-100 self-stretch" />
             <div>
-              <p className="text-[10px] text-ink/40 uppercase tracking-widest font-medium">Estimado</p>
+              <p className="text-[10px] text-ink/40 uppercase tracking-widest font-medium">Previsto hoje</p>
               <div className="flex items-baseline gap-1.5 mt-0.5">
                 <span className="font-display text-2xl text-wine-700 tabular-nums leading-none">{formatMoney(data.faturamentoEstimadoHojeCents)}</span>
               </div>
             </div>
+            <div className="w-px bg-wine-100 self-stretch" />
+            <Link to="/clientes" aria-label={`Clientes: ${data.totalClientes}. Abrir lista de clientes`} className="group rounded-lg -m-1 p-1 hover:bg-wine-50 transition-colors">
+              <p className="text-[10px] text-ink/40 uppercase tracking-widest font-medium">Clientes</p>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="font-display text-2xl text-wine-700 tabular-nums leading-none">{data.totalClientes}</span>
+                <span className="text-xs text-wine-600 group-hover:underline">ver todas →</span>
+              </div>
+            </Link>
           </div>
         </div>
+
+        <RetornoCard />
+
+        <OnboardingChecklist status={onboarding} />
 
         {/* ── 3. AGENDA DE HOJE ── */}
         <div>
@@ -377,7 +566,7 @@ export default function Inicio() {
             <h2 className="font-display text-lg sm:text-xl text-wine-700">Agenda de hoje</h2>
           </div>
 
-          <div className="bg-white rounded-2xl border border-wine-100/80 overflow-hidden shadow-sm">
+          <div className="card overflow-hidden">
             {agendaHoje.length === 0 ? (
               <div className="p-10 flex flex-col items-center gap-2 text-ink/40">
                 <IconCalendar />
@@ -435,6 +624,9 @@ export default function Inicio() {
           </div>
         </div>
 
+        {/* ── 4. INDICADORES DO MÊS (vindos do antigo Dashboard) ── */}
+        {data.mes && <IndicadoresMes mes={data.mes} />}
+
       </div>
 
       {selectedAppt && (
@@ -442,8 +634,9 @@ export default function Inicio() {
           date={new Date(selectedAppt.startsAt)}
           time={null}
           appointment={selectedAppt}
-          onClose={() => setSelectedAppt(null)}
-          onSaved={() => { fetchAll(); setSelectedAppt(null); }}
+          startAt={conclude ? 'conclude' : undefined}
+          onClose={() => { setSelectedAppt(null); setConclude(false); }}
+          onSaved={() => { fetchAll(); setSelectedAppt(null); setConclude(false); }}
         />
       )}
     </>

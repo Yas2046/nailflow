@@ -29,7 +29,8 @@ const SLUG_A = 'teste-public-profile-a';
 const SLUG_B = 'teste-public-profile-b';
 const AVATAR_OK = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAA=';
 
-const ALLOWED_INFO_KEYS = ['bio', 'businessName', 'photo', 'theme', 'whatsappLink'];
+// instagramUrl entrou com a vitrine (link montado no servidor a partir do usuário normalizado; null quando não configurado)
+const ALLOWED_INFO_KEYS = ['bio', 'businessName', 'instagramUrl', 'photo', 'theme', 'whatsappLink'];
 
 before(async () => {
   const { pool } = await import('../src/config/db.js');
@@ -134,6 +135,7 @@ test('PUT /auth/me salva bio (com trim), tema e foto; /info expõe só campos p�
   assert.equal(body.theme, 'verde');
   assert.equal(body.photo, AVATAR_OK);
   assert.equal(body.businessName, 'Studio Publico A');
+  assert.equal(body.instagramUrl, null);   // não configurado: nenhum link
 });
 
 test('isolamento: dados da profissional A não aparecem na página da B', async (t) => {

@@ -1,6 +1,8 @@
 import { clearSupportDrafts } from './supportDrafts';
+import { USE_MOCKS } from '../mocks/mode';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+// Em modo de dados simulados a URL é inválida de propósito: nenhuma requisição real consegue sair.
+export const API_URL = USE_MOCKS ? 'mock://offline' : (import.meta.env.VITE_API_URL || 'http://localhost:3333');
 
 /**
  * Erro de API que preserva, além da mensagem, o `reason` estruturado que o
@@ -24,6 +26,10 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (USE_MOCKS) {
+    const { mockRequest } = await import('../mocks/handler');
+    return mockRequest<T>(path, options);
+  }
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: 'include',
@@ -57,3 +63,21 @@ export const api = {
   delete: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }),
 };
+
+/** Baixa o arquivo JSON com os dados da própria conta (cookie de sessão). Em dados simulados não há servidor: recusa. */
+export async function downloadMyData(): Promise<void> {
+  if (USE_MOCKS) throw new Error('Exportação indisponível nos dados simulados.');
+  const res = await fetch(`${API_URL}/auth/export`, { credentials: 'include' });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error || `Erro ${res.status}`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `nailflow-meus-dados-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

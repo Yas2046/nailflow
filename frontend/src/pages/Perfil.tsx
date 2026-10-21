@@ -5,6 +5,7 @@ import { formatPhone } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import VitrinePanel from '../components/VitrinePanel';
 
 interface ProfileData {
   id: string;
@@ -16,6 +17,7 @@ interface ProfileData {
   slug: string;
   bio: string | null;
   public_theme: PublicTheme;
+  instagram?: string | null;
 }
 
 type PublicTheme = 'vinho' | 'verde' | 'azul';
@@ -215,7 +217,7 @@ function AvatarEditor({ name, currentB64, previewB64, onSelect, onRemove, proces
 
         <input
           ref={inputRef}
-          type="file"
+          type="file" aria-label="Escolher foto de perfil"
           accept="image/*"
           className="hidden"
           onChange={handleFile}
@@ -385,6 +387,7 @@ export default function Perfil() {
 
   const [bioDraft, setBioDraft]       = useState('');
   const [themeDraft, setThemeDraft]   = useState<PublicTheme>('vinho');
+  const [instagramDraft, setInstagramDraft] = useState('');
   const [savingPublic, setSavingPublic] = useState(false);
 
   const [editing, setEditing]       = useState(false);
@@ -403,6 +406,7 @@ export default function Perfil() {
         setProfile(data);
         setBioDraft(data.bio ?? '');
         setThemeDraft(data.public_theme ?? 'vinho');
+        setInstagramDraft(data.instagram ?? '');
         updateProfessional({
           id:           data.id,
           name:         data.name,
@@ -463,10 +467,12 @@ export default function Perfil() {
       const updated = await api.put<ProfileData>('/auth/me', {
         bio:          bioDraft,
         public_theme: themeDraft,
+        instagram:    instagramDraft.trim() === '' ? null : instagramDraft.trim(),
       });
       setProfile(updated);
       setBioDraft(updated.bio ?? '');
       setThemeDraft(updated.public_theme);
+      setInstagramDraft(updated.instagram ?? '');
       toast('Página pública atualizada');
     } catch (err: unknown) {
       toast(err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.', 'error');
@@ -697,16 +703,23 @@ export default function Perfil() {
             ))}
           </div>
 
+          <div className="mt-4">
+            <label htmlFor="perfil-instagram" className="block text-sm font-medium text-ink/70 mb-1.5">Instagram <span className="font-normal text-ink/55">(opcional)</span></label>
+            <input id="perfil-instagram" className="input" value={instagramDraft} maxLength={80} autoComplete="off" placeholder="@seu.estudio" onChange={(e) => setInstagramDraft(e.target.value)} />
+            <p className="text-xs text-ink/55 mt-1">Aparece como botão na sua página. Digite só o usuário (ex.: @seu.estudio); o endereço do link é montado pelo NailFlow.</p>
+          </div>
           <button
             type="button"
             onClick={handleSavePublic}
-            disabled={savingPublic || (bioDraft.trim() === (profile.bio ?? '') && themeDraft === profile.public_theme)}
+            disabled={savingPublic || (bioDraft.trim() === (profile.bio ?? '') && themeDraft === profile.public_theme && instagramDraft.trim() === (profile.instagram ?? ''))}
             className="mt-4 px-5 py-2 rounded-lg bg-wine-600 text-white text-sm font-semibold hover:bg-wine-700 transition-colors disabled:opacity-50"
           >
             {savingPublic ? 'Salvando…' : 'Salvar página pública'}
           </button>
         </div>
       )}
+
+      {profile && !editing && <VitrinePanel slug={profile.slug} />}
 
       {/* ações de edição */}
       {editing && (

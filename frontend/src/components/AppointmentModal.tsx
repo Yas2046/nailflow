@@ -3,9 +3,11 @@ import { useToast } from '../context/ToastContext';
 import { api, ApiError } from '../services/api';
 import { getFriendlyAvailabilityMessage, getSuggestedAlternatives } from '../utils/availabilityErrors';
 import NovaClienteModal from './NovaClienteModal';
+import ModalA11y from './ModalA11y';
 import AtendimentoFinanceiro from '../pages/financeiro/AtendimentoFinanceiro';
-import { financeiro } from '../services/financeiro';
-import { parseBRLToCents } from '../utils/money';
+import { consultarFinanceiroAtivo } from '../hooks/useFinanceiroAtivo';
+import { financeiro, newIdempotencyKey, PAYMENT_METHODS, type PaymentMethod } from '../services/financeiro';
+import { centsToInput, formatBRL, methodLabel, parseBRLToCents, todayBR } from '../utils/money';
 import type { Appointment, AppointmentStatus, Client, RecurringFrequency, RecurringResult, Service } from '../types';
 
 interface Props {
@@ -15,7 +17,11 @@ interface Props {
   appointment: Appointment | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Abre direto na etapa de concluir (ex.: botão "Concluir e receber" do Início). Só vale para agendamento confirmado. */
+  startAt?: 'conclude';
 }
+
+interface PayLine { id: number; key: string; method: PaymentMethod; amount: string; done: boolean }
 
 const statusOptions: { value: AppointmentStatus; label: string }[] = [
   { value: 'pendente',        label: 'Aguardando confirmação' },
@@ -79,9 +85,13 @@ function addDaysToYmd(base: Date, days: number) {
 
 const brlCents = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-type Step = 'form' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'confirm-reject' | 'confirm-paid' | 'result';
+type Step = 'form' | 'review' | 'conclude' | 'scope-edit' | 'scope-cancel' | 'confirm-cancel' | 'confirm-reject' | 'confirm-paid' | 'result';
 
-export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId }: Props) {
+interface Change { label: string; from: string; to: string }
+
+const ATENDIMENTO_PASSOS = ['Agendado', 'Em atendimento', 'Concluído'] as const;
+
+export default function AppointmentModal({ date, time, appointment, onClose, onSaved, initialClientId, startAt }: Props) {
   const [clients, setClients]       = useState<Client[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
   const [clientId, setClientId]     = useState(appointment?.clientId || initialClientId || '');
@@ -98,15 +108,22 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const [alternatives, setAlternatives] = useState<string[]>([]);
   const { toast } = useToast();
   const [saving, setSaving]         = useState(false);
+  // Chegada registrada (check-in): "em atendimento" = confirmado + chegada; não existe status novo.
+  const [checkedInAt, setCheckedInAt] = useState<string | null>(appointment?.checkedInAt ?? null);
 
   // Financeiro (preço final e recebimentos): só quando o servidor o disponibiliza.
   const [finOn, setFinOn]           = useState(false);
   const [finalPrice, setFinalPrice] = useState('');
   const [finalReason, setFinalReason] = useState('');
   const [showFin, setShowFin]       = useState(false);
+  // Recebimento junto da conclusão: as linhas usam a MESMA operação do Financeiro (financeiro.receive), cada uma com a sua chave de
+  // idempotência; repetir o envio devolve o mesmo resultado em vez de lançar de novo. Concluir e receber continuam independentes no banco.
+  const [payOn, setPayOn]           = useState(true);
+  const [payLines, setPayLines]     = useState<PayLine[]>([{ id: 1, key: newIdempotencyKey(), method: 'pix', amount: '', done: false }]);
+  const [concludedDone, setConcludedDone] = useState(false);
   useEffect(() => {
     if (!appointment) return;
-    financeiro.probe().then(() => setFinOn(true)).catch(() => setFinOn(false));
+    consultarFinanceiroAtivo().then(setFinOn);
   }, [appointment?.id]);
 
   // Recorrência (somente na criação)
@@ -121,7 +138,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   const [repeatDays, setRepeatDays]   = useState('30');
 
   // Fluxo de passos
-  const [step, setStep]             = useState<Step>('form');
+  const [step, setStep]             = useState<Step>(startAt === 'conclude' && appointment?.status === 'confirmado' ? 'conclude' : 'form');
   const [recurringResult, setRecurringResult] = useState<RecurringResult | null>(null);
 
   const isEditing = !!appointment;
@@ -142,6 +159,22 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   }, []);
 
   const selectedService = services.find((s) => s.id === serviceId);
+
+  // Resumo das alterações (edição): antes → depois.
+  const changes: Change[] = [];
+  if (appointment) {
+    const fmt = (d: Date) => d.toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const before = new Date(appointment.startsAt);
+    const [hh, mm] = timeValue.split(':').map(Number);
+    const after = new Date(dateValue ? `${dateValue}T00:00:00` : appointment.startsAt);
+    after.setHours(hh, mm, 0, 0);
+    if (clientId !== appointment.clientId) changes.push({ label: 'Cliente', from: appointment.clientName, to: clients.find((c) => c.id === clientId)?.name ?? '—' });
+    if (serviceId !== appointment.serviceId) changes.push({ label: 'Serviço', from: appointment.serviceName, to: selectedService?.name ?? '—' });
+    if (!locked && after.getTime() !== before.getTime()) changes.push({ label: 'Data e horário', from: fmt(before), to: fmt(after) });
+    if (status !== appointment.status) changes.push({ label: 'Status', from: statusOptions.find((o) => o.value === appointment.status)?.label ?? appointment.status, to: statusOptions.find((o) => o.value === status)?.label ?? status });
+    if ((notes || '') !== (appointment.notes || '')) changes.push({ label: 'Observação', from: appointment.notes || '(vazia)', to: notes || '(vazia)' });
+    if (finOn && status === 'concluido' && appointment.status !== 'concluido' && finalPrice.trim()) changes.push({ label: 'Valor final', from: 'Preço do serviço', to: `R$ ${finalPrice.trim()}` });
+  }
 
   const repeatDaysNum = parseInt(repeatDays, 10);
   const computedEndsOn = endMode === 'days' && repeatDaysNum > 0
@@ -169,13 +202,41 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       return;
     }
 
-    // Agendamento recorrente existente: pede escopo antes de salvar
-    if (isRecurringAppt) { setStep('scope-edit'); return; }
+    // Edição: mostra o resumo do que mudou antes de gravar (criação segue direto, para ser rápida)
+    if (isEditing) {
+      if (changes.length === 0) { setError('Nenhuma alteração para salvar.'); return; }
+      setStep('review');
+      return;
+    }
 
     await doSave('single');
   }
 
-  async function doSave(scope: 'single' | 'following') {
+  // Depois do resumo: série recorrente pede o escopo; senão grava.
+  async function confirmReview() {
+    if (isRecurringAppt) { setStep('scope-edit'); return; }
+    await doSave('single');
+  }
+
+  // Check-in: registra a chegada (POST /appointments/:id/check-in). Não muda o status.
+  async function doCheckIn() {
+    if (!appointment) return;
+    clearError();
+    setSaving(true);
+    try {
+      const r = await api.post<Appointment>(`/appointments/${appointment.id}/check-in`);
+      setCheckedInAt(r.checkedInAt ?? new Date().toISOString());
+      toast('Atendimento iniciado');
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível iniciar o atendimento.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doSave(scope: 'single' | 'following', statusOverride?: AppointmentStatus, afterSave?: () => Promise<void>) {
+    const st = statusOverride ?? status;
     setSaving(true);
     try {
       const [h, m] = timeValue.split(':').map(Number);
@@ -188,7 +249,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
       if (isEditing && scope === 'following') {
         // Atualiza este e os próximos (status + notes)
-        const r = await api.put<{ updated?: number; skipped?: number } | undefined>(`/appointments/${appointment!.id}/and-following`, { status, notes: notes || null });
+        const r = await api.put<{ updated?: number; skipped?: number } | undefined>(`/appointments/${appointment!.id}/and-following`, { status: st, notes: notes || null });
         if (r?.skipped) {
           toast(`${r.updated ?? 0} agendamento(s) atualizado(s); ${r.skipped} ignorado(s) por já estarem cancelados, concluídos, com falta ou não aceitarem essa mudança`, 'info');
         } else {
@@ -201,17 +262,17 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       if (isEditing) {
         // Preço final (opcional) ao CONCLUIR: a API valida valor, justificativa e histórico; vazio = vale o preço do serviço.
         let finalFields: { finalPriceCents?: number; finalPriceReason?: string } = {};
-        if (finOn && status === 'concluido' && appointment!.status !== 'concluido' && finalPrice.trim()) {
+        if (finOn && st === 'concluido' && appointment!.status !== 'concluido' && finalPrice.trim()) {
           const fp = parseBRLToCents(finalPrice, { allowZero: true });
           if (fp == null) { setError('Valor final inválido.'); return; }
           finalFields = { finalPriceCents: fp, ...(finalReason.trim() ? { finalPriceReason: finalReason.trim() } : {}) };
         }
         await api.put(`/appointments/${appointment!.id}`, locked
-          ? { status, notes: notes || null, ...finalFields }
-          : { clientId, serviceId, startsAt: startsAt.toISOString(), status, notes: notes || null, ...finalFields });
+          ? { status: st, notes: notes || null, ...finalFields }
+          : { clientId, serviceId, startsAt: startsAt.toISOString(), status: st, notes: notes || null, ...finalFields });
         const moved = !locked && startsAt.getTime() !== new Date(appointment!.startsAt).getTime();
         toast(moved ? 'Agendamento remarcado. A cliente não é avisada automaticamente.' : 'Agendamento atualizado');
-        onSaved();
+        if (afterSave) await afterSave(); else onSaved();
         return;
       }
 
@@ -238,6 +299,75 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
       setSaving(false);
     }
   }
+
+  // ── Concluir e receber (fluxo único) ───────────────────────────────────────
+
+  const serviceValueCents = (finalPrice.trim() ? parseBRLToCents(finalPrice, { allowZero: true }) : null) ?? selectedService?.priceCents ?? 0;
+  const lineCents = (l: PayLine) => (l.amount.trim() ? parseBRLToCents(l.amount) : null);
+  const typedTotal = payLines.reduce((n, l) => n + (lineCents(l) ?? 0), 0);
+
+  // Ao abrir a etapa, sugere o valor do serviço na primeira linha (a profissional pode ajustar).
+  useEffect(() => {
+    if (step === 'conclude' && serviceValueCents > 0) {
+      setPayLines((ls) => (ls.every((l) => !l.amount.trim() && !l.done) ? [{ ...ls[0], amount: centsToInput(serviceValueCents) }] : ls));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  function editLine(id: number, patch: Partial<PayLine>) {
+    // qualquer edição troca a chave: é outro pedido; reenviar SEM editar reaproveita a chave
+    setPayLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch, key: newIdempotencyKey() } : l)));
+  }
+  function addLine() {
+    const rest = Math.max(serviceValueCents - typedTotal, 0);
+    setPayLines((ls) => [...ls, { id: Math.max(...ls.map((l) => l.id)) + 1, key: newIdempotencyKey(), method: 'dinheiro', amount: rest > 0 ? centsToInput(rest) : '', done: false }]);
+  }
+
+  async function receivePayments(): Promise<boolean> {
+    const day = todayBR();
+    for (const l of payLines) {
+      if (l.done || !l.amount.trim()) continue;
+      const cents = parseBRLToCents(l.amount);
+      if (cents == null) { setError('Valor de recebimento inválido.'); return false; }
+      try {
+        await financeiro.receive(appointment!.id, l.key, { amountCents: cents, method: l.method, occurredOn: day });
+        setPayLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, done: true } : x)));
+      } catch (err) {
+        setError(`O atendimento foi concluído, mas o recebimento de ${formatBRL(cents)} (${methodLabel(l.method)}) não foi registrado: ${err instanceof Error ? err.message : 'erro desconhecido'}. Tente de novo ou registre no Financeiro.`);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async function concludeAndReceive() {
+    clearError();
+    const wantsPay = finOn && payOn && payLines.some((l) => !l.done && l.amount.trim());
+    if (wantsPay) {
+      for (const l of payLines) {
+        if (l.done || !l.amount.trim()) continue;
+        const c = lineCents(l);
+        if (c == null || c <= 0) { setError('Informe valores de recebimento válidos (maiores que zero).'); return; }
+      }
+      if (serviceValueCents > 0 && typedTotal > serviceValueCents) { setError('Os recebimentos somam mais que o valor do atendimento. Ajuste os valores.'); return; }
+    }
+    if (concludedDone) {            // atendimento já concluído nesta janela: só falta o recebimento
+      setSaving(true);
+      const ok = await receivePayments();
+      setSaving(false);
+      if (ok) onSaved();
+      return;
+    }
+    setStatus('concluido');
+    await doSave('single', 'concluido', async () => {
+      setConcludedDone(true);
+      if (wantsPay && !(await receivePayments())) return;   // permanece aberto, mostrando o erro e permitindo repetir
+      onSaved();
+    });
+  }
+
+  // Se o atendimento já foi concluído nesta janela, fechar precisa atualizar a Agenda (como se tivesse salvo).
+  const close = concludedDone ? onSaved : onClose;
 
   // ── Cancelar ───────────────────────────────────────────────────────────────
 
@@ -334,10 +464,11 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
   return (
     <>
     <div
-      className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog" aria-modal="true" aria-label="Agendamento" className="fixed inset-0 bg-ink/50 flex items-end sm:items-center justify-center sm:p-4 z-50"
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
     >
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[90vh]">
+      <ModalA11y onClose={() => (step === 'form' || step === 'result' || concludedDone ? close() : setStep('form'))} />
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[92vh] sm:max-h-[90vh]">
 
         {/* cabeçalho — fixo no topo */}
         <div className="flex items-start justify-between p-6 pb-4 border-b border-wine-50 shrink-0">
@@ -348,13 +479,15 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 : step === 'scope-cancel' ? 'Cancelar recorrente'
                 : step === 'confirm-cancel' ? 'Cancelar agendamento'
                 : step === 'confirm-reject' ? 'Recusar solicitação'
-                : step === 'confirm-paid' ? 'Pagamento recebido'
+                : step === 'review' ? 'Revisar alterações'
+                : step === 'conclude' ? 'Concluir atendimento'
+                : step === 'confirm-paid' ? 'Sinal recebido'
                 : isEditing ? 'Editar agendamento' : 'Novo agendamento'}
             </h3>
-            <p className="text-sm text-ink/50 mt-0.5 capitalize">{dateLabel}</p>
+            <p className="text-sm text-ink/50 mt-0.5 sentence-case">{dateLabel}</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={close}
             className="p-1.5 rounded-lg hover:bg-wine-50 text-ink/40 hover:text-ink/70 transition-colors"
             aria-label="Fechar"
           >
@@ -488,8 +621,8 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
         {step === 'confirm-paid' && (
           <div className="p-6 space-y-4 overflow-y-auto">
             <p className="text-sm text-ink/70">
-              Confirma que o sinal{appointment?.depositCents != null ? ` de ${brlCents(appointment.depositCents)}` : ''} foi
-              recebido? O agendamento será confirmado e a cliente será avisada.
+              Confirma que o sinal{appointment?.depositCents != null ? ` de ${brlCents(appointment.depositCents)}` : ''} da reserva foi
+              recebido? O agendamento será confirmado e a cliente será avisada. Este é o sinal da reserva: o pagamento do atendimento é lançado depois, no Financeiro.
             </p>
             <div className="flex flex-col gap-2 pt-1">
               <button
@@ -497,7 +630,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 disabled={saving}
                 className="w-full px-4 py-3 text-sm rounded-xl bg-wine-600 text-white hover:bg-wine-700 transition-colors text-left font-medium disabled:opacity-60"
               >
-                {saving ? 'Confirmando…' : 'Sim, pagamento recebido'}
+                {saving ? 'Confirmando…' : 'Sim, sinal recebido'}
               </button>
             </div>
             <div className="flex justify-end pt-1">
@@ -536,9 +669,141 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
           </div>
         )}
 
+        {/* ── step: resumo das alterações (edição) ──────────────────────────── */}
+        {step === 'review' && (
+          <div className="p-6 space-y-4 overflow-y-auto">
+            <p className="text-sm text-ink/70">Confira o que vai mudar antes de salvar.</p>
+            <dl className="rounded-xl border border-wine-100 divide-y divide-wine-50 overflow-hidden">
+              {changes.map((c) => (
+                <div key={c.label} className="px-4 py-3">
+                  <dt className="text-[11px] uppercase tracking-widest font-semibold text-ink/40">{c.label}</dt>
+                  <dd className="mt-1 text-sm text-ink/50 line-through decoration-ink/20">{c.from}</dd>
+                  <dd className="text-sm font-medium text-wine-800">{c.to}</dd>
+                </div>
+              ))}
+            </dl>
+            {changes.some((c) => c.label === 'Data e horário') && (
+              <p className="text-xs text-ink/50">Remarcar não envia mensagem à cliente. Conflitos com outros agendamentos continuam bloqueados.</p>
+            )}
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={() => setStep('form')} className="btn-secondary">Voltar e editar</button>
+              <button onClick={confirmReview} disabled={saving} className="btn-primary">{saving ? 'Salvando…' : 'Confirmar e salvar'}</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── step: concluir atendimento ────────────────────────────────────── */}
+        {step === 'conclude' && appointment && (
+          <div className="p-6 space-y-4 overflow-y-auto">
+            <p className="text-sm text-ink/70">
+              {appointment.clientName} · {appointment.serviceName}. {finOn
+                ? <>Concluir encerra o atendimento; <strong>concluído não significa pago</strong>. O recebimento é registrado à parte (abaixo) e pode ser parcial.</>
+                : <>Concluir encerra o atendimento e <strong>não registra pagamento</strong>.</>}
+            </p>
+            {finOn && (
+              <div className="rounded-xl border border-wine-100 bg-wine-50/40 p-3 space-y-2">
+                <p className="text-sm font-medium text-ink/70">Valor final (opcional)</p>
+                <p className="text-xs text-ink/50">Deixe em branco para valer o preço do serviço.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input className="input" inputMode="decimal" placeholder="Valor final (R$)" value={finalPrice} onChange={(e) => setFinalPrice(e.target.value)} />
+                  <input className="input" maxLength={300} placeholder="Justificativa (se diferir)" value={finalReason} onChange={(e) => setFinalReason(e.target.value)} />
+                </div>
+              </div>
+            )}
+            {finOn && (
+              <fieldset className="rounded-xl border border-wine-100 p-3 space-y-3" disabled={saving}>
+                <legend className="px-1 text-sm font-medium text-ink/70">Recebimento</legend>
+                <label className="flex items-center gap-2 text-sm text-ink/75 min-h-[40px]">
+                  <input type="checkbox" checked={payOn} onChange={(e) => setPayOn(e.target.checked)} disabled={concludedDone} />
+                  Registrar o recebimento agora
+                </label>
+                {payOn && (
+                  <>
+                    <p className="text-xs text-ink/60">
+                      Valor do atendimento: <strong>{formatBRL(serviceValueCents)}</strong>. Se a cliente pagou menos agora, digite o valor recebido: o restante fica em &quot;A receber&quot;.
+                    </p>
+                    {payLines.map((l, i) => (
+                      <div key={l.id} className="grid grid-cols-[1fr_1fr] sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                        <div>
+                          <label htmlFor={`pm-${l.id}`} className="block text-xs font-medium text-ink/60 mb-1">Meio {payLines.length > 1 ? i + 1 : ''}</label>
+                          <select id={`pm-${l.id}`} className="input" value={l.method} disabled={l.done} onChange={(e) => editLine(l.id, { method: e.target.value as PaymentMethod })}>
+                            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{methodLabel(m)}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`pv-${l.id}`} className="block text-xs font-medium text-ink/60 mb-1">Valor (R$)</label>
+                          <input id={`pv-${l.id}`} className="input" inputMode="decimal" value={l.amount} disabled={l.done} onChange={(e) => editLine(l.id, { amount: e.target.value })} />
+                        </div>
+                        <div className="col-span-2 sm:col-span-1 text-xs min-h-[40px] flex items-center">
+                          {l.done
+                            ? <span className="text-sage-700 font-medium">✓ registrado</span>
+                            : payLines.length > 1 && <button type="button" className="btn-ghost" onClick={() => setPayLines((ls) => ls.filter((x) => x.id !== l.id))}>Remover</button>}
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" className="btn-ghost" onClick={addLine}>+ Dividir em outro meio</button>
+                    <p className="text-xs text-ink/60" aria-live="polite">
+                      Recebido agora: <strong>{formatBRL(typedTotal)}</strong>
+                      {serviceValueCents > 0 && (typedTotal < serviceValueCents ? <> · ficará a receber {formatBRL(serviceValueCents - typedTotal)}</> : typedTotal === serviceValueCents ? ' · quita o atendimento' : ' · acima do valor')}
+                    </p>
+                  </>
+                )}
+              </fieldset>
+            )}
+            {error && <p className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700" role="alert">{error}</p>}
+            <div className="flex gap-2 justify-end pt-1">
+              {concludedDone
+                ? <button onClick={close} className="btn-secondary">Fechar sem receber agora</button>
+                : <button onClick={() => { clearError(); setStep('form'); }} className="btn-secondary">Voltar</button>}
+              <button onClick={concludeAndReceive} disabled={saving} className="btn-primary">
+                {saving ? 'Salvando…' : concludedDone ? 'Registrar recebimento' : finOn && payOn ? 'Concluir e registrar recebimento' : 'Concluir atendimento'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── step: formulário principal ────────────────────────────────────── */}
         {step === 'form' && (
           <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+
+            {/* atendimento: etapas e próxima ação (agendado → em atendimento → concluído; cancelado e falta são resultados à parte) */}
+            {isEditing && (appointment!.status === 'confirmado' || appointment!.status === 'concluido') && (() => {
+              const concluido = appointment!.status === 'concluido';
+              const emAtendimento = !concluido && !!checkedInAt;
+              const atual = concluido ? 2 : emAtendimento ? 1 : 0;
+              const iniciou = new Date(appointment!.startsAt).getTime() <= Date.now();
+              return (
+                <section aria-label="Atendimento" className="rounded-xl border border-wine-100 bg-wine-50/40 p-3.5 space-y-3">
+                  <ol className="flex items-center gap-1.5 text-xs" aria-label="Etapas do atendimento">
+                    {ATENDIMENTO_PASSOS.map((p, i) => (
+                      <li key={p} aria-current={i === atual ? 'step' : undefined} className="flex items-center gap-1.5 min-w-0">
+                        <span className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center shrink-0 ${i < atual ? 'bg-wine-600 text-white' : i === atual ? 'bg-gold-500 text-wine-800 ring-2 ring-gold-500/30' : 'bg-white border border-wine-200 text-ink/40'}`}>{i < atual ? '✓' : i + 1}</span>
+                        <span className={`truncate ${i === atual ? 'font-semibold text-wine-800' : 'text-ink/45'}`}>{p}</span>
+                        {i < ATENDIMENTO_PASSOS.length - 1 && <span className="w-3 h-px bg-wine-200 shrink-0" aria-hidden="true" />}
+                      </li>
+                    ))}
+                  </ol>
+                  {!concluido && !emAtendimento && (
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button onClick={doCheckIn} disabled={saving} className="btn-primary flex-1">{saving ? 'Iniciando…' : 'Iniciar atendimento'}</button>
+                      {iniciou && <button onClick={() => { setStatus('nao_compareceu'); clearError(); setStep('review'); }} className="btn-secondary">Marcar falta</button>}
+                    </div>
+                  )}
+                  {emAtendimento && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-ink/55">Chegada às {new Date(checkedInAt!).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</p>
+                      <button onClick={() => { clearError(); setStep('conclude'); }} disabled={saving || !iniciou} className="btn-primary w-full">Concluir atendimento</button>
+                      {!iniciou && <p className="text-xs text-ink/50">Concluir fica disponível a partir do horário de início.</p>}
+                    </div>
+                  )}
+                  {concluido && (
+                    <p className="text-xs text-ink/60">
+                      Atendimento concluído. <strong>Concluído não significa recebido:</strong> o pagamento (inclusive parcial) é registrado à parte{finOn ? ', no botão do Financeiro abaixo' : ', no Financeiro'}.
+                    </p>
+                  )}
+                </section>
+              );
+            })()}
 
             {/* solicitação aguardando confirmação: confirmar ou recusar */}
             {isEditing && appointment?.status === 'pendente' && (
@@ -566,7 +831,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
             {/* sinal aguardando pagamento: marcar como recebido */}
             {isEditing && appointment?.status === 'aguardando_pagamento' && (
               <div className="rounded-xl bg-sky-50 border border-sky-200 p-3">
-                <p className="text-sm font-medium text-sky-800">Aguardando pagamento</p>
+                <p className="text-sm font-medium text-sky-800">Aguardando sinal da reserva</p>
                 {(appointment.depositCents != null || appointment.expiresAt) && (
                   <p className="text-xs text-sky-700 mt-0.5">
                     {appointment.depositCents != null && <>Sinal: {brlCents(appointment.depositCents)}</>}
@@ -582,7 +847,7 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                     disabled={saving}
                     className="w-full px-4 py-2.5 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700 disabled:opacity-60 transition-colors font-medium"
                   >
-                    Pagamento recebido
+                    Sinal recebido
                   </button>
                 </div>
               </div>
@@ -791,18 +1056,18 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
 
             {/* erro */}
             {error && (
-              <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700">
+              <div className={`rounded-xl border p-4 text-sm ${alternatives.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-rose-50 border-rose-200 text-rose-700'}`} role="alert">
                 <p className="font-medium">{error}</p>
                 {alternatives.length > 0 && (
                   <div className="mt-3">
-                    <p className="text-rose-600/70 text-xs mb-2">Horários alternativos disponíveis:</p>
+                    <p className="text-amber-800/80 text-xs mb-2">Horários livres sugeridos (você escolhe; o que já preencheu foi mantido):</p>
                     <div className="flex flex-wrap gap-2">
                       {alternatives.map((iso) => (
                         <button
                           key={iso}
                           type="button"
                           onClick={() => { setTimeValue(new Date(iso).toTimeString().slice(0, 5)); clearError(); }}
-                          className="px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-rose-700 text-xs hover:bg-rose-50 transition-colors"
+                          className="min-h-[40px] px-3.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-sm font-medium hover:bg-amber-100 transition-colors"
                         >
                           {new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </button>
@@ -827,18 +1092,9 @@ export default function AppointmentModal({ date, time, appointment, onClose, onS
                 )}
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm rounded-lg border border-wine-100 text-ink/70 hover:bg-wine-50 transition-colors"
-                >
-                  Fechar
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={saving}
-                  className="px-5 py-2 text-sm rounded-lg bg-wine-600 text-white hover:bg-wine-700 disabled:opacity-60 transition-colors font-medium"
-                >
-                  {saving ? 'Salvando…' : 'Salvar'}
+                <button onClick={close} className="btn-secondary">Fechar</button>
+                <button onClick={handleSubmit} disabled={saving} className="btn-primary">
+                  {saving ? 'Salvando…' : isEditing ? 'Revisar e salvar' : 'Salvar'}
                 </button>
               </div>
             </div>

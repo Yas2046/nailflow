@@ -39,12 +39,13 @@ const emptyDay = (weekday: number): DayForm => ({
 
 // ─── componentes auxiliares ───────────────────────────────────────────────────
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${
         checked ? 'bg-wine-600' : 'bg-ink/20'
@@ -117,13 +118,13 @@ function DayCard({
   return (
     <div
       className={`bg-white border rounded-xl overflow-hidden transition-opacity ${
-        day.isWorking ? 'border-wine-100 shadow-sm' : 'border-ink/10 opacity-60'
+        day.isWorking ? 'border-wine-100 shadow-sm' : 'border-ink/10 opacity-85'
       }`}
     >
       {/* cabeçalho do card */}
       <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">
-          <Toggle checked={day.isWorking} onChange={(v) => onUpdate({ isWorking: v })} />
+          <Toggle checked={day.isWorking} onChange={(v) => onUpdate({ isWorking: v })} label={`Atender ${weekdayLabels[day.weekday]}`} />
           <div>
             <p className={`font-semibold text-sm leading-tight ${day.isWorking ? 'text-ink' : 'text-ink/40'}`}>
               {weekdayLabels[day.weekday]}
@@ -133,7 +134,7 @@ function DayCard({
                 {day.startTime} – {day.endTime}
               </p>
             ) : (
-              <p className="text-xs text-ink/30 italic leading-tight mt-0.5">Folga</p>
+              <p className="text-xs text-ink/45 italic leading-tight mt-0.5">Folga</p>
             )}
           </div>
         </div>
@@ -141,7 +142,7 @@ function DayCard({
         {/* badge dia da semana abreviado */}
         <span
           className={`text-xs font-medium px-2 py-1 rounded-md ${
-            day.isWorking ? 'bg-wine-50 text-wine-600' : 'bg-ink/5 text-ink/30'
+            day.isWorking ? 'bg-wine-50 text-wine-600' : 'bg-ink/5 text-ink/45'
           }`}
         >
           {weekdayShort[day.weekday]}
@@ -153,7 +154,7 @@ function DayCard({
         <div className="border-t border-wine-50 px-5 pb-5 pt-4 space-y-4">
           {/* horário de atendimento */}
           <div>
-            <p className="text-xs font-semibold text-ink/30 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-ink/45 uppercase tracking-wide mb-2">
               Atendimento
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -173,7 +174,7 @@ function DayCard({
           {/* intervalo / almoço */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-ink/30 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-ink/45 uppercase tracking-wide">
                 Intervalo
               </p>
               {/* botão para limpar o intervalo quando preenchido */}
@@ -181,7 +182,7 @@ function DayCard({
                 <button
                   type="button"
                   onClick={() => onUpdate({ breakStart: '', breakEnd: '' })}
-                  className="text-xs text-ink/30 hover:text-rose-500 transition-colors"
+                  className="text-xs text-ink/45 hover:text-rose-500 transition-colors"
                 >
                   Remover
                 </button>
@@ -200,7 +201,7 @@ function DayCard({
               />
             </div>
             {!hasBreak && (
-              <p className="text-xs text-ink/30 mt-1.5 italic">
+              <p className="text-xs text-ink/45 mt-1.5 italic">
                 Deixe em branco se não houver intervalo.
               </p>
             )}
@@ -464,7 +465,7 @@ export default function Disponibilidade() {
         </div>
         <div className="flex items-center gap-3">
           <input
-            type="number"
+            type="number" aria-label="Dias à frente para oferecer horários"
             min={7}
             max={365}
             value={horizonDays}
@@ -505,7 +506,7 @@ export default function Disponibilidade() {
                 </div>
                 <button
                   onClick={() => handleDeleteException(ex.id)}
-                  className="shrink-0 text-ink/30 hover:text-rose-500 transition-colors p-1"
+                  className="shrink-0 text-ink/45 hover:text-rose-500 transition-colors p-1"
                   title="Remover"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

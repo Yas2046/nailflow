@@ -7,6 +7,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { notifyN8n } from '../utils/notifyN8n.js';
 import { expireDueHolds, initialBookingState, formatWhen, calculateDepositCents, paymentInstructionsText } from '../utils/bookingRules.js';
 import { AVATAR_DATA_URL_RE, PUBLIC_THEMES } from './authController.js';
+import { instagramUrl } from '../utils/instagram.js';
 
 // Busca profissional pelo slug (Phase 3 multi-tenancy).
 async function getProfessionalBySlug(slug) {
@@ -71,7 +72,7 @@ async function buildAvailabilityResponse(professional, requestedDays, overrideDu
 export async function getPublicInfoBySlug(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT business_name, phone_whatsapp, bio, public_theme, avatar_b64 FROM professionals WHERE slug = $1',
+      'SELECT * FROM professionals WHERE slug = $1',
       [req.params.slug]
     );
     const professional = rows[0];
@@ -82,6 +83,7 @@ export async function getPublicInfoBySlug(req, res, next) {
       bio: professional.bio || null,
       theme: PUBLIC_THEMES.includes(professional.public_theme) ? professional.public_theme : 'vinho',
       photo: AVATAR_DATA_URL_RE.test(professional.avatar_b64 || '') ? professional.avatar_b64 : null,
+      instagramUrl: instagramUrl(professional.instagram),
     });
   } catch (err) {
     next(err);

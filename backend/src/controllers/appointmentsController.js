@@ -49,6 +49,7 @@ function toDto(row) {
     depositCents: row.deposit_cents ?? null,
     paidAt: row.paid_at ?? null,
     finalPriceCents: row.final_price_cents ?? null,
+    checkedInAt: row.checked_in_at ?? null,
   };
 }
 
@@ -216,6 +217,25 @@ async function readCurrent(db, id, professionalId, lock) {
   return rows[0] ?? null;
 }
 
+// Chegada (check-in) só faz sentido enquanto o agendamento está confirmado (em atendimento) ou concluído. Se ele volta para
+// pendente, é cancelado ou vira falta, a chegada anterior deixa de valer: sem isso, uma nova confirmação reapareceria como
+// "em atendimento". O banco exige motivo para desfazer (fin_appointments_guard) e registra antes/depois e motivo no histórico
+// (appointment_checkin); nada é apagado do histórico. Roda na MESMA transação da mudança de status. Sem a 025: não faz nada.
+const CHECKIN_KEPT_BY = ['confirmado', 'concluido'];
+async function undoCheckInOnReset(client, appointmentId, professionalId, newStatus) {
+  if (!newStatus || CHECKIN_KEPT_BY.includes(newStatus)) return false;
+  if (!(await finalPriceAvailable(client))) return false;
+  const { rows } = await client.query(
+    'SELECT 1 FROM appointments WHERE id = $1 AND professional_id = $2 AND checked_in_at IS NOT NULL',
+    [appointmentId, professionalId]
+  );
+  if (!rows[0]) return false;
+  await client.query(`SELECT set_config('nailflow.actor_id', $1, true)`, [professionalId]);
+  await client.query(`SELECT set_config('nailflow.audit_reason', $1, true)`, [`Chegada desfeita: o agendamento passou para "${newStatus}".`]);
+  await client.query('UPDATE appointments SET checked_in_at = NULL WHERE id = $1 AND professional_id = $2', [appointmentId, professionalId]);
+  return true;
+}
+
 // Avaliação pura (sem E/S) de um PUT sobre o estado `cur`. Roda antes da transação e de novo sobre
 // a linha bloqueada.
 function evaluateUpdate(cur, data) {
@@ -361,12 +381,16 @@ export async function updateAppointment(req, res, next) {
              expires_at = CASE WHEN $5::text = 'confirmado' THEN NULL ELSE expires_at END,
              cancel_reason = CASE WHEN COALESCE($5::text, status) = 'cancelado' THEN cancel_reason ELSE NULL END,
              notes = COALESCE($6, notes),
-             price_cents_snapshot = COALESCE($9, price_cents_snapshot)
+             price_cents_snapshot = COALESCE($9, price_cents_snapshot),
+             reminder_sent = CASE WHEN $10::boolean THEN false ELSE reminder_sent END
            WHERE id = $7 AND professional_id = $8
            RETURNING *`,
           [data.clientId ?? null, data.serviceId ?? null, slot.newStartsAt ?? null, slot.newEndsAt ?? null, data.status ?? null,
-           data.notes ?? null, id, pid, slot.newSnapshot ?? null]
+           data.notes ?? null, id, pid, slot.newSnapshot ?? null,
+           // Remarcar muda o horário: o lembrete de 24h precisa valer para o NOVO horário (antes ficava marcado como enviado)
+           again.startChanged === true]
         );
+        if (data.status !== undefined && data.status !== cur.status) await undoCheckInOnReset(client, id, pid, data.status);
         // Preço final na MESMA transação do status (se falhar aqui, FinanceError desfaz tudo, inclusive a conclusão).
         if (data.finalPriceCents !== undefined) {
           await setFinalPrice(client, { appointmentId: id, professionalId: pid, row: rows[0], newCents: data.finalPriceCents, reason: data.finalPriceReason });
@@ -649,6 +673,7 @@ export async function updateFromNow(req, res, next) {
            WHERE id = $3`,
           [statusChange ? data.status : null, notesChange ? data.notes : null, row.id]
         );
+        if (statusChange) await undoCheckInOnReset(client, row.id, req.professionalId, data.status);
         updated += 1;
       }
       return batchSummary(rows.length, updated, unchanged, skipped);
@@ -740,6 +765,28 @@ export async function markPaidAppointment(req, res, next) {
       await confirmFailure(req.params.id, req.professionalId, 'Só é possível marcar o pagamento de um agendamento aguardando pagamento.')
     );
   } catch (err) {
+    next(err);
+  }
+}
+
+// POST /appointments/:id/check-in — registra a chegada da cliente ("em atendimento"). NÃO muda o status: o atendimento
+// segue confirmado até ser concluído (PUT status=concluido, como hoje). Só vale para agendamento confirmado e é
+// idempotente (repetir devolve changed:false e não regrava). Desfazer/alterar o check-in exige justificativa no banco
+// (fin_appointments_guard) e não é exposto aqui. Sem a coluna (migration 025 ausente) responde 404, como o Financeiro.
+export async function checkInAppointment(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE appointments SET checked_in_at = now()
+       WHERE id = $1 AND professional_id = $2 AND status = 'confirmado' AND checked_in_at IS NULL RETURNING id`,
+      [req.params.id, req.professionalId]
+    );
+    const full = await loadFullDto(req.params.id, req.professionalId);
+    if (!full) throw new HttpError(404, 'Agendamento não encontrado.');
+    if (rows[0]) return res.json({ ...full.dto, changed: true });
+    if (full.row.status === 'confirmado' && full.row.checked_in_at) return res.json({ ...full.dto, changed: false });
+    return res.status(409).json({ error: 'Só é possível registrar a chegada de um agendamento confirmado.' });
+  } catch (err) {
+    if (err?.code === '42703') return next(new HttpError(404, 'Recurso indisponível.'));
     next(err);
   }
 }

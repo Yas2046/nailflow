@@ -1,6 +1,6 @@
 # Financeiro — plano de publicação única e política de retenção
 
-**Estado: PLANO. Nada deste documento foi executado.** Cada passo marcado 🔒 exige autorização explícita; produção, migrations persistentes, grants, flag, PM2, build de produção, commit/push/merge e qualquer remoção de arquivo estão fora do que foi feito até aqui. Detalhes técnicos de cada etapa: `FINANCEIRO_ETAPA1.md` a `FINANCEIRO_ETAPA5.md`.
+**Estado: PLANO. Nada deste documento foi executado.** **Atualização de 2026-10-21 (auditoria de produção somente leitura): a produção já tem as etapas deste plano aplicadas.** Migrations 025–029 aplicadas e `FINANCEIRO_PAGAMENTOS_ENABLED=true` (sem movimentações gravadas até a auditoria). Registro histórico: o texto abaixo continua sendo o plano original (base `ea21c0a`), não o estado atual. A **proposta ainda não publicada** é outra: migrations 030–032 e o pacote da branch `feat/redesign-navegacao` (ver `STATUS_ATUAL.md`). A prova de restauração com o dump **real** (seção 3) continua não realizada. Cada passo marcado 🔒 exige autorização explícita; produção, migrations persistentes, grants, flag, PM2, build de produção, commit/push/merge e qualquer remoção de arquivo estão fora do que foi feito até aqui. Detalhes técnicos de cada etapa: `FINANCEIRO_ETAPA1.md` a `FINANCEIRO_ETAPA5.md`.
 
 ## 1. Inventário (branch `feat/financeiro-base`, base `ea21c0a`, sem commit)
 

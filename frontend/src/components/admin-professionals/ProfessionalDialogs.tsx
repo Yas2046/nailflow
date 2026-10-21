@@ -1,4 +1,4 @@
-import { useId, type ChangeEvent, type RefObject } from 'react';
+import { useId, useState, type ChangeEvent, type RefObject } from 'react';
 import { IconBan, IconCheckCircle } from '../AdminIcons';
 import { initialsOf } from '../admin-account/AccountBlocks';
 import type { ProfessionalRow } from '../admin-dashboard/derive';
@@ -197,6 +197,53 @@ export function DeleteProfessionalDialog({
           {deleting ? 'Excluindo…' : 'Excluir definitivamente'}
         </button>
       </div>
+    </Modal>
+  );
+}
+
+// ── link de redefinição de senha (uso único, entregue à profissional pela administração) ──────────────────────────────
+
+export function ResetLinkDialog({
+  target, link, expiresAt, working, error, returnFocusRef, onCancel, onGenerate,
+}: {
+  target: { id: string; name: string }; link: string | null; expiresAt: string | null; working: boolean; error: string | null;
+  returnFocusRef: FocusRef; onCancel: () => void; onGenerate: () => void;
+}) {
+  const titleId = useId();
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); setCopied(true); } catch { setCopied(false); }
+  }
+  return (
+    <Modal titleId={titleId} busy={working} returnFocusRef={returnFocusRef} onClose={onCancel}>
+      <h3 id={titleId} className="font-display text-xl text-wine-800 mb-2">Link para criar nova senha</h3>
+      {!link ? (
+        <>
+          <p className="text-sm text-ink/65 leading-relaxed">
+            Gera um link de uso único para <strong>{target.name}</strong> escolher uma nova senha. Ele vale por 1 hora, derruba as sessões abertas dela
+            quando for usado e substitui qualquer link anterior. O sistema não envia e-mail: você entrega o link à profissional por um canal seguro.
+          </p>
+          {error && <div role="alert" className={`${alertBox} mt-3`}>{error}</div>}
+          <div className="flex gap-3 pt-5">
+            <button onClick={onCancel} disabled={working} className="btn-secondary flex-1 disabled:opacity-60">Cancelar</button>
+            <button onClick={onGenerate} disabled={working} className="btn-primary flex-1">{working ? 'Gerando…' : 'Gerar link'}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-ink/65 leading-relaxed">
+            Copie agora: por segurança o link <strong>não será mostrado de novo</strong>.
+            {expiresAt && <> Vale até {new Date(expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</>}
+          </p>
+          <label className={`${fieldLabel} mt-4`} htmlFor="reset-link">Link</label>
+          <input id="reset-link" readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="input font-mono text-xs" data-autofocus />
+          <div className="flex gap-3 pt-5">
+            <button onClick={onCancel} className="btn-secondary flex-1">Fechar</button>
+            <button onClick={copy} className="btn-primary flex-1">{copied ? 'Copiado ✓' : 'Copiar link'}</button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

@@ -9,6 +9,7 @@ const serviceSchema = z.object({
   durationMinutes: z.number().int().positive(),
   active: z.boolean().optional(),
   availableOnWhatsapp: z.boolean().optional(),
+  returnIntervalDays: z.number().int().min(1).max(365).nullable().optional(),
 });
 
 function toDto(row) {
@@ -20,6 +21,7 @@ function toDto(row) {
     durationMinutes: row.duration_minutes,
     active: row.active,
     availableOnWhatsapp: row.available_on_whatsapp,
+    returnIntervalDays: row.return_interval_days ?? null,
   };
 }
 
@@ -38,10 +40,11 @@ export async function listServices(req, res, next) {
 export async function createService(req, res, next) {
   try {
     const data = serviceSchema.parse(req.body);
+    const withInterval = data.returnIntervalDays !== undefined;
     const { rows } = await pool.query(
-      `INSERT INTO services (professional_id, name, description, price_cents, duration_minutes, active, available_on_whatsapp)
-       VALUES ($1,$2,$3,$4,$5,COALESCE($6, true),COALESCE($7, true)) RETURNING *`,
-      [req.professionalId, data.name, data.description ?? null, data.priceCents, data.durationMinutes, data.active, data.availableOnWhatsapp]
+      `INSERT INTO services (professional_id, name, description, price_cents, duration_minutes, active, available_on_whatsapp${withInterval ? ', return_interval_days' : ''})
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6, true),COALESCE($7, true)${withInterval ? ', $8' : ''}) RETURNING *`,
+      [req.professionalId, data.name, data.description ?? null, data.priceCents, data.durationMinutes, data.active, data.availableOnWhatsapp, ...(withInterval ? [data.returnIntervalDays] : [])]
     );
     res.status(201).json(toDto(rows[0]));
   } catch (err) {
@@ -54,8 +57,9 @@ export async function updateService(req, res, next) {
   try {
     const data = serviceSchema.partial().parse(req.body);
     const descriptionInBody = 'description' in req.body;
+    const intervalInBody = 'returnIntervalDays' in req.body;
     const { rows } = await pool.query(
-      `UPDATE services SET
+      `UPDATE services SET${intervalInBody ? '\n         return_interval_days = $10,' : ''}
          name             = COALESCE($1, name),
          description      = CASE WHEN $2 THEN $3 ELSE description END,
          price_cents      = COALESCE($4, price_cents),
@@ -63,7 +67,7 @@ export async function updateService(req, res, next) {
          active           = COALESCE($6, active),
          available_on_whatsapp = COALESCE($7, available_on_whatsapp)
        WHERE id = $8 AND professional_id = $9 RETURNING *`,
-      [data.name, descriptionInBody, data.description ?? null, data.priceCents, data.durationMinutes, data.active, data.availableOnWhatsapp, req.params.id, req.professionalId]
+      [data.name, descriptionInBody, data.description ?? null, data.priceCents, data.durationMinutes, data.active, data.availableOnWhatsapp, req.params.id, req.professionalId, ...(intervalInBody ? [data.returnIntervalDays ?? null] : [])]
     );
     if (!rows[0]) throw new HttpError(404, 'Serviço não encontrado.');
     res.json(toDto(rows[0]));

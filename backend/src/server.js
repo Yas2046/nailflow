@@ -16,6 +16,7 @@ import botRoutes from './routes/bot.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import onboardingRoutes from './routes/onboarding.routes.js';
+import portfolioRoutes from './routes/portfolio.routes.js';
 import supportRoutes from './routes/support.routes.js';
 import adminSupportRoutes from './routes/adminSupport.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -24,6 +25,17 @@ import { startHoldSweeper } from './utils/bookingRules.js';
 
 const app = express();
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+// Cabeçalhos de segurança da API (o site e a CSP ficam no nginx). Respostas autenticadas nunca devem ser guardadas em cache
+// do navegador ou de intermediários; /health e a página pública de leitura continuam sem essa regra.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  if (req.path !== '/health') res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 app.use(
   cors({
@@ -35,6 +47,9 @@ app.use(
 // n8n/Evolution/curl). Antes da autenticação e dos limitadores; ver middleware/originGuard.js.
 app.use(createOriginGuard());
 app.use(cookieParser());
+// Importação de clientes envia até 500 linhas: precisa de mais que os 100KB padrão (só nesta rota; o limite global continua o mesmo).
+app.use('/clients/import', express.json({ limit: '1mb' }));
+app.use('/portfolio', express.json({ limit: '600kb' }));   // foto de até 300 KB em base64
 app.use(express.json());
 
 app.get('/health', (req, res) => {
@@ -58,6 +73,7 @@ app.use('/whatsapp', whatsappRoutes);
 app.use('/admin/support', adminSupportRoutes);
 app.use('/admin', adminRoutes);
 app.use('/onboarding', onboardingRoutes);
+app.use('/portfolio', portfolioRoutes);
 app.use('/support', supportRoutes);
 
 app.use((req, res) => {

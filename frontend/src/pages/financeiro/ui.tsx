@@ -1,5 +1,6 @@
 // Peças compartilhadas das telas do Financeiro: estados de carregamento/erro/vazio, modal, selos, histórico e carga assíncrona.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import ModalA11y from '../../components/ModalA11y';
 import { ApiError } from '../../services/api';
 import { financeiro, type HistoryItem } from '../../services/financeiro';
 import { formatDateTimeBR, formatBRL, formatDateBR, methodLabel } from '../../utils/money';
@@ -57,7 +58,7 @@ export function Empty({ children }: { children: ReactNode }) {
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`bg-white rounded-2xl border border-wine-100/60 shadow-sm ${className}`}>{children}</div>;
+  return <div className={`card ${className}`}>{children}</div>;
 }
 
 export function Stat({ label, value, tone = 'ink', hint }: { label: string; value: string; tone?: 'ink' | 'good' | 'bad' | 'warn'; hint?: string }) {
@@ -80,13 +81,9 @@ export function Badge({ tone = 'neutral', children }: { tone?: keyof typeof BADG
 }
 
 export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 bg-ink/50" onClick={onClose} role="dialog" aria-modal="true" aria-label={title}>
+      <ModalA11y onClose={onClose} />
       <div className={`bg-white rounded-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} shadow-xl max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-wine-50 sticky top-0 bg-white z-10">
           <h2 className="font-display text-xl text-wine-800">{title}</h2>

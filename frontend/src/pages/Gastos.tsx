@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
+import ModalA11y from '../components/ModalA11y';
+import LoadError from '../components/LoadError';
 import { Link } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../context/ToastContext';
@@ -104,8 +106,11 @@ export default function Gastos() {
     return { from: customFrom, to: customTo };
   }
 
+  const [loadError, setLoadError] = useState(false);
+
   async function fetchExpenses() {
     setLoading(true);
+    setLoadError(false);
     try {
       const { from, to } = getRange();
       const params: Record<string, string> = {};
@@ -115,7 +120,7 @@ export default function Gastos() {
       const data = await api.get<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`);
       setExpenses(data);
     } catch {
-      toast('Erro ao carregar gastos.', 'error');
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -225,7 +230,7 @@ export default function Gastos() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Gastos</h1>
-          <p className="text-sm text-ink/40 mt-1 capitalize">{subtitle}</p>
+          <p className="text-sm text-ink/40 mt-1 sentence-case">{subtitle}</p>
         </div>
         <button onClick={openAdd} className="btn-primary">
           + Novo gasto
@@ -323,7 +328,7 @@ export default function Gastos() {
                 >
                   <span>{cat.category}</span>
                   <span className="font-semibold tabular-nums">{formatCurrency(cat.totalCents)}</span>
-                  <span className="opacity-60">({cat.count})</span>
+                  <span className="opacity-90">({cat.count})</span>
                 </button>
               );
             })}
@@ -375,6 +380,8 @@ export default function Gastos() {
               </div>
             ))}
           </div>
+        ) : loadError ? (
+          <LoadError message="Não foi possível carregar os gastos. Eles não foram apagados: tente de novo." onRetry={fetchExpenses} />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-wine-100/60 p-10 text-center">
             <p className="text-ink/40 text-sm">
@@ -437,9 +444,10 @@ export default function Gastos() {
       {/* ── Modal add/edit ── */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink/50"
+          role="dialog" aria-modal="true" aria-label="Despesa" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink/50"
           onClick={() => setModalOpen(false)}
         >
+          <ModalA11y onClose={() => setModalOpen(false)} />
           <div
             className="bg-white rounded-2xl w-full max-w-md shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -528,9 +536,10 @@ export default function Gastos() {
       {/* ── Confirm delete ── */}
       {confirmDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/50"
+          role="dialog" aria-modal="true" aria-label="Confirmar exclusão" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/50"
           onClick={() => setConfirmDelete(null)}
         >
+          <ModalA11y onClose={() => setConfirmDelete(null)} />
           <div
             className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl text-center space-y-4"
             onClick={(e) => e.stopPropagation()}

@@ -29,7 +29,7 @@ after(async () => {
   await pool.end();
 });
 
-test('login com credenciais da seed retorna token e cookie de sessão', async (t) => {
+test('login com credenciais da seed abre a sessão por cookie httpOnly e não expõe o token no corpo', async (t) => {
   if (!dbAvailable) {
     t.skip('DATABASE_URL não está acessível — rode "npm run db:create && npm run db:seed" antes deste teste.');
     return;
@@ -45,11 +45,12 @@ test('login com credenciais da seed retorna token e cookie de sessão', async (t
   // este teste falha com uma mensagem clara em vez de travar silenciosamente.
   assert.equal(res.status, 200, 'login falhou — confira se rodou "npm run db:seed" e se o hash em seed.sql corresponde a "senha123"');
   const body = await res.json();
-  assert.ok(body.token, 'resposta deveria conter um token JWT');
+  assert.equal(body.token, undefined, 'o token não deve aparecer no corpo da resposta');
+  assert.match(res.headers.getSetCookie().join(';'), /nailflow_token=[^;]+;.*HttpOnly/i, 'sessão deve ir em cookie httpOnly');
   assert.equal(body.professional.email, 'camila@nailflow.com');
 });
 
-test('endpoint autenticado aceita o token retornado pelo login', async (t) => {
+test('endpoint autenticado aceita o cookie de sessão retornado pelo login', async (t) => {
   if (!dbAvailable) {
     t.skip('DATABASE_URL não está acessível.');
     return;
@@ -60,10 +61,10 @@ test('endpoint autenticado aceita o token retornado pelo login', async (t) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'camila@nailflow.com', password: 'senha123' }),
   });
-  const { token } = await loginRes.json();
+  const cookie = loginRes.headers.getSetCookie().find((c) => c.startsWith('nailflow_token=')).split(';')[0];
 
   const res = await fetch(`${baseUrl}/services`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Cookie: cookie },
   });
   assert.equal(res.status, 200);
   const services = await res.json();

@@ -49,7 +49,7 @@ export default function Ajuda() {
                 <li key={c.slug}>
                   <Link
                     to={`/ajuda/${c.slug}`}
-                    className="group flex items-center gap-4 h-full bg-white rounded-2xl border border-wine-100/80 shadow-sm px-5 py-4 hover:border-wine-300 hover:shadow-md transition-all"
+                    className="group flex items-center gap-4 h-full card px-5 py-4 hover:border-wine-300 hover:shadow-md transition-all"
                   >
                     <span className="w-10 h-10 rounded-full bg-wine-50 text-wine-700 font-display text-lg flex items-center justify-center shrink-0" aria-hidden="true">
                       {String(i + 1).padStart(2, '0')}
@@ -71,11 +71,11 @@ export default function Ajuda() {
         {/* todas as etapas */}
         <section>
           <h2 className="font-display text-xl sm:text-2xl text-wine-800">O guia completo, passo a passo</h2>
-          <ol className="mt-5 bg-white rounded-2xl border border-wine-100/80 shadow-sm divide-y divide-wine-50 overflow-hidden">
+          <ol className="mt-5 card divide-y divide-wine-50 overflow-hidden">
             {GUIA_PASSOS.map((p) => (
               <li key={p.slug}>
                 <Link to={`/ajuda/${p.slug}`} className="group flex items-center gap-4 px-5 py-3.5 hover:bg-wine-50/50 transition-colors">
-                  <span className="font-display text-lg text-wine-300 w-7 shrink-0 tabular-nums" aria-hidden="true">
+                  <span className="font-display text-lg text-wine-500 w-7 shrink-0 tabular-nums" aria-hidden="true">
                     {String(p.numero).padStart(2, '0')}
                   </span>
                   <span className="flex-1 min-w-0">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, ApiError } from '../services/api';
+import { API_URL, api, ApiError } from '../services/api';
+import ModalA11y from '../components/ModalA11y';
 import LogoMark from '../components/LogoMark';
 
 interface PublicData {
@@ -16,7 +17,10 @@ interface PublicInfo {
   bio: string | null;
   theme: PublicTheme;
   photo: string | null;
+  instagramUrl?: string | null;
 }
+
+interface GalleryPhoto { id: string; src?: string }
 
 interface PublicService {
   id: string;
@@ -154,7 +158,7 @@ function EmptyState() {
           Nenhum horário disponível nos próximos dias. Fale pelo WhatsApp para verificar outras opções.
         </p>
 
-        <p className="text-center text-[10px] text-ink/20 mt-5">
+        <p className="text-center text-[11px] text-ink/50 mt-5">
           Desenvolvido com NailFlow
         </p>
 
@@ -191,10 +195,34 @@ function LegacyLink() {
 
 // ─── página ───────────────────────────────────────────────────────────────────
 
+function PassosIndicador({ servico, horario, dados }: { servico: boolean; horario: boolean; dados: boolean }) {
+  const passos = [
+    { n: 1, label: 'Serviço', ok: servico },
+    { n: 2, label: 'Horário', ok: horario },
+    { n: 3, label: 'Seus dados', ok: dados },
+  ];
+  const atual = !servico ? 1 : !horario ? 2 : 3;
+  return (
+    <ol className="flex items-center justify-center gap-2 sm:gap-3 mb-8" aria-label="Etapas do agendamento">
+      {passos.map((p) => (
+        <li key={p.n} aria-current={p.n === atual ? 'step' : undefined} className="flex items-center gap-2 text-xs sm:text-sm">
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold ${p.ok ? 'bg-wine-600 text-white' : p.n === atual ? 'bg-wine-100 text-wine-700 ring-2 ring-wine-300' : 'bg-white text-ink/55 border border-wine-100'}`}>
+            {p.ok ? '✓' : p.n}
+          </span>
+          <span className={p.n === atual ? 'font-semibold text-wine-700' : 'text-ink/60'}>{p.label}</span>
+          {p.n < 3 && <span className="w-4 sm:w-8 h-px bg-wine-200" aria-hidden="true" />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function PaginaPublica() {
   const { slug } = useParams<{ slug?: string }>();
   const [data, setData] = useState<PublicData | null>(null);
   const [info, setInfo] = useState<PublicInfo | null>(null);
+  const [gallery, setGallery] = useState<GalleryPhoto[]>([]);
+  const [lightbox, setLightbox] = useState<number | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [services, setServices] = useState<PublicService[] | null>(null);
@@ -264,6 +292,13 @@ export default function PaginaPublica() {
         }
       });
   }
+
+  // Galeria de trabalhos (opcional): se falhar ou estiver vazia, a página segue normalmente sem ela.
+  useEffect(() => {
+    if (!slug) return;
+    api.get<{ photos: GalleryPhoto[] }>(`/public/${slug}/gallery`).then((r) => setGallery(r.photos)).catch(() => setGallery([]));
+  }, [slug]);
+  const photoSrc = (ph: GalleryPhoto) => ph.src ?? `${API_URL}/public/${slug}/photos/${ph.id}`;
 
   // Ao trocar de serviço, a seleção de horário anterior deixa de fazer
   // sentido (pode não caber na nova duração) — limpa antes de qualquer nova
@@ -374,6 +409,7 @@ export default function PaginaPublica() {
         clientPhone: clientPhone.trim(),
       });
       setBookingResult(result);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       handleSubmitError(e);
     } finally {
@@ -392,7 +428,7 @@ export default function PaginaPublica() {
       <div className="w-full max-w-lg">
 
         {/* ── cabeçalho ──────────────────────────────────────────────────── */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8 sm:mb-10">
           {info?.photo ? (
             <img
               src={info.photo}
@@ -404,7 +440,7 @@ export default function PaginaPublica() {
               <LogoMark className="w-7 h-7" />
             </div>
           )}
-          <p className="text-[11px] font-semibold text-ink/30 uppercase tracking-[0.25em] mb-5">NailFlow</p>
+          <p className="text-[11px] font-semibold text-ink/50 uppercase tracking-[0.25em] mb-5">NailFlow</p>
           <h1 className="font-display text-4xl text-wine-700 leading-tight mb-2 break-words">
             {info?.businessName || data?.businessName || 'Carregando…'}
           </h1>
@@ -413,12 +449,54 @@ export default function PaginaPublica() {
               {info.bio}
             </p>
           )}
-          <p className="text-ink/50 text-sm">Horários disponíveis para agendamento</p>
+          <p className="text-ink/60 text-sm">Agendamento online: escolha o serviço e o melhor horário para você.</p>
         </div>
+
+        {info?.instagramUrl && (
+          <p className="text-center -mt-4 mb-6">
+            <a href={info.instagramUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-full border border-wine-200 bg-white text-sm font-medium text-wine-700 hover:bg-wine-50 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor" /></svg>
+              Ver no Instagram
+            </a>
+          </p>
+        )}
+
+        {gallery.length > 0 && (
+          <section className="mb-8" aria-label="Trabalhos">
+            <h2 className="text-xs font-semibold text-ink/60 uppercase tracking-widest mb-3 text-center">Alguns trabalhos</h2>
+            <ul className="grid grid-cols-3 gap-2">
+              {gallery.map((ph, i) => (
+                <li key={ph.id}>
+                  <button type="button" onClick={() => setLightbox(i)} aria-label={`Ampliar foto ${i + 1} de ${gallery.length}`}
+                    className="block w-full aspect-square rounded-xl overflow-hidden bg-wine-50 border border-wine-100 hover:opacity-90 transition-opacity">
+                    <img src={photoSrc(ph)} alt={`Trabalho ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {lightbox !== null && gallery[lightbox] && (
+          <div role="dialog" aria-modal="true" aria-label={`Foto ${lightbox + 1} de ${gallery.length}`} className="fixed inset-0 z-50 bg-ink/80 flex flex-col items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setLightbox(null); }}>
+            <ModalA11y onClose={() => setLightbox(null)} />
+            <img src={photoSrc(gallery[lightbox])} alt={`Trabalho ${lightbox + 1}`} className="max-h-[75vh] max-w-full rounded-xl object-contain" />
+            <div className="mt-4 flex items-center gap-3">
+              <button type="button" className="btn-secondary" onClick={() => setLightbox((lightbox + gallery.length - 1) % gallery.length)} disabled={gallery.length < 2}>Anterior</button>
+              <span className="text-sm text-white/90" aria-live="polite">{lightbox + 1} / {gallery.length}</span>
+              <button type="button" className="btn-secondary" onClick={() => setLightbox((lightbox + 1) % gallery.length)} disabled={gallery.length < 2}>Próxima</button>
+              <button type="button" className="btn-primary" onClick={() => setLightbox(null)}>Fechar</button>
+            </div>
+          </div>
+        )}
+
+        {!bookingResult && <PassosIndicador servico={!!selectedServiceId} horario={!!selectedSlot} dados={step === 'confirm'} />}
 
         {/* ── sucesso — pedido de agendamento enviado ───────────────────── */}
         {bookingResult && (
-          <div className="bg-white border border-emerald-200 rounded-xl p-6 text-center mb-10">
+          <div className="bg-white border border-emerald-200 rounded-2xl p-6 text-center mb-10 shadow-sm" role="status" aria-live="polite">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mb-4">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -469,7 +547,7 @@ export default function PaginaPublica() {
         <>
         {/* ── seleção de serviço ────────────────────────────────────────── */}
         <div className="mb-10">
-          <p className="text-xs font-semibold text-ink/40 uppercase tracking-widest mb-3">Escolha o serviço</p>
+          <h2 className="text-xs font-semibold text-ink/60 uppercase tracking-widest mb-3">1. Escolha o serviço</h2>
 
           {servicesError && (
             <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 text-center">
@@ -486,17 +564,19 @@ export default function PaginaPublica() {
           )}
 
           {services && services.length > 0 && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5" role="radiogroup" aria-label="Serviços disponíveis">
               {services.map((service) => {
                 const isSelected = service.id === selectedServiceId;
                 return (
                   <button
                     key={service.id}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
                     disabled={submitting}
                     onClick={() => setSelectedServiceId(service.id)}
-                    className={`flex items-center justify-between gap-3 text-left rounded-xl p-4 border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                      isSelected ? 'border-wine-500 bg-wine-50' : 'border-wine-100 bg-white hover:border-wine-300'
+                    className={`flex items-center justify-between gap-3 text-left rounded-2xl p-4 min-h-[64px] border transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-sm ${
+                      isSelected ? 'border-wine-500 bg-wine-50 ring-2 ring-wine-500/25' : 'border-wine-100 bg-white hover:border-wine-300'
                     }`}
                   >
                     <div className="min-w-0">
@@ -540,9 +620,12 @@ export default function PaginaPublica() {
             {submitError}
           </div>
         )}
+        {data && data.days.length > 0 && (
+          <h2 className="text-xs font-semibold text-ink/60 uppercase tracking-widest mb-3">2. Escolha o horário</h2>
+        )}
         {data && !selectedServiceId && data.days.length > 0 && (
-          <p className="text-xs text-ink/40 text-center mb-3">
-            Escolha um serviço acima para selecionar um horário.
+          <p className="rounded-xl bg-wine-50 border border-wine-100 px-4 py-3 text-sm text-wine-700 text-center mb-3" role="note">
+            Primeiro escolha um serviço acima: os horários liberam em seguida.
           </p>
         )}
         {data && (
@@ -555,12 +638,12 @@ export default function PaginaPublica() {
                 return (
                   <div
                     key={day.date}
-                    className={`bg-white rounded-xl p-5 shadow-sm border ${
+                    className={`bg-white rounded-2xl p-4 sm:p-5 shadow-sm border ${
                       isToday ? 'border-wine-500' : 'border-wine-100'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3 mb-4">
-                      <p className="font-medium text-wine-700 capitalize text-sm leading-tight min-w-0 flex-1 pr-2">
+                      <p className="font-medium text-wine-700 sentence-case text-sm leading-tight min-w-0 flex-1 pr-2">
                         {formatDayLabel(day.date)}
                       </p>
                       {isToday && (
@@ -573,7 +656,7 @@ export default function PaginaPublica() {
                     {day.slots.length === 0 ? (
                       <p className="text-xs text-ink/40 italic">Sem horários neste dia.</p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         {day.slots.map((slot) => {
                           const isSelected = slot === selectedSlot;
                           return (
@@ -582,12 +665,13 @@ export default function PaginaPublica() {
                               type="button"
                               disabled={!selectedServiceId || submitting}
                               onClick={() => selectSlot(slot)}
-                              className={`text-sm px-3 py-1.5 rounded-lg font-medium border transition-colors ${
+                              aria-pressed={isSelected}
+                              className={`text-sm px-3 py-2 min-h-[44px] rounded-xl font-medium border transition-colors ${
                                 isSelected
                                   ? 'bg-wine-600 text-white border-wine-600'
                                   : selectedServiceId
                                     ? 'bg-wine-50 text-wine-700 border-wine-100 hover:border-wine-300 hover:bg-wine-100'
-                                    : 'bg-wine-50/50 text-wine-700/40 border-wine-100 cursor-not-allowed'
+                                    : 'bg-wine-50/50 text-wine-700/60 border-wine-100 cursor-not-allowed'
                               }`}
                             >
                               {formatSlotTime(slot)}
@@ -607,7 +691,7 @@ export default function PaginaPublica() {
         {selectedServiceId && selectedSlot && (
           <div ref={formRef} className="mb-10 scroll-mt-4">
             {step === 'form' && (
-              <div className="bg-white border border-wine-100 rounded-xl p-5">
+              <div className="bg-white border border-wine-100 rounded-2xl p-5 shadow-sm">
                 <div className="flex items-start gap-2.5 rounded-lg bg-wine-50 border border-wine-100 px-3 py-2.5 mb-4" role="status">
                   <span className="mt-0.5 w-4 h-4 rounded-full bg-wine-600 flex items-center justify-center shrink-0" aria-hidden="true">
                     <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
@@ -618,7 +702,7 @@ export default function PaginaPublica() {
                     <span className="font-medium">Horário escolhido:</span> {selectedService?.name} · {formatSlotFull(selectedSlot)}
                   </p>
                 </div>
-                <p className="text-xs font-semibold text-ink/40 uppercase tracking-widest mb-4">Seus dados</p>
+                <h2 className="text-xs font-semibold text-ink/60 uppercase tracking-widest mb-4">3. Seus dados</h2>
                 <div className="flex flex-col gap-3">
                   <label className="block">
                     <span className="block text-xs font-medium text-ink/50 mb-1.5">Nome</span>
@@ -627,6 +711,8 @@ export default function PaginaPublica() {
                       value={clientName}
                       onChange={(e) => { setClientName(e.target.value); setFormError(null); }}
                       placeholder="Seu nome completo"
+                      autoComplete="name"
+                      maxLength={120}
                     />
                   </label>
                   <label className="block">
@@ -634,6 +720,9 @@ export default function PaginaPublica() {
                     <input
                       className="input"
                       type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      maxLength={20}
                       value={clientPhone}
                       onChange={(e) => { setClientPhone(e.target.value); setFormError(null); }}
                       placeholder="(11) 91234-5678"
@@ -641,12 +730,12 @@ export default function PaginaPublica() {
                   </label>
                 </div>
                 {formError && (
-                  <p className="text-sm text-rose-600 mt-3">{formError}</p>
+                  <p className="text-sm text-rose-700 mt-3" role="alert">{formError}</p>
                 )}
                 <button
                   type="button"
                   onClick={goToConfirm}
-                  className="mt-4 w-full bg-wine-600 hover:bg-wine-700 text-white rounded-xl py-3 text-sm font-semibold transition-colors"
+                  className="mt-4 w-full bg-wine-600 hover:bg-wine-700 text-white rounded-xl py-3.5 min-h-[48px] text-sm font-semibold transition-colors"
                 >
                   Continuar
                 </button>
@@ -654,8 +743,8 @@ export default function PaginaPublica() {
             )}
 
             {step === 'confirm' && (
-              <div className="bg-white border border-wine-100 rounded-xl p-5">
-                <p className="text-xs font-semibold text-ink/40 uppercase tracking-widest mb-4">Revise seu agendamento</p>
+              <div className="bg-white border border-wine-100 rounded-2xl p-5 shadow-sm">
+                <h2 className="text-xs font-semibold text-ink/60 uppercase tracking-widest mb-4">Revise seu agendamento</h2>
                 <div className="space-y-1.5 text-sm text-ink/70 mb-4">
                   <p><span className="text-ink/40">Serviço:</span> {selectedService?.name}</p>
                   <p><span className="text-ink/40">Data/hora:</span> {formatSlotFull(selectedSlot)}</p>
@@ -663,7 +752,7 @@ export default function PaginaPublica() {
                   <p><span className="text-ink/40">Telefone:</span> {clientPhone.trim()}</p>
                 </div>
                 {submitError && (
-                  <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 mb-3">
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 mb-3" role="alert">
                     {submitError}
                   </div>
                 )}
@@ -672,7 +761,7 @@ export default function PaginaPublica() {
                     type="button"
                     onClick={backToForm}
                     disabled={submitting}
-                    className="flex-1 rounded-xl border border-wine-200 text-wine-700 text-sm font-semibold py-3 hover:bg-wine-50 transition-colors disabled:opacity-60"
+                    className="flex-1 rounded-xl border border-wine-200 text-wine-700 text-sm font-semibold py-3.5 min-h-[48px] hover:bg-wine-50 transition-colors disabled:opacity-60"
                   >
                     Editar
                   </button>
@@ -680,7 +769,7 @@ export default function PaginaPublica() {
                     type="button"
                     onClick={handleConfirm}
                     disabled={submitting}
-                    className="flex-1 bg-wine-600 hover:bg-wine-700 text-white rounded-xl py-3 text-sm font-semibold transition-colors disabled:opacity-60"
+                    className="flex-1 bg-wine-600 hover:bg-wine-700 text-white rounded-xl py-3.5 min-h-[48px] text-sm font-semibold transition-colors disabled:opacity-60"
                   >
                     {submitting ? 'Agendando…' : 'Confirmar agendamento'}
                   </button>
@@ -716,7 +805,7 @@ export default function PaginaPublica() {
           </p>
         )}
 
-        <p className="text-center text-[10px] text-ink/20 mt-5">
+        <p className="text-center text-[11px] text-ink/50 mt-5">
           Desenvolvido com NailFlow
         </p>
 

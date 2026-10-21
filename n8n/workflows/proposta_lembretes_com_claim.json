@@ -1,0 +1,587 @@
+{
+  "name": "NailFlow — Lembretes de Agendamento (PROPOSTA claim/result)",
+  "nodes": [
+    {
+      "id": "m6V3cUjqGYwfbhGY",
+      "name": "A cada 30 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "LMB_buscar_inst_01",
+      "name": "Buscar instancias",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3333/bot/instances",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "LMB_split_inst_01",
+      "name": "Split instancias",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "D96cIyu-CjR0XIF4",
+      "name": "Buscar agendamentos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3333/bot/appointments-tomorrow",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "instance",
+              "value": "={{ $('Split instancias').item.json.wa_instance_name }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "_q1P1OEUUf9Fuxr3",
+      "name": "Tem lembretes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "uLLDEia1z5we9Wip",
+      "name": "Para cada agendamento",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1340,
+        180
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": "={{ $prevNode.name === 'Tem lembretes?' }}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "http://127.0.0.1:3333/bot/reminders/claim",
+        "jsonBody": "={{ JSON.stringify({ appointmentId: $json.id, instance: $('Split instancias').item.json.wa_instance_name }) }}"
+      },
+      "name": "Reservar envio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "p1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.claimed === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Reservou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        180
+      ],
+      "id": "p2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const appt = $('Para cada agendamento').item.json;\nconst waInst = $('Split instancias').item.json.wa_instance_name;\nconst attemptId = $json.attemptId;\nconst firstName = (appt.client_name || '').split(' ')[0];\nconst dt = new Date(appt.starts_at);\nconst timeBRT = dt.toLocaleTimeString('pt-BR', {\n  hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'\n});\nreturn {\n  json: {\n    phone: appt.client_phone,\n    appointmentId: appt.id,\n    attemptId,\n    wa_instance_name: waInst,\n    text: `Oi, ${firstName}! 💅 Passando para lembrar que você tem um horário amanhã às ${timeBRT}. Te esperamos! 😊`\n  }\n};",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Montar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        100
+      ],
+      "id": "p3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 20000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ 'https://nailflow-evolution.duckdns.org/message/sendText/' + $json.wa_instance_name }}",
+        "jsonBody": "={{ JSON.stringify({ number: $json.phone, text: $json.text }) }}"
+      },
+      "name": "Enviar via Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SEzSTK4yU9MsfW08",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "p4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ 'http://127.0.0.1:3333/bot/reminders/' + $('Montar mensagem').item.json.attemptId + '/result' }}",
+        "jsonBody": "={{ JSON.stringify({ status: 'sent', instance: $('Montar mensagem').item.json.wa_instance_name }) }}"
+      },
+      "name": "Informar enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2440,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "id": "p5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Falha DEFINITIVA = a Evolution respondeu com erro HTTP, ou a conexão nem foi aberta (a mensagem certamente não saiu): pode tentar de novo.\n// Qualquer outra (timeout, conexão derrubada no meio) é AMBÍGUA: a mensagem pode ter sido entregue. Não se informa falha: a reserva vence e o caso vai para revisão (nunca duplica).\nconst m = $('Montar mensagem').item.json;\nconst e = $json.error || {};\n// formato real do erro no n8n 2.38 (AxiosError): { message, name, code, status } — 'status' só existe quando houve resposta HTTP; timeout = code ECONNABORTED\nconst raw = e.status || e.httpCode || (e.response && e.response.status) || 0;\nconst http = raw ? String(raw).replace(/[^0-9]/g, '').slice(0, 3) : '';\nconst code = String(e.code || (e.cause && e.cause.code) || '');\nconst definitive = Boolean(http) || ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'].includes(code);\nreturn { json: { attemptId: m.attemptId, wa_instance_name: m.wa_instance_name, definitive, errorCode: http ? 'evolution_http_' + http : (definitive ? 'evolution_sem_conexao' : 'evolution_ambiguo') } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Montar falha",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        200
+      ],
+      "id": "p6"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.definitive === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Falha definitiva?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        200
+      ],
+      "id": "p7"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ 'http://127.0.0.1:3333/bot/reminders/' + $json.attemptId + '/result' }}",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', errorCode: $json.errorCode, instance: $json.wa_instance_name }) }}"
+      },
+      "name": "Informar falha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2660,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8RJOyTTr3LmcLfZF",
+          "name": "Header Auth account 2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "id": "p8"
+    }
+  ],
+  "connections": {
+    "A cada 30 minutos": {
+      "main": [
+        [
+          {
+            "node": "Buscar instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar instancias": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split instancias": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar agendamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar agendamentos": {
+      "main": [
+        [
+          {
+            "node": "Tem lembretes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem lembretes?": {
+      "main": [
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Para cada agendamento": {
+      "main": [
+        [
+          {
+            "node": "Split instancias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reservar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar envio": {
+      "main": [
+        [
+          {
+            "node": "Reservou?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservou?": {
+      "main": [
+        [
+          {
+            "node": "Montar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar mensagem": {
+      "main": [
+        [
+          {
+            "node": "Enviar via Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar via Evolution": {
+      "main": [
+        [
+          {
+            "node": "Informar enviado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Informar enviado": {
+      "main": [
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar falha": {
+      "main": [
+        [
+          {
+            "node": "Falha definitiva?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Falha definitiva?": {
+      "main": [
+        [
+          {
+            "node": "Informar falha",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Informar falha": {
+      "main": [
+        [
+          {
+            "node": "Para cada agendamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "meta": {
+    "proposta": true,
+    "observacao": "NÃO importar no n8n de produção sem autorização. Depende da migration 032 e das rotas /bot/reminders/* publicadas."
+  }
+}

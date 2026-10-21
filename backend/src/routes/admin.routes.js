@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { issuePasswordReset } from '../controllers/accountController.js';
 import rateLimit from 'express-rate-limit';
 import {
   listProfessionals, blockProfessional, unblockProfessional, updateProfessional,
@@ -30,6 +31,7 @@ router.get('/audit-log', listAuditLog);
 router.get('/professionals', listProfessionals);
 router.get('/professionals/:id/delete-preview', getDeleteProfessionalPreview);
 router.put('/professionals/:id', updateProfessional);
+router.post('/professionals/:id/password-reset', issuePasswordReset);
 router.post('/professionals/:id/block', blockProfessional);
 router.post('/professionals/:id/unblock', unblockProfessional);
 router.delete('/professionals/:id', deleteProfessional);

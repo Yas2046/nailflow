@@ -276,7 +276,9 @@ Autenticação: `Authorization: Bearer <BOT_API_KEY>` + nome da instância em `i
 | GET | `/bot/abandoned-conversations` | BOT_KEY + instance | Listar conversas abandonadas (cron) |
 | POST | `/bot/mark-abandonment-notified` | BOT_KEY + instance | Marcar abandono como notificado |
 | GET | `/bot/appointments-tomorrow` | BOT_KEY + instance | Agendamentos de amanhã para lembrete |
-| POST | `/bot/mark-reminder-sent` | BOT_KEY + instance | Marcar lembrete como enviado |
+| POST | `/bot/mark-reminder-sent` | BOT_KEY + instance | Marcar lembrete como enviado (fluxo antigo; o seguro é o par abaixo) |
+| POST | `/bot/reminders/claim` | BOT_KEY + instance | Reservar o envio de um lembrete (`{appointmentId}`): 201 `claimed:true` ou 409 com `reason` (`in_progress`, `already_sent`, `needs_review`, `max_attempts`, `not_confirmed`, `contact_opt_out`). Só envie se `claimed:true` (migration 032) |
+| POST | `/bot/reminders/:attemptId/result` | BOT_KEY + instance | Informar o resultado da reserva: `{status:"sent"}` ou `{status:"failed", errorCode:"codigo_curto"}`; idempotente (migration 032) |
 
 ### Como o backend resolve o `professionalId`
 

@@ -18,6 +18,8 @@ export interface Appointment {
   expiresAt?: string | null;
   depositCents?: number | null;
   paidAt?: string | null;
+  /** Chegada registrada (check-in). Com status confirmado significa "em atendimento"; não é um status novo. */
+  checkedInAt?: string | null;
 }
 
 export interface RecurringResult {
@@ -44,6 +46,8 @@ export interface Service {
   durationMinutes: number;
   active: boolean;
   availableOnWhatsapp: boolean;
+  /** Dias até a cliente costumar voltar para este serviço (vazio = padrão do sistema). */
+  returnIntervalDays?: number | null;
 }
 
 // Retornado cru pelo backend (colunas em snake_case da tabela weekly_availability).

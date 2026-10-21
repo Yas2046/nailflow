@@ -122,6 +122,10 @@ export default function Login() {
             </Link>
           </p>
 
+          <p className="mt-3 text-center text-xs text-ink/55">
+            Esqueceu a senha? Peça à administração do NailFlow um link para criar uma nova.
+          </p>
+
           <p className="mt-6 text-center text-xs text-ink/30">
             NailFlow · Agenda para profissionais de beleza
           </p>

@@ -131,6 +131,32 @@
 html {
   color-scheme: light;
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tokens de forma e elevação (a paleta continua nas variáveis de cor acima). */
+:root {
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --shadow-card: 0 1px 2px rgb(var(--wine-800) / 0.04), 0 4px 16px -6px rgb(var(--wine-800) / 0.08);
+  --shadow-float: 0 12px 40px -12px rgb(var(--wine-800) / 0.35);
+  --touch: 2.75rem;
+}
+
+/* Foco visível para quem navega pelo teclado (campos já têm anel próprio). */
+:where(a, button, summary, [role='button'], [role='switch'], [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--wine-500));
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+/* Fundo dos diálogos: leve desfoque, mantém o contexto visível. */
+[role='dialog'].fixed { backdrop-filter: blur(2px); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
 ::selection {
@@ -147,7 +173,7 @@ html {
 
 @layer components {
   .input {
-    @apply w-full rounded-lg border border-wine-200/70 px-3 py-2.5 bg-white text-sm text-ink
+    @apply w-full rounded-xl border border-wine-200/70 px-3.5 py-2.5 min-h-[2.75rem] bg-white text-base sm:text-sm text-ink
            placeholder:text-ink/30
            transition-[border-color,box-shadow] duration-150
            focus:outline-none focus:border-wine-500 focus:ring-2 focus:ring-wine-500/15;
@@ -155,7 +181,7 @@ html {
 
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2
-           px-4 py-2 rounded-lg bg-wine-600 text-white text-sm font-medium
+           px-4 py-2 min-h-[2.75rem] sm:min-h-[2.5rem] rounded-xl bg-wine-600 text-white text-sm font-medium
            shadow-sm hover:bg-wine-700 hover:shadow-md
            active:scale-[0.98] transition-all duration-150
            focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-500/40 focus-visible:ring-offset-1
@@ -164,7 +190,7 @@ html {
 
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2
-           px-4 py-2 rounded-lg border border-wine-200 text-ink/70 bg-white text-sm font-medium
+           px-4 py-2 min-h-[2.75rem] sm:min-h-[2.5rem] rounded-xl border border-wine-200 text-ink/70 bg-white text-sm font-medium
            hover:bg-wine-50 hover:border-wine-300
            active:scale-[0.98] transition-all duration-150
            focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/40 focus-visible:ring-offset-1
@@ -173,7 +199,7 @@ html {
 
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2
-           px-3 py-1.5 rounded-lg text-ink/60 text-sm font-medium
+           px-3 py-1.5 min-h-[2.5rem] rounded-xl text-ink/60 text-sm font-medium
            hover:bg-wine-50 hover:text-ink/80
            active:scale-[0.98] transition-all duration-150
            focus:outline-none focus-visible:ring-2 focus-visible:ring-wine-400/40 focus-visible:ring-offset-1;
@@ -181,6 +207,33 @@ html {
 
   .page-header {
     @apply mb-8 pb-6 border-b border-wine-100/60;
+  }
+
+  /* Peças compartilhadas do redesign */
+  .card {
+    @apply bg-white border border-wine-100/70 rounded-2xl;
+    box-shadow: var(--shadow-card);
+  }
+  .section-title {
+    @apply flex items-center gap-3 font-display text-lg sm:text-xl text-wine-700;
+  }
+  .section-title::before {
+    content: '';
+    @apply w-0.5 h-4 rounded-full bg-gold-500 shrink-0;
+  }
+  .stat-label { @apply text-[10px] uppercase tracking-widest font-medium text-ink/40; }
+  .stat-value { @apply font-display text-2xl text-wine-700 tabular-nums leading-none; }
+  .empty-state {
+    @apply flex flex-col items-center text-center gap-2 px-6 py-10 text-sm text-ink/50
+           bg-white/70 border border-dashed border-wine-200 rounded-2xl;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[2.75rem] sm:min-h-[2.5rem] rounded-xl
+           border border-rose-200 bg-white text-rose-700 text-sm font-medium hover:bg-rose-50
+           active:scale-[0.98] transition-all duration-150 disabled:opacity-55 disabled:pointer-events-none;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-wine-50 text-wine-700 border border-wine-100;
   }
 }
 
@@ -259,4 +312,18 @@ select.input {
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/* "terça-feira, 20 de outubro" -> só a primeira letra maiúscula (capitalize deixaria "De"/"Feira" em maiúsculas). */
+.sentence-case::first-letter { text-transform: uppercase; }
+
+/* Contraste (WCAG AA, 4.5:1 sobre creme/branco): os tons de texto secundário muito claros (ink/35..65) sobem para o mínimo legível,
+   mantendo a hierarquia entre eles. Ícones, bordas e placeholders (ink/20..30) ficam como estão. */
+.text-ink\/35, .text-ink\/40, .text-ink\/45 { color: rgb(var(--ink) / 0.78); }
+.text-ink\/50, .text-ink\/55 { color: rgb(var(--ink) / 0.8); }
+.text-ink\/60, .text-ink\/65 { color: rgb(var(--ink) / 0.83); }
+
+/* Toque no celular: botões do conteúdo e dos diálogos com pelo menos 40 px de altura (a largura segue o conteúdo). */
+@media (max-width: 767px) {
+  main button, [role="dialog"] button { min-height: 40px; }
 }

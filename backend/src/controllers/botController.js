@@ -1301,7 +1301,8 @@ Digite o número da data.`,
 export async function getProfessionalInstances(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT wa_instance_name FROM professionals WHERE wa_instance_name IS NOT NULL ORDER BY created_at ASC'
+      // Profissional bloqueada fica fora da lista dos crons: o requireBotAuth responde 403 a ela e, sem este filtro, derrubava o ciclo das seguintes.
+      'SELECT wa_instance_name FROM professionals WHERE wa_instance_name IS NOT NULL AND blocked_at IS NULL ORDER BY created_at ASC'
     );
     res.json(rows);
   } catch (err) {
@@ -1529,6 +1530,8 @@ export async function getAppointmentsTomorrow(req, res, next) {
        WHERE a.professional_id = $1
          AND a.status = 'confirmado'
          AND a.reminder_sent = false
+         -- cliente que pediu para não receber mensagens não recebe lembrete (to_jsonb: tolera banco sem a coluna da migration 031)
+         AND COALESCE((to_jsonb(c) ->> 'contact_opt_out')::boolean, false) = false
          AND a.starts_at >= now() + interval '23 hours 30 minutes'
          AND a.starts_at <  now() + interval '24 hours 30 minutes'
        ORDER BY a.starts_at ASC`,
@@ -1552,5 +1555,109 @@ export async function markReminderSent(req, res, next) {
     res.json({ ok: true });
   } catch (err) {
     next(err);
+  }
+}
+
+// ---------- Lembretes: reserva atômica (claim) e registro de resultado (migration 032) ----------
+// Fluxo seguro para o remetente (n8n): listar (/appointments-tomorrow) -> POST /bot/reminders/claim -> enviar SÓ se claimed:true
+// -> POST /bot/reminders/:attemptId/result {status:'sent'|'failed'}. Quem não reserva não envia. Nada aqui envia mensagem.
+// Reserva vencida sem resultado = resultado DESCONHECIDO (o envio pode ter ocorrido): não é reenviada sozinha (evita duplicar).
+const REMINDER_LEASE_MINUTES = 15;
+const REMINDER_MAX_FAILED = 3;
+const REMINDER_ERROR_CODE_RE = /^[a-z0-9_]{1,40}$/;
+
+// POST /bot/reminders/claim { appointmentId }
+export async function claimReminder(req, res, next) {
+  const appointmentId = String(req.body?.appointmentId ?? '');
+  if (!UUID_RE.test(appointmentId)) return res.status(400).json({ error: 'appointmentId inválido.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // FOR UPDATE serializa reservas concorrentes do mesmo agendamento; o índice único parcial é a segunda barreira.
+    const { rows: [a] } = await client.query(
+      `SELECT a.id, a.starts_at, a.status, a.reminder_sent,
+              COALESCE((to_jsonb(c) ->> 'contact_opt_out')::boolean, false) AS opt_out
+         FROM appointments a JOIN clients c ON c.id = a.client_id
+        WHERE a.id = $1 AND a.professional_id = $2
+        FOR UPDATE OF a`,
+      [appointmentId, req.professionalId]
+    );
+    if (!a) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Agendamento não encontrado.' }); }
+    const refuse = async (reason) => { await client.query('COMMIT'); return res.status(409).json({ claimed: false, reason }); };
+
+    if (a.status !== 'confirmado') return refuse('not_confirmed');
+    if (a.opt_out) return refuse('contact_opt_out');
+    if (a.reminder_sent) return refuse('already_sent');
+
+    await client.query(
+      `UPDATE reminder_attempts SET status = 'expired', finished_at = now()
+        WHERE appointment_id = $1 AND starts_at = $2 AND status = 'claimed' AND lease_expires_at < now()`,
+      [a.id, a.starts_at]
+    );
+    const { rows: prev } = await client.query(
+      'SELECT status FROM reminder_attempts WHERE appointment_id = $1 AND starts_at = $2', [a.id, a.starts_at]);
+    if (prev.some((p) => p.status === 'sent')) return refuse('already_sent');
+    if (prev.some((p) => p.status === 'claimed')) return refuse('in_progress');
+    if (prev.some((p) => p.status === 'expired')) return refuse('needs_review');
+    if (prev.filter((p) => p.status === 'failed').length >= REMINDER_MAX_FAILED) return refuse('max_attempts');
+
+    const { rows: [att] } = await client.query(
+      `INSERT INTO reminder_attempts (professional_id, appointment_id, starts_at, attempt_no, status, lease_expires_at)
+       VALUES ($1, $2, $3, $4, 'claimed', now() + make_interval(mins => $5))
+       RETURNING id, attempt_no, lease_expires_at`,
+      [req.professionalId, a.id, a.starts_at, prev.length + 1, REMINDER_LEASE_MINUTES]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ claimed: true, attemptId: att.id, attemptNo: att.attempt_no, leaseExpiresAt: att.lease_expires_at });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err?.code === '23505') return res.status(409).json({ claimed: false, reason: 'in_progress' }); // corrida pega pelo índice único
+    if (err?.code === '42P01') return next(new HttpError(404, 'Recurso indisponível.'));
+    next(err);
+  } finally {
+    client.release();
+  }
+}
+
+// POST /bot/reminders/:attemptId/result { status: 'sent' | 'failed', errorCode? }
+export async function reportReminderResult(req, res, next) {
+  const { attemptId } = req.params;
+  const status = req.body?.status;
+  if (!UUID_RE.test(attemptId)) return res.status(400).json({ error: 'attemptId inválido.' });
+  if (status !== 'sent' && status !== 'failed') return res.status(400).json({ error: 'status deve ser "sent" ou "failed".' });
+  const errorCode = status === 'failed' ? String(req.body?.errorCode ?? 'unknown') : null;
+  if (errorCode !== null && !REMINDER_ERROR_CODE_RE.test(errorCode)) {
+    return res.status(400).json({ error: 'errorCode deve ser um código curto (a-z, 0-9, _), sem texto livre.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [att] } = await client.query(
+      'SELECT id, appointment_id, starts_at, status FROM reminder_attempts WHERE id = $1 AND professional_id = $2 FOR UPDATE',
+      [attemptId, req.professionalId]
+    );
+    if (!att) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Tentativa não encontrada.' }); }
+    if (att.status === status) { await client.query('ROLLBACK'); return res.json({ ok: true, changed: false }); }
+    if (att.status === 'sent' || att.status === 'failed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Tentativa já encerrada como "${att.status}".` });
+    }
+    await client.query(
+      'UPDATE reminder_attempts SET status = $2, finished_at = now(), error_code = $3 WHERE id = $1', [att.id, status, errorCode]);
+    if (status === 'sent') {
+      // só marca se o agendamento continua no mesmo horário (remarcado no meio do caminho: o horário novo ainda precisa do seu lembrete)
+      await client.query(
+        'UPDATE appointments SET reminder_sent = true, updated_at = now() WHERE id = $1 AND professional_id = $2 AND starts_at = $3',
+        [att.appointment_id, req.professionalId, att.starts_at]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, changed: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err?.code === '42P01') return next(new HttpError(404, 'Recurso indisponível.'));
+    next(err);
+  } finally {
+    client.release();
   }
 }

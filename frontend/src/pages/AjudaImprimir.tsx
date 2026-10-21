@@ -28,7 +28,7 @@ export default function AjudaImprimir() {
         {GUIA_PASSOS.map((p, i) => (
           <section key={p.slug} className={`guia-passo space-y-4 ${i > 1 || i === 1 ? 'guia-passo-novo' : ''}`}>
             <div className="flex items-baseline gap-3 break-after-avoid">
-              <span className="font-display text-3xl text-wine-300 tabular-nums">{String(p.numero).padStart(2, '0')}</span>
+              <span className="font-display text-3xl text-wine-500 tabular-nums">{String(p.numero).padStart(2, '0')}</span>
               <div>
                 <h2 className="font-display text-2xl text-wine-800 leading-tight">{p.titulo}</h2>
                 <p className="text-sm text-ink/55 mt-0.5">{p.resumo}</p>

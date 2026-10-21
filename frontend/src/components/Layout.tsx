@@ -1,13 +1,13 @@
-import { Link, NavLink, Outlet, Navigate } from 'react-router-dom';
+import { Link, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { WhatsAppInstanceConfig, WhatsAppStatus } from '../types';
-import { financeiro } from '../services/financeiro';
 import { useAuth } from '../context/AuthContext';
 import LogoMark from './LogoMark';
 import { SupportProvider, useSupport } from '../context/SupportContext';
 import SupportLauncher from './support/SupportLauncher';
 import { UnreadBadge } from './support/SupportUi';
+import { NAV_ITEMS, isNavActive } from './navConfig';
 
 // ─── ícones de navegação ──────────────────────────────────────────────────────
 
@@ -87,15 +87,19 @@ function IconCoins() {
 
 // ─── dados da navegação (somente links de profissional) ───────────────────────
 
-const links = [
-  { to: '/',              label: 'Início',       shortLabel: 'Início',   end: true,  icon: <IconHome /> },
-  { to: '/agenda',        label: 'Agenda',        shortLabel: 'Agenda',   end: false, icon: <IconCalendar /> },
-  { to: '/clientes',      label: 'Clientes',      shortLabel: 'Clientes', end: false, icon: <IconUsers /> },
-  { to: '/servicos',      label: 'Serviços',      shortLabel: 'Serviços', end: false, icon: <IconScissors /> },
-  { to: '/dashboard',     label: 'Dashboard',     shortLabel: 'Dash',     end: false, icon: <IconChart /> },
-  { to: '/gastos',        label: 'Gastos',        shortLabel: 'Gastos',   end: false, icon: <IconWallet /> },
-  { to: '/configuracoes', label: 'Configurações', shortLabel: 'Config',   end: false, icon: <IconSettings /> },
-];
+// Quatro destinos. `also` lista rotas que pertencem ao destino (ex.: Clientes é aberto pelo card do Início; Serviços e Configurações ficam em Mais).
+const NAV_ICONS: Record<string, JSX.Element> = {
+  '/': <IconHome />, '/agenda': <IconCalendar />, '/financeiro': <IconCoins />, '/mais': <IconMore />,
+};
+const NAV_LINKS = NAV_ITEMS.map((i) => ({ ...i, icon: NAV_ICONS[i.to] }));
+
+function IconMore() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" />
+    </svg>
+  );
+}
 
 // ─── link de ajuda ────────────────────────────────────────────────────────────
 // Só aponta para /suporte quando o bootstrap informa que a Central está ligada; senão segue no guia (/ajuda).
@@ -108,7 +112,7 @@ function HelpLink({ variant }: { variant: 'sidebar' | 'mobile' }) {
       <Link
         to={to}
         aria-label={enabled ? 'Ajuda e suporte' : 'Ajuda: guia rápido'}
-        className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-cream/40 text-cream/90 hover:text-white hover:border-white text-xs font-medium leading-none"
+        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-full border border-cream/40 text-cream/90 hover:text-white hover:border-white text-xs font-medium leading-none"
       >
         Ajuda
         {enabled && <UnreadBadge count={unreadTickets} />}
@@ -118,7 +122,7 @@ function HelpLink({ variant }: { variant: 'sidebar' | 'mobile' }) {
   return (
     <Link
       to={to}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-wine-100/70 hover:bg-white/10 hover:text-white transition-all"
+      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-wine-100/85 hover:bg-white/10 hover:text-white transition-all"
     >
       <span className="shrink-0 opacity-70 w-5 h-5 rounded-full border border-current flex items-center justify-center text-[11px] font-semibold leading-none" aria-hidden="true">?</span>
       {enabled ? 'Ajuda e suporte' : 'Ajuda'}
@@ -132,15 +136,8 @@ function HelpLink({ variant }: { variant: 'sidebar' | 'mobile' }) {
 export default function Layout() {
   const { professional, logout } = useAuth();
   const [waDisconnected, setWaDisconnected] = useState(false);
-  // O Financeiro só aparece quando o servidor o disponibiliza (404 = desligado, 503 = estrutura ausente: segue escondido).
-  const [financeiroOn, setFinanceiroOn] = useState(false);
-  useEffect(() => {
-    if (!professional || professional.isAdmin) return;
-    financeiro.probe().then(() => setFinanceiroOn(true)).catch(() => setFinanceiroOn(false));
-  }, [professional]);
-  const navLinks = financeiroOn
-    ? links.flatMap((l) => (l.to === '/gastos' ? [l, { to: '/financeiro', label: 'Financeiro', shortLabel: 'Finan.', end: false, icon: <IconCoins /> }] : [l]))
-    : links;
+  const { pathname } = useLocation();
+  const navLinks = NAV_LINKS;
 
   useEffect(() => {
     if (!professional) return;
@@ -164,6 +161,9 @@ export default function Layout() {
   return (
     <SupportProvider>
     <div className="min-h-screen flex flex-col md:flex-row">
+      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-white focus:text-wine-800 focus:shadow-lg focus:text-sm focus:font-medium">
+        Pular para o conteúdo
+      </a>
 
       {/* ── sidebar desktop ────────────────────────────────────────────────── */}
       <aside className="hidden md:flex md:w-60 min-h-screen bg-wine-700 flex-col shrink-0">
@@ -180,33 +180,26 @@ export default function Layout() {
         </div>
 
         {/* links */}
-        <nav className="flex-1 px-3 py-5 flex flex-col gap-1">
-          {navLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              end={link.end}
-              className={({ isActive }) =>
-                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-white/12 text-white'
-                    : 'text-wine-100/70 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-gold-400" aria-hidden="true" />
-                  )}
-                  <span className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-70'}`}>
-                    {link.icon}
-                  </span>
-                  {link.label}
-                </>
-              )}
-            </NavLink>
-          ))}
+        <nav aria-label="Navegação principal" className="flex-1 px-3 py-5 flex flex-col gap-1">
+          {navLinks.map((link) => {
+            const isActive = isNavActive(link, pathname);
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex items-center gap-3 px-3 py-3 rounded-xl text-[15px] font-medium transition-all ${
+                  isActive ? 'bg-white/12 text-white' : 'text-wine-100/85 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-gold-400" aria-hidden="true" />
+                )}
+                <span className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-70'}`}>{link.icon}</span>
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* ajuda / guia rápido */}
@@ -229,12 +222,12 @@ export default function Layout() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-white text-xs font-medium truncate leading-tight">{professional.name}</p>
-            <p className="text-wine-100/45 text-[10px] truncate leading-tight">{professional.email}</p>
+            <p className="text-wine-100/75 text-[11px] truncate leading-tight">{professional.email}</p>
           </div>
           <button
             onClick={logout}
-            title="Sair da conta"
-            className="shrink-0 p-1.5 rounded-lg text-wine-100/45 hover:text-white hover:bg-wine-600/50 transition-colors"
+            title="Sair da conta" aria-label="Sair da conta"
+            className="shrink-0 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg text-wine-100/75 hover:text-white hover:bg-wine-600/50 transition-colors"
           >
             <IconLogout />
           </button>
@@ -257,39 +250,32 @@ export default function Layout() {
       </div>
 
       {/* ── conteúdo principal ─────────────────────────────────────────────── */}
-      <main className="flex-1 bg-cream p-4 pb-24 md:p-10 md:pb-10">
+      <main id="conteudo" tabIndex={-1} className="flex-1 min-w-0 outline-none bg-cream p-4 pb-24 md:p-10 md:pb-10">
         <Outlet />
       </main>
 
       {/* ── tab bar mobile (fixo no rodapé) ────────────────────────────────── */}
-      <nav
+      <nav aria-label="Navegação principal"
         className="md:hidden fixed bottom-0 inset-x-0 bg-wine-700 border-t border-wine-600/60 flex z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        {navLinks.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            end={link.end}
-            className={({ isActive }) =>
-              `flex-1 flex flex-col items-center gap-0.5 pt-2 pb-2.5 text-[10px] font-medium transition-colors ${
-                isActive ? 'text-white' : 'text-wine-100/55 hover:text-wine-100'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <span className={`p-1 rounded-lg transition-colors ${isActive ? 'text-white' : ''}`}>
-                  {link.icon}
-                </span>
-                <span className={`transition-all ${isActive ? 'font-semibold text-white' : ''}`}>
-                  {link.shortLabel}
-                </span>
-                {isActive && <span className="w-1 h-1 rounded-full bg-gold-400 -mt-0.5" aria-hidden="true" />}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {navLinks.map((link) => {
+          const isActive = isNavActive(link, pathname);
+          return (
+            <Link
+              key={link.to}
+              to={link.to}
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex-1 min-h-[56px] flex flex-col items-center justify-center gap-0.5 pt-2 pb-2.5 text-xs font-medium transition-colors ${
+                isActive ? 'text-white' : 'text-wine-100/80 hover:text-wine-100'
+              }`}
+            >
+              <span className="p-1 rounded-lg">{link.icon}</span>
+              <span className={isActive ? 'font-semibold' : ''}>{link.label}</span>
+              {isActive && <span className="w-1 h-1 rounded-full bg-gold-400 -mt-0.5" aria-hidden="true" />}
+            </Link>
+          );
+        })}
       </nav>
 
       <SupportLauncher />

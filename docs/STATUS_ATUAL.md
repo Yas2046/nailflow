@@ -1,5 +1,18 @@
 # NailFlow — Status Atual (2026-10-14)
 
+## Estado confirmado em 2026-10-21 (auditoria de produção somente leitura) — prevalece sobre os blocos abaixo
+
+> Os blocos seguintes são histórico. Onde divergem deste, vale este. **O produto NÃO está declarado pronto para lançamento comercial:** a revisão da política de privacidade continua **pendente** (bloqueia o lançamento comercial, não o deploy técnico).
+
+- **Produção:** `main` = `origin/main` = `6c95a12`. Migrations **023–029 aplicadas**; **030, 031 e 032 NÃO aplicadas**.
+- **Central de Suporte: ATIVADA em produção** (`SUPPORT_CENTER_ENABLED=true`, decisão intencional; não desativar nem alterar a flag por causa de outro trabalho). Isto substitui a frase "Central de Suporte: desativada" e "migrations 023 e 024 não aplicadas" do bloco de 2026-10-13/14.
+- **Financeiro: JÁ IMPLANTADO** (migrations 025–029 e `FINANCEIRO_PAGAMENTOS_ENABLED=true`); em 2026-10-21 não havia pagamentos, histórico nem fechamentos gravados.
+- **Proposta ainda NÃO publicada** (somente na branch local `feat/redesign-navegacao`, sem commit, push, merge ou deploy): migrations 030–032 (recuperação de senha, retorno/vitrine, `reminder_attempts`), rotas `/bot/reminders/claim` e `/bot/reminders/:attemptId/result`, correção de `/bot/instances`, redesign de navegação e a proposta de workflow `n8n/workflows/proposta_lembretes_com_claim.json`.
+- **Workflow de lembretes em produção (defeitos conhecidos):** o fluxo vivo ("send then mark") tem risco de duplicidade e falha em 100% dos ciclos desde pelo menos 2026-10-14 por 403 "Profissional bloqueada." (`/bot/instances` listava uma profissional bloqueada). As correções existem **só localmente** (filtro `blocked_at IS NULL`; `onError` em "Buscar agendamentos"; `options.reset` no laço) e **não estão em produção**; detalhes em [`FLUXOS_DO_BOT.md`](./FLUXOS_DO_BOT.md).
+- **Publicação:** nenhuma etapa de produção foi autorizada ainda (backup pré-030, prova de restauração com o dump real, migrations, grants, deploy, troca de workflow).
+
+---
+
 ## Central de Suporte — fechamento de 2026-10-13/14 (nada publicado)
 
 **Estado em 2026-10-13/14 (fechamento do dia)**

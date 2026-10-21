@@ -9,6 +9,8 @@ import {
   markAbandonmentNotified,
   getAppointmentsTomorrow,
   markReminderSent,
+  claimReminder,
+  reportReminderResult,
   getProfessionalInstances,
 } from '../controllers/botController.js';
 
@@ -39,5 +41,8 @@ router.get('/abandoned-conversations', getAbandonedConversations);
 router.post('/mark-abandonment-notified', markAbandonmentNotified);
 router.get('/appointments-tomorrow', getAppointmentsTomorrow);
 router.post('/mark-reminder-sent', markReminderSent);
+// Envio seguro de lembretes: reservar antes de enviar e informar o resultado (evita duplicidade; migration 032)
+router.post('/reminders/claim', claimReminder);
+router.post('/reminders/:attemptId/result', reportReminderResult);
 
 export default router;

@@ -274,7 +274,7 @@ export default function Dashboard() {
       {/* ── Cabeçalho ── */}
       <div>
         <h1 className="font-display text-3xl sm:text-4xl text-wine-800 leading-tight">Dashboard</h1>
-        <p className="text-sm text-ink/40 mt-1.5 capitalize tracking-wide">{getCurrentMonthLabel()}</p>
+        <p className="text-sm text-ink/40 mt-1.5 sentence-case tracking-wide">{getCurrentMonthLabel()}</p>
       </div>
 
       {/* ── 1. RESUMO FINANCEIRO — herói ── */}
@@ -292,7 +292,7 @@ export default function Dashboard() {
             {(faturado / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
           {variacao !== null && (
-            <p className="text-wine-400 text-xs mt-1.5 flex items-center gap-1">
+            <p className="text-wine-300 text-xs mt-1.5 flex items-center gap-1">
               <IconTrending /> vs mês anterior
             </p>
           )}
@@ -301,19 +301,19 @@ export default function Dashboard() {
         {/* Linha divisória + Gastos / Resultado */}
         <div className="border-t border-wine-700/60 grid grid-cols-2 divide-x divide-wine-700/60">
           <div className="px-6 py-4">
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">{recebidoBase ? 'Despesas pagas' : 'Gastos'}</p>
+            <p className="text-wine-300 text-[10px] uppercase tracking-widest font-semibold mb-1.5">{recebidoBase ? 'Despesas pagas' : 'Gastos'}</p>
             <p className="font-display text-2xl tabular-nums leading-none text-wine-200">
               {gastosCents > 0 ? formatMoney(gastosCents) : '—'}
             </p>
           </div>
           <div className="px-6 py-4">
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold mb-1.5">Resultado</p>
+            <p className="text-wine-300 text-[10px] uppercase tracking-widest font-semibold mb-1.5">Resultado</p>
             {gastosCents > 0 ? (
               <p className={`font-display text-2xl tabular-nums leading-none ${resultadoPos ? 'text-emerald-300' : 'text-rose-300'}`}>
                 {formatMoney(resultado)}
               </p>
             ) : (
-              <p className="font-display text-2xl tabular-nums leading-none text-wine-400 text-sm font-sans font-normal">
+              <p className="font-display text-2xl tabular-nums leading-none text-wine-300 text-sm font-sans font-normal">
                 {recebidoBase ? 'sem despesas pagas' : 'sem gastos lançados'}
               </p>
             )}
@@ -323,15 +323,15 @@ export default function Dashboard() {
         {/* Rodapé: Ticket médio · Previsto · Perdido */}
         <div className="border-t border-wine-700/60 px-6 py-4 flex flex-wrap gap-x-6 gap-y-2">
           <div>
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">{recebidoBase ? 'A receber' : 'Ticket médio'}</p>
+            <p className="text-wine-300 text-[10px] uppercase tracking-widest font-semibold">{recebidoBase ? 'A receber' : 'Ticket médio'}</p>
             <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(recebidoBase ? (mes.aReceberCents ?? 0) : ticketMedio)}</p>
           </div>
           <div>
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Previsto</p>
+            <p className="text-wine-300 text-[10px] uppercase tracking-widest font-semibold">Previsto</p>
             <p className="font-display text-xl tabular-nums text-cream mt-0.5">{formatMoney(mes.faturamentoPrevistoCents)}</p>
           </div>
           <div>
-            <p className="text-wine-400 text-[10px] uppercase tracking-widest font-semibold">Perdido</p>
+            <p className="text-wine-300 text-[10px] uppercase tracking-widest font-semibold">Perdido</p>
             <p className="font-display text-xl tabular-nums text-rose-300 mt-0.5">{formatMoney(mes.faturamentoPerdidoCents)}</p>
           </div>
         </div>
@@ -364,9 +364,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-4 gap-2">
             {[
               { label: 'Total',       value: totalAtend,                    note: undefined,                              dim: false },
-              { label: 'Concluídos', value: mes.agendamentosConcluidos,     note: `${pct(mes.agendamentosConcluidos, totalAtend)}%`, color: 'text-green-600' },
-              { label: 'Cancelados', value: mes.agendamentosCancelados,     note: `${pct(mes.agendamentosCancelados, totalAtend)}%`, color: 'text-rose-500' },
-              { label: 'No-show',    value: mes.agendamentosNaoCompareceu, note: `${pct(mes.agendamentosNaoCompareceu, totalAtend)}%`, color: 'text-amber-600' },
+              { label: 'Concluídos', value: mes.agendamentosConcluidos,     note: `${pct(mes.agendamentosConcluidos, totalAtend)}%`, color: 'text-green-700' },
+              { label: 'Cancelados', value: mes.agendamentosCancelados,     note: `${pct(mes.agendamentosCancelados, totalAtend)}%`, color: 'text-rose-600' },
+              { label: 'No-show',    value: mes.agendamentosNaoCompareceu, note: `${pct(mes.agendamentosNaoCompareceu, totalAtend)}%`, color: 'text-amber-700' },
             ].map((s) => (
               <div key={s.label} className="flex flex-col gap-0.5">
                 <p className="text-[10px] text-ink/40 leading-none">{s.label}</p>

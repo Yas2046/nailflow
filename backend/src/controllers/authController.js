@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { pool } from '../config/db.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { normalizeInstagram } from '../utils/instagram.js';
 
 // Emite o JWT da sessão e o grava no cookie httpOnly. Usado no login e quando a
 // versão do token muda (troca de senha / sair de todos) para manter a sessão atual.
@@ -19,7 +20,8 @@ function setAuthCookie(res, professionalId, tokenVersion) {
 }
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  // Maiúsculas/minúsculas e espaços nas pontas não devem impedir o login (o cadastro grava o e-mail em minúsculas).
+  email: z.string().trim().email(),
   password: z.string().min(6),
 });
 
@@ -28,7 +30,7 @@ export async function login(req, res, next) {
     const { email, password } = loginSchema.parse(req.body);
 
     const { rows } = await pool.query(
-      'SELECT id, name, email, password_hash, business_name, is_admin, blocked_at, token_version FROM professionals WHERE email = $1',
+      'SELECT id, name, email, password_hash, business_name, is_admin, blocked_at, token_version FROM professionals WHERE lower(email) = lower($1)',
       [email]
     );
     const professional = rows[0];
@@ -123,12 +125,10 @@ export async function logoutAll(req, res, next) {
 
 export async function me(req, res, next) {
   try {
-    const { rows } = await pool.query(
-      'SELECT id, name, email, business_name, phone_whatsapp, avatar_b64, is_admin, slug, bio, public_theme FROM professionals WHERE id = $1',
-      [req.professionalId]
-    );
+    // SELECT * e escolha dos campos em JS: continua funcionando mesmo antes de a migration 031 (instagram) ser aplicada.
+    const { rows } = await pool.query('SELECT * FROM professionals WHERE id = $1', [req.professionalId]);
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
-    res.json(rows[0]);
+    res.json(publicProfile(rows[0], true));
   } catch (err) {
     next(err);
   }
@@ -141,6 +141,15 @@ export const MAX_AVATAR_B64_BYTES = 90_000;
 export const AVATAR_DATA_URL_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
 export const PUBLIC_THEMES = ['vinho', 'verde', 'azul'];
 export const MAX_BIO_LENGTH = 280;
+
+// Campos da conta devolvidos ao próprio usuário (nunca password_hash, token_version ou chaves).
+function publicProfile(r, withAdmin = false) {
+  return {
+    id: r.id, name: r.name, email: r.email, business_name: r.business_name, phone_whatsapp: r.phone_whatsapp,
+    avatar_b64: r.avatar_b64, ...(withAdmin ? { is_admin: r.is_admin } : {}), slug: r.slug, bio: r.bio, public_theme: r.public_theme,
+    instagram: r.instagram ?? null,
+  };
+}
 
 export const updateMeSchema = z.object({
   name:            z.string().min(1, 'Nome obrigatório').max(100),
@@ -155,11 +164,12 @@ export const updateMeSchema = z.object({
                    ]).optional(),
   bio:             z.union([z.string().trim().max(MAX_BIO_LENGTH, `A apresentação deve ter no máximo ${MAX_BIO_LENGTH} caracteres.`), z.null()]).optional(),
   public_theme:    z.enum(PUBLIC_THEMES, { errorMap: () => ({ message: 'Cor da página inválida.' }) }).optional(),
+  instagram:       z.union([z.string().max(200), z.null()]).optional(),
 });
 
 const IDENTITY_KEYS = ['name', 'business_name', 'phone_whatsapp', 'email'];
-const OPTIONAL_KEYS = ['avatar_b64', 'bio', 'public_theme'];
-const optionalOnlySchema = updateMeSchema.pick({ avatar_b64: true, bio: true, public_theme: true });
+const OPTIONAL_KEYS = ['avatar_b64', 'bio', 'public_theme', 'instagram'];
+const optionalOnlySchema = updateMeSchema.pick({ avatar_b64: true, bio: true, public_theme: true, instagram: true });
 
 export async function updateMe(req, res, next) {
   try {
@@ -173,7 +183,7 @@ export async function updateMe(req, res, next) {
     if (!touchesIdentity && !OPTIONAL_KEYS.some(has)) {
       throw new HttpError(400, 'Nenhum campo para atualizar.');
     }
-    const { name, business_name, phone_whatsapp, email, avatar_b64, bio, public_theme } =
+    const { name, business_name, phone_whatsapp, email, avatar_b64, bio, public_theme, instagram } =
       touchesIdentity ? updateMeSchema.parse(body) : optionalOnlySchema.parse(body);
 
     const sets = [];
@@ -195,16 +205,21 @@ export async function updateMe(req, res, next) {
     if (has('avatar_b64')) addOptional('avatar_b64', avatar_b64 ?? null);
     if (has('bio')) addOptional('bio', bio ? bio : null);
     if (has('public_theme') && public_theme) addOptional('public_theme', public_theme);
+    if (has('instagram')) {
+      const ig = normalizeInstagram(instagram);
+      if (!ig.ok) throw new HttpError(400, 'Usuário do Instagram inválido. Use só o nome de usuário (ex.: studio.aline).');
+      addOptional('instagram', ig.value);
+    }
     values.push(req.professionalId);
 
     const { rows } = await pool.query(
       `UPDATE professionals SET ${sets.join(', ')} WHERE id = $${values.length}
-       RETURNING id, name, email, business_name, phone_whatsapp, avatar_b64, slug, bio, public_theme`,
+       RETURNING *`,
       values
     );
 
     if (!rows[0]) throw new HttpError(404, 'Profissional não encontrada.');
-    res.json(rows[0]);
+    res.json(publicProfile(rows[0]));
   } catch (err) {
     if (err instanceof z.ZodError)
       return next(new HttpError(400, err.errors[0]?.message ?? 'Dados inválidos.'));

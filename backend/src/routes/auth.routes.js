@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { login, logout, logoutAll, changePassword, me, updateMe, register, getBookingSettings, updateBookingSettings } from '../controllers/authController.js';
+import { resetPassword, exportMyData } from '../controllers/accountController.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const loginRateLimit = rateLimit({
@@ -52,11 +53,36 @@ const logoutAllRateLimit = rateLimit({
   },
 });
 
+// Redefinição por link: por IP (falhas e acertos), pois a rota é pública.
+const resetRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
+  },
+});
+
+// Exportação dos próprios dados: pesada, por conta.
+const exportRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => 'exp:' + req.professionalId,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Muitas exportações seguidas. Tente novamente em 1 hora.' });
+  },
+});
+
 const router = Router();
 
 router.post('/login', loginRateLimit, login);
 router.post('/logout', logout);
 router.post('/register', registerRateLimit, register);
+router.post('/reset-password', resetRateLimit, resetPassword);
+router.get('/export', requireAuth, exportRateLimit, exportMyData);
 router.get('/me', requireAuth, me);
 router.put('/me', requireAuth, updateMe);
 router.put('/password', requireAuth, passwordRateLimit, changePassword);

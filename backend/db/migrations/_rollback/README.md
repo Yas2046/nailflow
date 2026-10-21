@@ -10,6 +10,9 @@ pasta `_historico/`: subpasta com prefixo `_` + este README; arquivos `NNN_nome.
 
 | Arquivo | Desfaz | Destrutivo? |
 |---|---|---|
+| `032_reminder_attempts.down.sql` | remove `reminder_attempts` | Apaga só o registro de tentativas de lembrete. Reverta o código antes (as rotas `/bot/reminders/*` dependem da tabela). |
+| `031_retorno_vitrine.down.sql` | remove `portfolio_photos` e as colunas `return_interval_days`, `contact_opt_out`, `return_snoozed_until` e `instagram` | **Sim, sem aviso:** apaga as fotos da vitrine e as preferências de contato/intervalos gravados. Faça `pg_dump` antes. |
+| `030_password_reset_tokens.down.sql` | remove `password_reset_tokens` | Apaga só links de redefinição (de uso único e curta duração). |
 | `027_financeiro_limites_banco.down.sql` | remove os dois gatilhos da 027 (teto de recebimento e piso do valor) e suas funções | Não toca em dados nem na 025/026; idempotente. O rollback da 025 também os remove (dependem das colunas dela) |
 | `028_financeiro_despesas.down.sql` | remove `expense_payments`, seus gatilhos/funções, a UNIQUE de `expenses` e devolve as listas de `financial_audit_log` às da 025 | **Aborta** se existir pagamento de despesa ou histórico de pagamento de despesa (append-only); sem uso, idempotente. Deve ser aplicado **antes** do rollback da 025, que aborta com a 028 aplicada |
 | `029_financeiro_fechamento_caixa.down.sql` | remove `cash_closing_entries`, o gatilho/função e a UNIQUE de `cash_closings`; restaura `fin_day_is_closed` ao corpo da 025 | **Aborta** se existir lançamento de fechamento por método (append-only). Deve ser aplicado **antes** dos rollbacks da 028 e da 025, que abortam com a 029 aplicada |

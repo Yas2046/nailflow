@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ModalA11y from './ModalA11y';
 import { api } from '../services/api';
 
 interface Props {
@@ -55,15 +56,16 @@ export default function BlockTimeModal({ date, time, onClose, onSaved }: Props) 
 
   return (
     <div
-      className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
+      role="dialog" aria-modal="true" aria-label="Bloquear horário" className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      <ModalA11y onClose={onClose} />
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
         {/* cabeçalho */}
         <div className="flex items-start justify-between p-6 pb-4 border-b border-wine-50">
           <div>
             <h3 className="font-display text-xl text-wine-700">Bloquear horário</h3>
-            <p className="text-sm text-ink/50 mt-0.5 capitalize">{dateLabel} às {time}</p>
+            <p className="text-sm text-ink/50 mt-0.5 sentence-case">{dateLabel} às {time}</p>
           </div>
           <button
             onClick={onClose}

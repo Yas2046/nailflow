@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import ModalA11y from '../components/ModalA11y';
+import LoadError from '../components/LoadError';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { formatPhone } from '../utils/format';
@@ -41,8 +44,8 @@ const PREDEFINED_TAGS = ['VIP', 'Fidelidade', 'Indicação', 'Primeira vez', 'Al
 
 const AVATAR_COLORS = [
   'bg-wine-500/20 text-wine-700',
-  'bg-gold-500/20 text-gold-500',
-  'bg-sage-500/20 text-sage-500',
+  'bg-gold-500/20 text-gold-700',
+  'bg-sage-500/20 text-sage-700',
   'bg-wine-700/15 text-wine-700',
 ];
 
@@ -222,10 +225,24 @@ export default function Clientes() {
   const [editSaving, setEditSaving]     = useState(false);
   const [editError, setEditError]       = useState<string | null>(null);
 
+  const [loadError, setLoadError] = useState(false);
   function reload() {
-    api.get<Client[]>('/clients').then(setClients).catch(() => setClients([]));
+    setLoadError(false);
+    api.get<Client[]>('/clients').then(setClients).catch(() => { setClients([]); setLoadError(true); });
   }
   useEffect(reload, []);
+
+  // A ficha (/clientes/:id) reabre aqui o painel de edição de dados e etiquetas: /clientes?editar=<id>
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editarId = searchParams.get('editar');
+  useEffect(() => {
+    if (!editarId || !clients) return;
+    const alvo = clients.find((c) => c.id === editarId);
+    setSearchParams({}, { replace: true });
+    if (alvo) openHistory(alvo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editarId, clients]);
 
   function closeModal() {
     setSelected(null);
@@ -444,9 +461,12 @@ export default function Clientes() {
             </p>
           )}
         </div>
-        <button onClick={openNew} className="btn-primary">
-          + Nova cliente
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => navigate('/clientes/importar')} className="btn-secondary">Importar planilha</button>
+          <button onClick={openNew} className="btn-primary">
+            + Nova cliente
+          </button>
+        </div>
       </div>
 
       {/* busca */}
@@ -456,7 +476,7 @@ export default function Clientes() {
         </span>
         <input
           className="input pl-10"
-          placeholder="Buscar por nome ou telefone…"
+          aria-label="Buscar cliente por nome ou telefone" placeholder="Buscar por nome ou telefone…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -526,6 +546,8 @@ export default function Clientes() {
       {/* lista */}
       {clients === null ? (
         <LoadingSkeleton />
+      ) : loadError ? (
+        <LoadError message="Não foi possível carregar as clientes. Seus cadastros não foram apagados: tente de novo." onRetry={reload} />
       ) : filtered.length === 0 ? (
         <div className="bg-white border border-wine-100 rounded-2xl p-10 flex flex-col items-center gap-4 text-center">
           <div className="w-12 h-12 rounded-full bg-wine-50 flex items-center justify-center text-wine-200">
@@ -557,7 +579,7 @@ export default function Clientes() {
               return (
                 <li key={c.id}>
                   <button
-                    onClick={() => openHistory(c)}
+                    onClick={() => navigate(`/clientes/${c.id}`)}
                     className="w-full text-left flex items-center gap-4 px-5 py-4 hover:bg-wine-50/50 transition-colors"
                   >
                     <Avatar name={c.name} />
@@ -581,7 +603,7 @@ export default function Clientes() {
                       {c.ultimoAtendimento ? (
                         <p className="text-xs text-ink/40">Último: {relativeDate(c.ultimoAtendimento)}</p>
                       ) : (
-                        <p className="text-xs text-ink/30">Sem atendimentos</p>
+                        <p className="text-xs text-ink/45">Sem atendimentos</p>
                       )}
                     </div>
                   </button>
@@ -605,9 +627,10 @@ export default function Clientes() {
       {/* ── ficha da cliente ────────────────────────────────────────────── */}
       {selected && !showBooking && (
         <div
-          className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
+          role="dialog" aria-modal="true" aria-label="Ficha da cliente" className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-50"
           onClick={editing ? cancelEditing : closeModal}
         >
+          <ModalA11y onClose={closeModal} />
           <div
             className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}

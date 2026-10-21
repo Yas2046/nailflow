@@ -9,6 +9,7 @@ import type { WhatsAppStatus, WhatsAppConnect, WhatsAppInstanceConfig, WhatsAppC
 import Perfil from './Perfil';
 import Disponibilidade from './Disponibilidade';
 import BookingSettingsPanel from '../components/BookingSettingsPanel';
+import PrivacidadePanel from '../components/PrivacidadePanel';
 
 
 const QR_TTL_MS = 55_000;
@@ -336,7 +337,7 @@ function PainelWhatsApp() {
 
       {/* ── COM INSTÂNCIA CONFIGURADA ── */}
       {instanceConfig?.configured && (
-        <div className="bg-white border border-wine-100/80 rounded-2xl shadow-sm overflow-hidden">
+        <div className="card overflow-hidden">
 
           {/* Cabeçalho da instância */}
           <div className="px-6 py-4 border-b border-wine-50 flex items-center justify-between gap-3">
@@ -610,7 +611,7 @@ function PainelAparencia({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
 
 // ─── Configuracoes ────────────────────────────────────────────────────────────
 
-type Tab = 'perfil' | 'whatsapp' | 'disponibilidade' | 'agendamento' | 'aparencia';
+type Tab = 'perfil' | 'whatsapp' | 'disponibilidade' | 'agendamento' | 'aparencia' | 'seguranca';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'perfil', label: 'Perfil' },
@@ -618,6 +619,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'disponibilidade', label: 'Disponibilidade' },
   { id: 'agendamento', label: 'Agendamento' },
   { id: 'aparencia', label: 'Aparência' },
+  { id: 'seguranca', label: 'Segurança e dados' },
 ];
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -626,18 +628,20 @@ const TAB_TITLES: Record<Tab, string> = {
   disponibilidade: 'Disponibilidade',
   agendamento: 'Agendamento',
   aparencia: 'Aparência',
+  seguranca: 'Segurança e dados',
 };
 
 export default function Configuracoes() {
   usePageTitle('Configurações');
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const [tab, setTab] = useState<Tab>(
-    tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' || tabParam === 'agendamento' ? tabParam : 'perfil'
-  );
+  // Todas as abas (inclusive "aparencia") podem ser abertas por link: /configuracoes?tab=<aba>
+  const isTab = (v: string | null): v is Tab => TABS.some((t) => t.id === v);
+  const [tab, setTab] = useState<Tab>(isTab(tabParam) ? tabParam : 'perfil');
 
   useEffect(() => {
-    if (tabParam === 'perfil' || tabParam === 'disponibilidade' || tabParam === 'whatsapp' || tabParam === 'agendamento') setTab(tabParam);
+    if (isTab(tabParam)) setTab(tabParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabParam]);
   const { theme, setTheme } = useTheme();
 
@@ -681,6 +685,7 @@ export default function Configuracoes() {
       )}
       {tab === 'agendamento' && <BookingSettingsPanel />}
       {tab === 'aparencia' && <PainelAparencia theme={theme} setTheme={setTheme} />}
+      {tab === 'seguranca' && <PrivacidadePanel />}
     </div>
   );
 }

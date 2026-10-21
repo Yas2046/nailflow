@@ -628,7 +628,8 @@ test('"Quero cancelar o de sábado" como primeira mensagem, com um único agenda
   const diff = (6 - now.getDay() + 7) % 7 || 7;
   const saturday = new Date(now);
   saturday.setDate(now.getDate() + diff);
-  const saturdayIso = `${saturday.toISOString().split('T')[0]}T11:00:00-03:00`;
+  // 12:30: fora do 11:00 que outro teste usa em hoje+3 dias (às quartas, hoje+3 é esse mesmo sábado e os dois colidiam na mesma profissional).
+  const saturdayIso = `${saturday.toISOString().split('T')[0]}T12:30:00-03:00`;
   await createClientAndAppointment(phone, SERVICE_MANICURE_ID, saturdayIso, 40);
 
   const { json } = await processMessage(phone, 'Quero cancelar o de sábado');

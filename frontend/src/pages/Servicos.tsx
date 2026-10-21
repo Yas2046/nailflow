@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import ModalA11y from '../components/ModalA11y';
+import LoadError from '../components/LoadError';
 import { api } from '../services/api';
 import { usePageTitle } from '../hooks/usePageTitle';
 import type { Service } from '../types';
@@ -92,7 +94,7 @@ function ServiceCard({ service, onClick }: { service: Service; onClick: () => vo
             Ativo
           </span>
         ) : (
-          <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200 font-semibold whitespace-nowrap">
+          <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-semibold whitespace-nowrap">
             Inativo
           </span>
         )}
@@ -129,7 +131,7 @@ function ServiceCard({ service, onClick }: { service: Service; onClick: () => vo
               WhatsApp
             </span>
           ) : (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 font-semibold whitespace-nowrap">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-semibold whitespace-nowrap">
               Somente Agenda
             </span>
           )
@@ -152,18 +154,21 @@ export default function Servicos() {
   const [duration, setDuration]       = useState('40');
   const [active, setActive]           = useState(true);
   const [availableOnWhatsapp, setAvailableOnWhatsapp] = useState(true);
+  const [returnDays, setReturnDays]   = useState('');
   const [error, setError]             = useState<string | null>(null);
   const [success, setSuccess]         = useState(false);
   const [saving, setSaving]           = useState(false);
 
+  const [loadError, setLoadError] = useState(false);
   function reload() {
-    api.get<Service[]>('/services').then(setServices).catch(() => setServices([]));
+    setLoadError(false);
+    api.get<Service[]>('/services').then(setServices).catch(() => { setServices([]); setLoadError(true); });
   }
   useEffect(reload, []);
 
   function openNew() {
     setName(''); setDescription(''); setPrice(''); setDuration('40');
-    setActive(true); setAvailableOnWhatsapp(true); setError(null); setSuccess(false);
+    setActive(true); setAvailableOnWhatsapp(true); setReturnDays(''); setError(null); setSuccess(false);
     setEditing('new');
   }
   function openEdit(s: Service) {
@@ -173,6 +178,7 @@ export default function Servicos() {
     setDuration(String(s.durationMinutes));
     setActive(s.active);
     setAvailableOnWhatsapp(s.availableOnWhatsapp);
+    setReturnDays(s.returnIntervalDays ? String(s.returnIntervalDays) : '');
     setError(null); setSuccess(false);
     setEditing(s);
   }
@@ -183,6 +189,8 @@ export default function Servicos() {
     if (!name.trim()) { setError('O nome do serviço é obrigatório.'); return; }
     const durationMin = parseInt(duration, 10);
     if (!durationMin || durationMin <= 0) { setError('Informe uma duração válida.'); return; }
+    const returnN = returnDays.trim() === '' ? null : Number(returnDays);
+    if (returnN !== null && (!Number.isInteger(returnN) || returnN < 1 || returnN > 365)) { setError('Informe o retorno em dias inteiros, de 1 a 365 (ou deixe em branco).'); return; }
     const priceCents = parsePriceCents(price);
     if (priceCents <= 0) { setError('Informe um preço válido (ex.: 35,00).'); return; }
     setSaving(true);
@@ -194,6 +202,7 @@ export default function Servicos() {
         durationMinutes: durationMin,
         active,
         availableOnWhatsapp,
+        returnIntervalDays: returnN,
       };
       if (editing === 'new') {
         await api.post('/services', payload);
@@ -237,6 +246,8 @@ export default function Servicos() {
       {/* ── Conteúdo ── */}
       {services === null ? (
         <LoadingSkeleton />
+      ) : loadError ? (
+        <LoadError message="Não foi possível carregar os serviços. Eles não foram apagados: tente de novo." onRetry={reload} />
       ) : services.length === 0 ? (
         <div className="bg-white border border-wine-100/80 rounded-2xl p-10 flex flex-col items-center gap-4 text-center">
           <div className="w-12 h-12 rounded-full bg-wine-50 flex items-center justify-center text-wine-200">
@@ -259,9 +270,10 @@ export default function Servicos() {
       {/* ── Modal ── */}
       {editing && (
         <div
-          className="fixed inset-0 bg-ink/50 flex items-end sm:items-center justify-center p-4 z-50"
+          role="dialog" aria-modal="true" aria-label="Serviço" className="fixed inset-0 bg-ink/50 flex items-end sm:items-center justify-center p-4 z-50"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
+          <ModalA11y onClose={closeModal} />
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
             {/* Cabeçalho */}
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-wine-50">
@@ -328,6 +340,24 @@ export default function Servicos() {
                   )}
                 </label>
               </div>
+
+              {/* Retorno: usado nas sugestões de "clientes para chamar" */}
+              <label className="block">
+                <span className="block text-xs font-medium text-ink/50 uppercase tracking-wide mb-1.5">
+                  Cliente costuma voltar em <span className="font-normal normal-case text-ink/50">(dias, opcional)</span>
+                </span>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={365}
+                  inputMode="numeric"
+                  value={returnDays}
+                  onChange={(e) => setReturnDays(e.target.value)}
+                  placeholder="Padrão: 25"
+                />
+                <span className="block text-xs text-ink/55 mt-1">Ex.: manutenção de alongamento em 20 a 25 dias. Só orienta as sugestões de retorno; nada é enviado sozinho.</span>
+              </label>
 
               {/* Status */}
               <label className="flex items-center gap-3 p-3 rounded-xl border border-wine-100/80 cursor-pointer hover:bg-wine-50/40 transition-colors">

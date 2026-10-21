@@ -33,7 +33,7 @@ export function GuiaShell({ children }: { children: ReactNode }) {
           <Link to="/ajuda" className="flex items-center gap-2.5 min-w-0">
             <LogoMark className="w-5 h-5 shrink-0" />
             <span className="font-display text-xl tracking-tight">NailFlow</span>
-            <span className="hidden sm:inline text-xs uppercase tracking-widest text-wine-100/60 pl-2.5 ml-0.5 border-l border-white/15">
+            <span className="hidden sm:inline text-xs uppercase tracking-widest text-wine-100/85 pl-2.5 ml-0.5 border-l border-white/15">
               Guia rápido
             </span>
           </Link>
@@ -158,7 +158,7 @@ export function GuiaDica({ texto }: { texto: string }) {
 export function GuiaOpcional({ titulo, texto }: { titulo: string; texto: string }) {
   return (
     <aside className="rounded-xl bg-sage-100 border border-sage-200 px-5 py-4 break-inside-avoid">
-      <p className="text-[11px] uppercase tracking-widest font-semibold text-sage-500">Opcional</p>
+      <p className="text-[11px] uppercase tracking-widest font-semibold text-sage-700">Opcional</p>
       <p className="font-display text-lg text-wine-800 mt-0.5">{titulo}</p>
       <p className="text-sm text-ink/70 leading-relaxed mt-1">
         <Destaque texto={texto} />

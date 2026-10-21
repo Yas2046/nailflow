@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -6,15 +6,19 @@ import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import RedefinirSenha from './pages/RedefinirSenha';
 import Inicio from './pages/Inicio';
-import Dashboard from './pages/Dashboard';
 import Agenda from './pages/Agenda';
 import Clientes from './pages/Clientes';
+import ClienteFicha from './pages/ClienteFicha';
+import ImportarClientes from './pages/ImportarClientes';
 import Servicos from './pages/Servicos';
-import Gastos from './pages/Gastos';
 import Financeiro from './pages/financeiro/Financeiro';
-import Disponibilidade from './pages/Disponibilidade';
-import Perfil from './pages/Perfil';
+import Mais from './pages/Mais';
+import Comecar from './pages/Comecar';
+import ModelosMensagem from './pages/ModelosMensagem';
+import Retorno from './pages/Retorno';
+import { LEGACY_REDIRECTS } from './components/navConfig';
 import PaginaPublica from './pages/PaginaPublica';
 import Configuracoes from './pages/Configuracoes';
 import AdminDashboard from './pages/AdminDashboard';
@@ -46,6 +50,7 @@ export default function App() {
           <Route path="/agenda-publica" element={<PaginaPublica />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
 
           {/* guia rápido — público, não exige login */}
           <Route path="/ajuda" element={<Ajuda />} />
@@ -70,15 +75,19 @@ export default function App() {
           {/* área profissional */}
           <Route element={<Layout />}>
             <Route path="/" element={<Inicio />} />
-            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/clientes" element={<Clientes />} />
+            <Route path="/clientes/importar" element={<ImportarClientes />} />
+            <Route path="/clientes/:id" element={<ClienteFicha />} />
             <Route path="/servicos" element={<Servicos />} />
-            <Route path="/gastos" element={<Gastos />} />
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/financeiro/:aba" element={<Financeiro />} />
-            <Route path="/disponibilidade" element={<Disponibilidade />} />
-            <Route path="/perfil" element={<Perfil />} />
+            <Route path="/mais" element={<Mais />} />
+            <Route path="/comecar" element={<Comecar />} />
+            <Route path="/mensagens" element={<ModelosMensagem />} />
+            <Route path="/retorno" element={<Retorno />} />
+            {/* rotas antigas: continuam funcionando e levam ao novo lugar (links salvos, mensagens e guias) */}
+            {LEGACY_REDIRECTS.map((r) => <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />)}
             <Route path="/configuracoes" element={<Configuracoes />} />
             {/* Central de Suporte (cada tela mostra "indisponível" quando o bootstrap informa que está desligada) */}
             <Route path="/suporte" element={<SuporteHub />} />

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ModalA11y from './ModalA11y';
 import { api } from '../services/api';
 import type { Client } from '../types';
 
@@ -35,9 +36,10 @@ export default function NovaClienteModal({ onClose, onCreated }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-[60]"
+      role="dialog" aria-modal="true" aria-label="Nova cliente" className="fixed inset-0 bg-ink/50 flex items-center justify-center p-4 z-[60]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      <ModalA11y onClose={onClose} />
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
         <div className="flex items-center justify-between p-6 pb-4 border-b border-wine-50">
           <h3 className="font-display text-xl text-wine-700">Nova cliente</h3>

@@ -7,6 +7,7 @@ import {
   validatePublicClientPhone,
   createPublicAppointment,
 } from '../controllers/publicController.js';
+import { getPublicGallery, getPublicPhoto } from '../controllers/portfolioController.js';
 
 // Rotas sem autenticação (página pública de agendamento): limite por IP para
 // impedir scraping/flood, generoso o bastante para uso normal (carregar a
@@ -21,11 +22,23 @@ const publicRateLimit = rateLimit({
   },
 });
 
+const photoRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Muitas requisições. Tente novamente em alguns minutos.' });
+  },
+});
+
 const router = Router();
 
 // Rotas por slug — /public/:slug/info e /public/:slug/availability
 // Devem vir antes das rotas genéricas para não conflitar.
 router.get('/:slug/info', publicRateLimit, getPublicInfoBySlug);
+router.get('/:slug/gallery', publicRateLimit, getPublicGallery);
+router.get('/:slug/photos/:id', photoRateLimit, getPublicPhoto);
 router.get('/:slug/availability', publicRateLimit, getPublicAvailabilityBySlug);
 router.get('/:slug/services', publicRateLimit, getPublicServicesBySlug);
 
