@@ -23,6 +23,15 @@ test('cada rota pertence a um único destino da navegação', () => {
   for (const p of ['/mais', '/servicos', '/configuracoes', '/suporte/solicitacoes', '/ajuda']) assert.deepEqual(active(p), ['Mais'], p);
 });
 
+test('Clientes é acessível pelo "Mais" e a rota continua registrada (o redesign tinha tirado da navegação sem pôr em outro lugar)', () => {
+  const mais = fs.readFileSync(path.join(SRC, 'pages/Mais.tsx'), 'utf8');
+  assert.match(mais, /<Item to="\/clientes" title="Clientes"/);
+  assert.match(mais, /<Item to="\/retorno" title="Clientes para chamar"/);   // o item existente não foi trocado
+  const app = fs.readFileSync(path.join(SRC, 'App.tsx'), 'utf8');
+  assert.match(app, /path="\/clientes" element=\{<Clientes \/>\}/);
+  assert.deepEqual(NAV_ITEMS.map((l) => l.label), ['Início', 'Agenda', 'Financeiro', 'Mais']);   // a barra principal não mudou
+});
+
 test('rotas antigas continuam existindo e redirecionam para o novo lugar', () => {
   const map = Object.fromEntries(LEGACY_REDIRECTS.map((r) => [r.from, r.to]));
   assert.equal(map['/dashboard'], '/financeiro/desempenho');

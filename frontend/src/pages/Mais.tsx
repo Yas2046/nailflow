@@ -51,6 +51,8 @@ export default function Mais() {
       <Group title="Seu negócio">
         <Item to="/comecar" title="Primeiros passos" hint="Configuração guiada: negócio, serviços, horários e link"
           icon={<path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />} />
+        <Item to="/clientes" title="Clientes" hint="Lista, fichas e importação de clientes"
+          icon={<><circle cx="9" cy="8" r="3.5" /><path strokeLinecap="round" d="M2.5 20v-1a5.5 5.5 0 0 1 5.5-5.5h2a5.5 5.5 0 0 1 5.5 5.5v1M16 4.6a3.5 3.5 0 0 1 0 6.8M21.5 20v-1a5.5 5.5 0 0 0-4-5.3" /></>} />
         <Item to="/servicos" title="Serviços" hint="Preços, duração e disponibilidade no WhatsApp"
           icon={<><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path strokeLinecap="round" d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" /></>} />
         <Item to="/configuracoes?tab=perfil" title="Perfil e link de agendamento" hint="Dados do negócio e página pública"
